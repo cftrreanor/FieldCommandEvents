@@ -8479,6 +8479,28 @@ begin
   end;
   assert ok, 'when an offer email went out is server-only';
 end $$;
+-- An offer from someone who is no longer the Account Host can't be accepted.
+reset role;
+update public.account_host_handoffs set cancelled_at = now(), closed_reason = 'withdrawn'
+ where organization_id = '7d000000-0000-0000-0000-000000000001' and accepted_at is null and cancelled_at is null;
+insert into public.account_host_handoffs (organization_id, to_user, offered_by)
+values ('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000002', '0000007e-0000-0000-0000-000000000003');
+select set_config('tm.handoff', (select token from public.account_host_handoffs where organization_id = '7d000000-0000-0000-0000-000000000001'
+                                   and accepted_at is null and cancelled_at is null)::text, false);
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":"tmco1@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.accept_account_host(current_setting('tm.handoff')::uuid);
+  exception when sqlstate 'P0001' then ok := sqlerrm like '%Account Host has changed%';
+  end;
+  assert ok, 'an offer from a former Account Host can''t be accepted';
+  assert (select role from public.organization_members where organization_id = '7d000000-0000-0000-0000-000000000001'
+            and user_id = '0000007e-0000-0000-0000-000000000002') = 'admin', 'and nothing changed';
+end $$;
+reset role;
 reset role;
 drop function public.test_handoff_token(uuid);
 delete from public.organizations where id = '7d000000-0000-0000-0000-000000000001';

@@ -27,7 +27,7 @@ Review: docs/design-reviews/2026-11-07-my-team-part-3-light-check.md. No severit
 | 5 | Engineering: a second Accept emails twice; Withdraw acts on whatever is open; offer page shows details on old links; missing tests | 2 | Take the advice | Accept again changes nothing and emails nobody; withdraw and decline name which they mean; offer page shows details only while open, never a full email; 6 new security tests; Undo is one person at a time; the database returns an offer's id, not its token |
 | 6 | Dark mode has no grey for supporting text | 2 | Keep as is | The site-wide rule (docs/DESIGN.md: dark mode has no grey text) stays; My team sets lines apart with bold names and tinted notes instead |
 | — | Smaller wording and polish (Decline…, one date format, one-sentence offer headline, sign-in line, "See your plan", email wording, "No Coordinators yet") | 1 | Take the advice | |
-| — | Lock order, phone button layout | 1 | Later | |
+| — | Lock order, phone button layout | 1 | Later, then built | See the second follow-up below |
 
 ## Follow-up: the "Later" items (2026-11-07)
 
@@ -43,3 +43,19 @@ severity 3 or 4. Screenshots 15–17 in `docs/design-reviews/2026-11-07-my-team-
 | 3 | Resend too soon looks like an error | 2 | Take the advice | A calm message, "Already sent … You can send it again in about N minutes" (no clock time, so no time-zone mix-up) |
 | 4 | Resend wording and when the spam tip shows | 2 | Take the advice | Spam tip after a resend that worked too |
 | 5 | "Handing on" wording, a button named mid-sentence | 2 | Take the advice | "Passing the account to someone new? Choose Offer Account Host role on their row" |
+
+## Follow-up: lock order and the offer row's buttons (2026-11-07)
+
+- **Lock order:** accepting an offer now locks the account's member rows before the offer, the same
+  order as making an offer and removing a co-host, so they can't deadlock
+  (`20270122000000_handoff_lock_order.sql`). A test covers an offer from someone who is no longer
+  the Account Host. (The old version also tried to mark that offer "replaced" just before raising
+  the error, which the error undid; that line is gone.)
+- **Offer row:** light check (UX Designer, UI Designer, consultant), no severity 3 or 4.
+
+| # | Finding | Severity | Decision | Notes |
+|---|---|---|---|---|
+| 1 | On phones the offer's buttons and Remove… still read as one wrapped row | 2 | Take the advice | The offer is its own tinted block in the row: its line, then Resend email and Withdraw offer… |
+| 2 | The offer line was joined onto the email and access line | 2 | Take the advice | Its own line, inside the block |
+| 3 | "Resend email" button's name for voice control didn't contain its visible words | 2 | Take the advice | "Resend email: {name}" |
+| 4 | Remove… is reached last with Tab on desktop | 1 | Keep as is | The left column (the person and their offer) reads first |
