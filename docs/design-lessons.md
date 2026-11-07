@@ -92,6 +92,9 @@ a word for two things on one screen.
   meaning both the Account Host plus co-hosts and something separate; messages pointing to a
   "Pending" list that only another page has; two names for where Coordinators are added).
   Messages shared between pages name what's on every page that shows them ("on their invitation").
+- **Again in:** Meetings as built ("Your meetings" was also "See your meetings", "Meetings list",
+  and "Meetings page"; "Manage meetings" opened setup, 7 of 8). **Sharper rule:** a page has one name,
+  used on every button and link that opens it; a button's words name the page it opens.
 
 ## L6. Dark mode: muted text is white
 In dark mode `--muted` is pure white, so anything that relies on grey looks live or filled in.
@@ -184,12 +187,17 @@ Setup steps share one layout: back link, step bar, title, then the card. Footers
 pattern: status on the left, one button on the right. Status lines, badges, and notes use one
 style each.
 - **Seen in:** setup redesign, volunteer jobs v3, band contest v1 (three layouts for three steps).
+- **Again in:** Meetings as built (tabs and a Save button, while volunteer and band setup use steps
+  that save themselves). **Sharper rule:** every event type sets up with the same stepped shell; a type
+  that hasn't moved to it yet is listed as a known gap, not left to be found in review.
 
 ## L16. Say who can see personal details
 Wherever a phone number, email, or child's details are entered or shown, say in one line who
 sees them and when. Defaults filled in from someone's profile are suggestions until saved.
 - **Seen in:** setup redesign v3 (Coordinators and phone numbers), volunteer jobs v4 (phone note
   promised the wrong people), band contest v1 and v2 (director contact).
+- **Again in:** Meetings as built ("seen only by you" when creating the event, "you and your
+  co-hosts" everywhere else). One sentence about who sees what, quoted everywhere.
 
 ## L19. A state that depends on a date is a state everywhere
 When something can be "scheduled" or "opens later", every badge, button, count, email, and
