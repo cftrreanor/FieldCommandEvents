@@ -8301,6 +8301,55 @@ begin
   end;
   assert ok, 'Undo puts back one person at a time';
 end $$;
+-- The team filled up after the removal: Undo is refused (it would go over the plan's spots).
+reset role;
+select set_config('tm.max_team', coalesce((public.package_tier('7d000000-0000-0000-0000-000000000001')).max_team::text, ''), false);
+set session_replication_role = replica;
+update public.plan_tiers set max_team = (select count(*) from public.org_team('7d000000-0000-0000-0000-000000000001'))
+ where code = (public.package_tier('7d000000-0000-0000-0000-000000000001')).code;
+set session_replication_role = origin;
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":"tmco1@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.undo_team_removals(array(select id from public.team_removals
+      where user_id = '0000007e-0000-0000-0000-000000000004' and event_id = '7d000000-0000-0000-0000-0000000000e1'));
+  exception when sqlstate 'P0001' then ok := sqlerrm like '%filled up%';
+  end;
+  assert ok, 'Undo can''t go over the plan''s team spots';
+end $$;
+reset role;
+set session_replication_role = replica;
+update public.plan_tiers set max_team = nullif(current_setting('tm.max_team'), '')::int
+ where code = (public.package_tier('7d000000-0000-0000-0000-000000000001')).code;
+set session_replication_role = origin;
+-- The remover lost the role that let them remove someone: Undo is refused.
+insert into public.event_staff (event_id, user_id, role) values
+  ('7d000000-0000-0000-0000-0000000000e1', '0000007e-0000-0000-0000-000000000004', 'volunteer_director'),
+  ('7d000000-0000-0000-0000-0000000000e1', '0000007e-0000-0000-0000-000000000003', 'section_lead');
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000004","email":"tmvl@example.com"}';
+do $$ begin
+  delete from public.event_staff where user_id = '0000007e-0000-0000-0000-000000000003' and event_id = '7d000000-0000-0000-0000-0000000000e1';
+  assert found, 'the Volunteer Lead removes a Coordinator';
+end $$;
+reset role;
+delete from public.event_staff where user_id = '0000007e-0000-0000-0000-000000000004' and event_id = '7d000000-0000-0000-0000-0000000000e1';
+select set_config('tm.undo', (select id from public.team_removals where user_id = '0000007e-0000-0000-0000-000000000003'
+                                and event_id = '7d000000-0000-0000-0000-0000000000e1' and removed_by = '0000007e-0000-0000-0000-000000000004')::text, false);
+set role authenticated;
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.undo_team_removals(array[current_setting('tm.undo')::uuid]);
+  exception when insufficient_privilege then ok := sqlerrm like '%own role has changed%';
+  end;
+  assert ok, 'someone who has since lost their role can''t undo';
+end $$;
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":"tmco1@example.com"}';
 
 -- Handing on: an offer is closed by its own token, by the Account Host (withdrawn) or the
 -- person it's for (declined), and by nobody else.
