@@ -541,7 +541,10 @@ async function noteWhoWasTold(
       ...match.hosts.map((email) => ({ removal_id: row.id, email: email.toLowerCase(), to_person: false })),
     ];
   });
-  if (notices.length) await admin.from("team_removal_notices").upsert(notices, { onConflict: "removal_id,email", ignoreDuplicates: true });
+  if (!notices.length) return;
+  const { error } = await admin.from("team_removal_notices").upsert(notices, { onConflict: "removal_id,email", ignoreDuplicates: true });
+  // Undo would then send no "never mind" emails; say so in the server log.
+  if (error) console.error("Couldn't note who was told about a removal", error);
 }
 
 /** The part-3 functions' messages are written for people (even "not allowed" ones): show them. */
@@ -560,12 +563,13 @@ export async function offerAccountHost(orgId: string, userId: string, name: stri
   const supabase = await createClient();
   const admin = createAdminClient();
   const before = await openOffer(orgId);
-  const { data: token, error } = await supabase.rpc("offer_account_host", { p_org: orgId, p_user: userId });
+  // The offer's id comes back, never its token: that's read here, on the server, for the email.
+  const { data: id, error } = await supabase.rpc("offer_account_host", { p_org: orgId, p_user: userId });
   if (error) return { error: teamDbError(error) };
   if (before && before.to_user !== userId) await tellOfferEnded(orgId, before.to_user, user, "replaced");
-  const { data: offer } = await admin.from("account_host_handoffs").select("expires_at").eq("token", token as string).maybeSingle();
+  const { data: offer } = await admin.from("account_host_handoffs").select("token, expires_at").eq("id", id as string).maybeSingle();
   revalidatePath("/dashboard/team");
-  const sent = offer ? await sendOfferEmail(orgId, userId, token as string, offer.expires_at, user) : false;
+  const sent = offer ? await sendOfferEmail(orgId, userId, offer.token, offer.expires_at, user) : false;
   return {
     ok: true,
     message: sent
@@ -632,16 +636,16 @@ async function tellOfferEnded(orgId: string, userId: string, from: { id: string;
   await sendEmail({ to: person.email, subject, html, text, replyTo: from.email });
 }
 
-/** The Account Host withdraws their open offer; the co-host is told. */
-export async function withdrawAccountHostOffer(orgId: string, name: string): Promise<ActionState> {
+/** The Account Host withdraws their open offer to this co-host (the one on screen); the co-host is told. */
+export async function withdrawAccountHostOffer(orgId: string, userId: string, name: string): Promise<ActionState> {
   const user = await requireUser();
   const offer = await openOffer(orgId);
-  if (!offer) {
+  if (!offer || offer.to_user !== userId) {
     revalidatePath("/dashboard/team");
     return { error: "That offer isn't open anymore. The page has been refreshed." };
   }
   // The database checks it's the Account Host closing it.
-  const { error } = await (await createClient()).rpc("close_account_host_offer", { p_token: offer.token });
+  const { error } = await (await createClient()).rpc("close_account_host_offer", { p_token: offer.token, p_as: "withdrawn" });
   if (error) return { error: teamDbError(error) };
   await tellOfferEnded(orgId, offer.to_user, user, "withdrawn");
   revalidatePath("/dashboard", "layout");
@@ -655,7 +659,7 @@ export async function declineAccountHost(token: string): Promise<ActionState> {
   const supabase = await createClient();
   const { data: offer } = await supabase.rpc("get_account_host_offer", { p_token: token });
   const orgId = (offer as { organization_id: string | null }[] | null)?.[0]?.organization_id;
-  const { error } = await supabase.rpc("close_account_host_offer", { p_token: token });
+  const { error } = await supabase.rpc("close_account_host_offer", { p_token: token, p_as: "declined" });
   if (error) return { error: teamDbError(error) };
   if (orgId) await tellAccountHostAnswered(orgId, user.id, user.email, false);
   revalidatePath("/dashboard", "layout");
@@ -669,6 +673,12 @@ export async function acceptAccountHost(token: string): Promise<ActionState> {
   const supabase = await createClient();
   const { data: orgId, error } = await supabase.rpc("accept_account_host", { p_token: token });
   if (error) return { error: teamDbError(error) };
+  if (!orgId) {
+    // Already accepted (a second tap, another tab): nobody is emailed twice.
+    const { data: offer } = await supabase.rpc("get_account_host_offer", { p_token: token });
+    const org = (offer as { organization_id: string | null }[] | null)?.[0]?.organization_id;
+    redirect(org ? `/dashboard/team?account=${org}` : "/dashboard/team");
+  }
   await tellAccountHostAnswered(orgId as string, user.id, user.email, true);
   revalidatePath("/dashboard", "layout");
   // My team then says what changed (see the note under its heading).

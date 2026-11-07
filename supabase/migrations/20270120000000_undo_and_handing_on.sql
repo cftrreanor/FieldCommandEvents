@@ -147,6 +147,11 @@ begin
     raise exception 'That can''t be undone anymore. They may be back already: refresh My team to see.' using errcode = 'P0001';
   end if;
 
+  -- One Undo puts back one person (its emails name them).
+  if (select count(distinct t.user_id) from team_removals t where t.id = any (p_ids)) > 1 then
+    raise exception 'Undo one person at a time.' using errcode = 'P0001';
+  end if;
+
   -- Every rule, for every removal, before anything changes (all or nothing).
   for r in select * from team_removals t where t.id = any (p_ids) loop
     if r.removed_by is distinct from auth.uid() or r.removed_by = r.user_id then
@@ -243,15 +248,17 @@ begin
   select coalesce(nullif(default_timezone, ''), 'America/Chicago') into tz from organizations where id = p_org;
   insert into account_host_handoffs (organization_id, to_user, offered_by, expires_at)
   values (p_org, p_user, auth.uid(), (((now() at time zone tz)::date + 15)::timestamp at time zone tz))
-  returning token into t;
+  -- The offer's id, not its token: the token goes only into the email, from the server.
+  returning id into t;
   return t;
 exception when unique_violation then
   raise exception 'Another offer was just sent. Refresh My team to see it.' using errcode = 'P0001';
 end;
 $$;
 
--- Withdraw (the Account Host) or decline (the co-host) one offer. Returns which it was.
-create function public.close_account_host_offer(p_token uuid)
+-- Withdraw (the Account Host) or decline (the co-host) one offer. Returns which it was;
+-- p_as ('withdrawn' or 'declined') refuses it if the caller isn't the one who can do that.
+create function public.close_account_host_offer(p_token uuid, p_as text default null)
 returns text
 language plpgsql security definer set search_path = public
 as $$
@@ -270,12 +277,15 @@ begin
   else
     raise exception 'Only the Account Host or the person it''s for can close this offer.' using errcode = '42501';
   end if;
+  if p_as is not null and p_as <> why then
+    raise exception 'That offer has changed. Refresh My team to see the latest.' using errcode = 'P0001';
+  end if;
   update account_host_handoffs set cancelled_at = now(), closed_reason = why where id = h.id;
   return why;
 end;
 $$;
-revoke execute on function public.close_account_host_offer(uuid) from public, anon;
-grant execute on function public.close_account_host_offer(uuid) to authenticated;
+revoke execute on function public.close_account_host_offer(uuid, text) from public, anon;
+grant execute on function public.close_account_host_offer(uuid, text) to authenticated;
 
 -- The old one, by account, closed whatever was open: offers are closed by token now.
 drop function public.cancel_account_host_offer(uuid);
@@ -292,8 +302,9 @@ begin
   if h.id is null or h.to_user <> auth.uid() then
     raise exception 'This link isn''t for your account. Sign in as the person it was sent to.' using errcode = 'P0001';
   end if;
+  -- Already accepted (a second tap, another tab): nothing to do, and null says so.
   if h.accepted_at is not null then
-    return h.organization_id;
+    return null;
   end if;
   if h.cancelled_at is not null or h.expires_at < now() then
     raise exception 'This offer is no longer open. Ask the Account Host to offer it again.' using errcode = 'P0001';

@@ -18,7 +18,7 @@ export type OfferState =
       from: string;
       /** Who's the Account Host now. */
       host: string | null;
-      reason: "withdrawn" | "declined" | "replaced" | "left" | "expired";
+      reason: "withdrawn" | "declined" | "replaced" | "left" | "ended" | "expired";
       teamUrl: string;
     }
   | { kind: "accepted"; organization: string; teamUrl: string; stillHost: boolean }
@@ -45,15 +45,17 @@ export function OfferCard({ state }: { state: OfferState }) {
     <Card>
       {state.kind === "open" ? (
         <>
-          <p className="text-sm font-medium text-muted">{state.from} offered you</p>
-          <h1 className="mt-1 text-2xl font-medium">Become the Account Host for {state.organization}</h1>
+          <h1 className="text-2xl font-medium">
+            {state.from} offered you the Account Host role for {state.organization}
+          </h1>
           <ul className="mt-4 list-disc space-y-1 pl-5 text-sm leading-6">
             <li>You&apos;d invite and remove co-hosts, get and renew the plan, and could hand the role on later</li>
+            <li>The plan stays as it is until it ends. After that, renewing it is up to you</li>
             <li>Your access to events stays the same</li>
             <li>
-              {state.from} would become a co-host and couldn&apos;t take the role back. Only you could offer it to them again
+              {state.from} would become a co-host. Once you accept, they can&apos;t take the role back. Only you could offer it to them again
             </li>
-            <li>Nothing changes until you accept. The offer is open through {formatDate(state.lastDay)}</li>
+            <li>Nothing changes until you accept. The offer is open through {formatDate(state.lastDay, { year: undefined })}</li>
           </ul>
           <div className="mt-6">
             <OfferButtons accept={state.accept} decline={state.decline} from={state.from} />
@@ -64,13 +66,13 @@ export function OfferCard({ state }: { state: OfferState }) {
           state.from && state.organization ? `${state.from} offered you the Account Host role for ${state.organization}` : "Sign in to see this offer",
           <>
             <p>
-              Sign in to accept or decline
               {state.emailHint ? (
                 <>
-                  , using the email it was sent to (<strong className="font-medium text-foreground">{state.emailHint}</strong>)
+                  Sign in with <strong className="font-medium text-foreground">{state.emailHint}</strong> to accept or decline.
                 </>
-              ) : null}
-              .
+              ) : (
+                "Sign in to accept or decline."
+              )}
             </p>
             <Link href={`/login?next=${encodeURIComponent(state.next)}`} className={PRIMARY}>
               Sign in
@@ -104,10 +106,15 @@ export function OfferCard({ state }: { state: OfferState }) {
           <>
             <p>
               {state.stillHost
-                ? "You invite and remove co-hosts, and get and renew the plan. My team shows your team."
+                ? "You invite and remove co-hosts, and get and renew the plan."
                 : "The role has been handed on again since then. My team shows who has it now."}
             </p>
             {myTeam(state.teamUrl)}
+            {state.stillHost && (
+              <Link href="/dashboard/account#plan" className="block text-center font-medium text-brand underline underline-offset-4">
+                See your plan
+              </Link>
+            )}
           </>,
           state.stillHost ? <SuccessMark /> : undefined,
         )
@@ -137,6 +144,8 @@ function closedWhy(s: Extract<OfferState, { kind: "closed" }>) {
       return `${s.from} offered the role to someone else instead. ${still}`;
     case "left":
       return `It ended when you stopped being a co-host. ${still}`;
+    case "ended":
+      return `It ended when you were removed as a co-host for a moment. ${still} If you'd like the role, ask ${host} to offer it again.`;
     case "expired":
       return `It expired after 14 days. ${still} If you'd like the role, ask ${host} to offer it again.`;
     default:

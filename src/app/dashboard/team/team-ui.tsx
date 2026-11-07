@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useRouter } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import { CopyLink } from "@/components/copy-link";
 import { SubmitButton } from "@/components/submit-button";
@@ -539,13 +540,25 @@ export function UndoNote({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const router = useRouter();
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     const end = new Date(until).getTime();
     // Clock time only after hydrating (the server's time zone isn't the viewer's).
     const first = setTimeout(() => setNow(Date.now()), 0);
     const timer = setInterval(() => setNow(Date.now()), 15_000);
-    const done = setTimeout(() => setNow(end), Math.max(0, end - Date.now()));
+    // When time's up: keep keyboard users on the page, and redraw it so rows offer Invite again.
+    const done = setTimeout(() => {
+      if (ref.current?.contains(document.activeElement)) {
+        const heading = document.querySelector<HTMLElement>("main h1");
+        if (heading) {
+          heading.tabIndex = -1;
+          heading.focus();
+        }
+      }
+      setNow(end);
+      router.refresh();
+    }, Math.max(0, end - Date.now()));
     // After the window closes and the page updates (which moves focus to the section heading).
     const fresh = end - Date.now() > (minutes * 60 - 30) * 1000;
     const focus = fresh ? setTimeout(() => ref.current?.focus(), 150) : undefined;
@@ -555,15 +568,17 @@ export function UndoNote({
       clearTimeout(done);
       clearTimeout(focus);
     };
-  }, [until, minutes]);
+  }, [until, minutes, router]);
   if (now !== null && now >= new Date(until).getTime()) return null;
   const time = now === null ? null : new Date(until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   return (
     <div
       ref={ref}
       tabIndex={-1}
-      role="status"
-      className="flex flex-col gap-3 rounded-lg border border-brand/40 bg-brand-soft px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-brand sm:flex-row sm:items-center sm:justify-between"
+      // Focus moves here after a removal, which reads it out; a live region as well would read it twice.
+      role="group"
+      aria-label={`Just removed ${name}`}
+      className="flex flex-col gap-3 rounded-lg border border-brand/40 bg-brand-soft px-4 py-3 focus:outline-2 focus:outline-offset-2 focus:outline-[var(--focus)] sm:flex-row sm:items-center sm:justify-between"
     >
       <div className="text-sm leading-6">
         {children}

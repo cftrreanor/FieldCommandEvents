@@ -82,11 +82,12 @@ export function hostOfferEmail(o: { from: string; organization: string; url: str
   return {
     subject: `${o.from} offered you the Account Host role for ${o.organization}`,
     ...emailLayout({
-      heading: `Become the Account Host for ${o.organization}`,
+      heading: `${o.from} offered you the Account Host role for ${o.organization}`,
       paragraphs: [
         `${o.from} would like you to take over as the Account Host for ${o.organization}.`,
         "As the Account Host, you invite and remove co-hosts, you get and renew the plan, and you can hand the role on later. Your access to events stays the same.",
-        `${o.from} becomes a co-host, with the same access to every event as now. They can't take the role back: only you could offer it to them again.`,
+        "The plan stays as it is until it ends. After that, renewing it is up to you.",
+        `${o.from} becomes a co-host, with the same access to every event as now. Once you accept, they can't take the role back: only you could offer it to them again.`,
         "Nothing changes until you accept.",
       ],
       button: { label: "Accept or decline", url: o.url },
@@ -130,7 +131,7 @@ export function hostOfferAnsweredEmail(o: { who: string; organization: string; a
         subject: `${o.who} declined the Account Host role`,
         ...emailLayout({
           heading: `${o.who} declined the Account Host role`,
-          paragraphs: [`You're still the Account Host for ${o.organization}. Nothing changed. You can offer the role to a co-host again any time.`],
+          paragraphs: [`You're still the Account Host for ${o.organization}. You can offer the role to a co-host again any time.`],
           button: { label: "Open My team", url: o.url },
         }),
       };
@@ -144,14 +145,14 @@ export function undoneEmail(o: { who: string; remover: string; roles: string[]; 
         subject: `You're still ${what}`,
         ...emailLayout({
           heading: `You're still ${what}`,
-          paragraphs: [`${o.remover} undid removing you a few minutes ago. Nothing changed: you're still ${what}.`],
+          paragraphs: [`${o.remover} put you back a few minutes after removing you, so you can ignore the earlier email. You're still ${what}, with your jobs.`],
         }),
       }
     : {
         subject: `${o.who} is back as ${what}`,
         ...emailLayout({
           heading: `${o.who} is back as ${what}`,
-          paragraphs: [`${o.remover} undid removing ${o.who} a few minutes ago, so you can ignore the earlier email. Their jobs are as they were.`],
+          paragraphs: [`${o.remover} put ${o.who} back a few minutes after removing them, so you can ignore the earlier email. Their jobs are as they were.`],
         }),
       };
 }

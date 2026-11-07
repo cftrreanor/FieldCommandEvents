@@ -25,6 +25,10 @@ export default async function AccountHostOfferPage({ params }: PageProps<"/accou
       .from("account_host_handoffs")
       .select("organizations(name), from:profiles!account_host_handoffs_offered_by_fkey(full_name, email), to:profiles!account_host_handoffs_to_user_fkey(email)")
       .eq("token", token)
+      // Only while it's open: a forwarded old link shows nothing about the account.
+      .is("accepted_at", null)
+      .is("cancelled_at", null)
+      .gt("expires_at", new Date().toISOString())
       .maybeSingle();
     const row = data as unknown as {
       organizations: { name: string } | null;
@@ -34,7 +38,8 @@ export default async function AccountHostOfferPage({ params }: PageProps<"/accou
     state = {
       kind: "sign-in",
       next,
-      from: row?.from ? row.from.full_name || row.from.email : null,
+      // A name, or the hinted email: never someone's full address to whoever has the link.
+      from: row?.from ? row.from.full_name || hint(row.from.email) : null,
       organization: row?.organizations?.name ?? null,
       emailHint: row?.to?.email ? hint(row.to.email) : null,
     };
@@ -60,16 +65,27 @@ export default async function AccountHostOfferPage({ params }: PageProps<"/accou
       const organization = offer.organization ?? "this account";
       const teamUrl = `/dashboard/team?account=${offer.organization_id ?? ""}`;
       if (offer.accepted) state = { kind: "accepted", organization, teamUrl, stillHost: !!offer.host_now };
-      else if (!offer.open)
+      else if (!offer.open) {
+        // Ended because they left, but they're a co-host again now (Undo): say it just ended.
+        let reason: Extract<OfferState, { kind: "closed" }>["reason"] = offer.closed_reason ?? "withdrawn";
+        if (reason === "left" && offer.organization_id) {
+          const { data: member } = await supabase
+            .from("organization_members")
+            .select("user_id")
+            .eq("organization_id", offer.organization_id)
+            .eq("user_id", user.id)
+            .maybeSingle();
+          if (member) reason = "ended";
+        }
         state = {
           kind: "closed",
           organization,
           from: offer.offered_by ?? "The Account Host",
           host: offer.current_host,
-          reason: offer.closed_reason ?? "withdrawn",
+          reason,
           teamUrl,
         };
-      else
+      } else
         state = {
           kind: "open",
           organization,

@@ -56,7 +56,7 @@ export const UNDO_MINUTES = 10;
 /** Dates are calendar days in the account's time zone ("2026-11-21"). */
 export type HostOffer = { userId: string; name: string; offeredOn: string; expiresOn: string };
 /** How your last offer of the Account Host role ended, for a week afterward. */
-export type OfferOutcome = { name: string; outcome: "accepted" | "declined" | "expired" | "left"; on: string };
+export type OfferOutcome = { name: string; outcome: "accepted" | "declined" | "expired" | "left" | "ended"; on: string };
 export type Spots = {
   used: number;
   invited: number;
@@ -441,8 +441,13 @@ async function loadHostView(org: { id: string; name: string; timezone: string },
     ? null
     : last.accepted_at
       ? "accepted"
-      : last.closed_reason === "declined" || last.closed_reason === "left"
-        ? last.closed_reason
+      : last.closed_reason === "declined"
+        ? "declined"
+        : // Ended because they left, unless they're back (Undo): then it just ended.
+          last.closed_reason === "left"
+          ? hosts.some((h) => h.userId === last.to_user)
+            ? "ended"
+            : "left"
         : !last.cancelled_at && last.expires_at <= now
           ? "expired"
           : null;

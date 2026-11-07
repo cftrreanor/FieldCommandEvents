@@ -23,7 +23,7 @@ export function OfferButtons({ accept, decline, from }: { accept: Action; declin
         cancelLabel="Keep the offer open"
       >
         <SubmitButton variant="secondary" className="w-full" pendingText="Declining…">
-          Decline
+          Decline…
         </SubmitButton>
       </ActionForm>
     </div>

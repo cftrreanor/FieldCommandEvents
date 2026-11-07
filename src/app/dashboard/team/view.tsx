@@ -187,6 +187,11 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
         </p>
       )}
       {view.offerToMe && <OfferToMe offer={view.offerToMe} orgName={org.name} />}
+      {view.lastOffer && !view.offer && !becameHost && (
+        <p role="status" className={`rounded-lg border px-4 py-3 text-sm leading-6 ${view.lastOffer.outcome === "accepted" ? "border-success/40 bg-success-soft" : "border-brand/40 bg-brand-soft"}`}>
+          {offerOutcome(view.lastOffer, isAccountHost)}
+        </p>
+      )}
       <JustRemoved removed={view.removed} />
 
       <section aria-labelledby="hosts-heading" className="space-y-3">
@@ -227,7 +232,6 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
           {CO_HOST_POWERS}
           {!isAccountHost && <> Your Account Host is {accountHostName}.</>}
         </p>
-        {view.lastOffer && !view.offer && !becameHost && <p className="text-sm leading-6">{offerOutcome(view.lastOffer, isAccountHost)}</p>}
         <ul className="divide-y divide-border rounded-lg border border-border bg-surface">
           {view.hosts.map((h) => {
             const name = personName(h.profile);
@@ -239,10 +243,10 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
                   <>
                     {name}
                     {you && " (you)"} <Badge tone="info">{h.role === "owner" ? "Account Host" : "Co-host"}</Badge>
-                    {view.offer?.userId === h.userId && (
+                    {view.offer?.userId === h.userId && !you && (
                       <>
                         {" "}
-                        <Badge tone="warning">Offer waiting</Badge>
+                        <Badge tone="neutral">Offer waiting</Badge>
                       </>
                     )}
                   </>
@@ -251,7 +255,7 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
                   h.profile.email,
                   formatPhone(h.profile.phone),
                   h.role === "admin" ? "Every event" : null,
-                  view.offer?.userId === h.userId ? `Offered the Account Host role ${short(view.offer.offeredOn)}, open through ${short(view.offer.expiresOn)}` : null,
+                  view.offer?.userId === h.userId && !you ? `Offered the Account Host role ${short(view.offer.offeredOn)}, open through ${short(view.offer.expiresOn)}` : null,
                 ]}
                 actions={
                   h.role === "admin" && you ? (
@@ -278,7 +282,7 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
                           Resend email
                         </RowButton>
                         <ConfirmButton
-                          action={withdrawAccountHostOffer.bind(null, org.id, name)}
+                          action={withdrawAccountHostOffer.bind(null, org.id, h.userId, name)}
                           label={`Withdraw offer… ${name}`}
                           title={`Withdraw your offer to ${name}?`}
                           points={[
@@ -300,8 +304,9 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
                         title={`Offer ${name} the Account Host role?`}
                         points={[
                           `${first(name)} would become the Account Host: they invite and remove co-hosts, get and renew the plan, and can hand the role on later`,
+                          `The plan stays as it is until it ends. After that, renewing it is up to ${first(name)}`,
                           "You'd become a co-host, with the same access to every event as now",
-                          `You can't take this back. Only ${first(name)} could offer it to you again, and as Account Host they could remove you as a co-host`,
+                          `Once ${first(name)} accepts, you can't take it back. Only they could offer it to you again, and as Account Host they could remove you as a co-host`,
                           `We'll email ${first(name)} a link. Nothing changes until they accept, within 14 days`,
                           ...(view.offer ? [`This withdraws your open offer to ${view.offer.name}, and we'll let them know`] : []),
                         ]}
@@ -774,7 +779,7 @@ function LeadSections({ view }: { view: LeadView }) {
               ))}
             </ul>
           ) : (
-            <p className="rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted">No Coordinators yet.</p>
+            <p className="rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted">No Coordinators yet</p>
           )}
           {view.full ? (
             <p className="text-sm text-muted">
@@ -882,15 +887,19 @@ function MyRoles({ roles, other }: { roles: MyRole[]; other: boolean }) {
 /** How your last offer of the Account Host role ended (shown for a week). */
 function offerOutcome(o: NonNullable<HostView["lastOffer"]>, isAccountHost: boolean) {
   const on = short(o.on);
+  const who = <strong className="font-semibold">{o.name}</strong>;
+  const still = isAccountHost ? " You're still the Account Host, and can offer the role again any time." : "";
   switch (o.outcome) {
     case "accepted":
-      return `${o.name} accepted your offer on ${on} and is the Account Host now.`;
+      return <>{who} accepted your offer on {on} and is the Account Host now.</>;
     case "declined":
-      return `${o.name} declined your offer of the Account Host role on ${on}.${isAccountHost ? " You're still the Account Host." : ""}`;
+      return <>{who} declined your offer of the Account Host role on {on}.{still}</>;
     case "expired":
-      return `Your offer to ${o.name} expired on ${on}.${isAccountHost ? " You're still the Account Host, and can offer the role again any time." : ""}`;
+      return <>Your offer to {who} expired on {on}.{still}</>;
     case "left":
-      return `Your offer to ${o.name} ended on ${on}, when they stopped being a co-host.`;
+      return <>Your offer to {who} ended on {on}, when they stopped being a co-host.</>;
+    case "ended":
+      return <>Your offer to {who} ended on {on}, when you removed them for a moment.{still}</>;
   }
 }
 
@@ -904,7 +913,13 @@ const listAnd = (items: string[]) => (items.length < 3 ? items.join(" and ") : `
 function JustRemoved({ removed }: { removed: Removal[] }) {
   const mine = removed.filter((r) => r.undoUntil);
   if (!mine.length) return null;
-  const people = [...new Map(mine.map((r) => [r.email, mine.filter((o) => o.email === r.email)])).values()];
+  // One note per removal: the same person's roles removed together (within a few seconds), not hours apart.
+  const people: Removal[][] = [];
+  for (const r of [...mine].sort((a, b) => a.removedAt.localeCompare(b.removedAt))) {
+    const group = people.find((g) => g[0].email === r.email && Math.abs(new Date(g[0].removedAt).getTime() - new Date(r.removedAt).getTime()) < 10_000);
+    if (group) group.push(r);
+    else people.push([r]);
+  }
   return (
     <section aria-label="Just removed" className="space-y-2">
       {people.map((rs) => {
@@ -913,7 +928,7 @@ function JustRemoved({ removed }: { removed: Removal[] }) {
         const several = rs.length > 1;
         return (
           <UndoNote
-            key={rs[0].email}
+            key={rs[0].id}
             until={until}
             minutes={UNDO_MINUTES}
             action={undoRemoval.bind(null, rs.map((r) => r.id))}
@@ -924,8 +939,7 @@ function JustRemoved({ removed }: { removed: Removal[] }) {
               {listAnd(rs.map((r) => (r.event ? `${ROLE[r.role]} of ${r.event.name}` : "co-host")))}.
             </p>
             <p className="text-muted">
-              Undo puts them back {several ? "in each role" : "as before"}, with their jobs. Anyone we emailed about it gets a short note that it was
-              undone.
+              Undo puts them back {several ? "in each role" : "as before"}, with their jobs, and tells anyone we emailed.
             </p>
           </UndoNote>
         );
@@ -943,8 +957,11 @@ function OfferToMe({ offer, orgName }: { offer: NonNullable<HostView["offerToMe"
       </h2>
       <ul className="list-disc space-y-1 pl-5 text-sm leading-6">
         <li>You&apos;d invite and remove {orgName}&apos;s co-hosts, get and renew the plan, and could hand the role on later</li>
+        <li>The plan stays as it is until it ends. After that, renewing it is up to you</li>
         <li>Your access to events stays the same</li>
-        <li>{offer.from} would become a co-host and couldn&apos;t take the role back. Only you could offer it to them again</li>
+        <li>
+          {offer.from} would become a co-host. Once you accept, they can&apos;t take the role back. Only you could offer it to them again
+        </li>
         <li>Nothing changes until you accept. The offer is open through {short(offer.expiresOn)}</li>
       </ul>
       <div className="flex flex-wrap gap-2">

@@ -8108,6 +8108,13 @@ do $$ begin
                        and organization_id = '7d000000-0000-0000-0000-000000000001'), 'a co-host can stop being a co-host';
 end $$;
 
+-- Test helper: an offer's token from its id (offer_account_host returns the id; the token
+-- itself is never readable from the browser). Dropped at the end of the handing-on tests.
+reset role;
+create function public.test_handoff_token(p_id uuid) returns uuid language sql security definer set search_path = public
+  as $f$ select token from account_host_handoffs where id = p_id $f$;
+grant execute on function public.test_handoff_token(uuid) to authenticated;
+set role authenticated;
 -- Handing the account on: only the Account Host offers, only to a co-host, and only they accept.
 set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":"tmco1@example.com"}';
 do $$
@@ -8128,7 +8135,7 @@ begin
   exception when sqlstate 'P0001' then ok := true;
   end;
   assert ok, 'the account goes only to a co-host';
-  perform set_config('tm.handoff', public.offer_account_host('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000002')::text, false);
+  perform set_config('tm.handoff', public.test_handoff_token(public.offer_account_host('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000002'))::text, false);
 end $$;
 set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000004","email":"tmvl@example.com"}';
 do $$
@@ -8235,11 +8242,70 @@ begin
   end;
   assert ok, 'Undo ends after 10 minutes';
 end $$;
+-- Someone who left on their own can't be "undone" back in, even by themselves.
+reset role;
+select set_config('tm.left', (select id from public.team_removals where user_id = '0000007e-0000-0000-0000-000000000006'
+                               and organization_id = '7d000000-0000-0000-0000-000000000001' and role = 'co_host')::text, false);
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000006","email":"tmpast@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.undo_team_removals(array[current_setting('tm.left')::uuid]);
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'leaving on your own can''t be undone';
+end $$;
+-- Invited again since: Undo is refused (the invitation decides).
+reset role;
+insert into public.event_staff (event_id, user_id, role)
+values ('7d000000-0000-0000-0000-0000000000e1', '0000007e-0000-0000-0000-000000000004', 'volunteer_director');
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":"tmco1@example.com"}';
+do $$ begin
+  delete from public.event_staff where user_id = '0000007e-0000-0000-0000-000000000004' and event_id = '7d000000-0000-0000-0000-0000000000e1';
+end $$;
+reset role;
+insert into public.invitations (event_id, email, role, invited_by)
+values ('7d000000-0000-0000-0000-0000000000e1', 'tmvl@example.com', 'volunteer_director', '0000007e-0000-0000-0000-000000000002');
+set role authenticated;
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.undo_team_removals(array(select id from public.team_removals
+      where user_id = '0000007e-0000-0000-0000-000000000004' and event_id = '7d000000-0000-0000-0000-0000000000e1'));
+  exception when sqlstate 'P0001' then ok := sqlerrm like '%invited again%';
+  end;
+  assert ok, 'someone invited again since can''t be undone back in';
+end $$;
+reset role;
+delete from public.invitations where event_id = '7d000000-0000-0000-0000-0000000000e1' and email = 'tmvl@example.com';
+insert into public.event_staff (event_id, user_id, role)
+values ('7d000000-0000-0000-0000-0000000000e1', '0000007e-0000-0000-0000-000000000003', 'section_lead');
+set role authenticated;
+-- One Undo is for one person: removals of two people can't be undone together.
+do $$ begin
+  delete from public.event_staff where user_id = '0000007e-0000-0000-0000-000000000003' and event_id = '7d000000-0000-0000-0000-0000000000e1';
+end $$;
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.undo_team_removals(array(select id from public.team_removals
+      where organization_id = '7d000000-0000-0000-0000-000000000001' and removed_by = '0000007e-0000-0000-0000-000000000002'
+        and removed_at > now() - interval '10 minutes'
+        and user_id in ('0000007e-0000-0000-0000-000000000004', '0000007e-0000-0000-0000-000000000003')));
+  exception when sqlstate 'P0001' then ok := sqlerrm like '%one person%';
+  end;
+  assert ok, 'Undo puts back one person at a time';
+end $$;
 
 -- Handing on: an offer is closed by its own token, by the Account Host (withdrawn) or the
 -- person it's for (declined), and by nobody else.
 do $$ begin
-  perform set_config('tm.handoff', public.offer_account_host('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000001')::text, false);
+  perform set_config('tm.handoff', public.test_handoff_token(public.offer_account_host('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000001'))::text, false);
 end $$;
 reset role;
 do $$ begin
@@ -8266,7 +8332,7 @@ set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":
 do $$
 declare ok boolean := false;
 begin
-  perform set_config('tm.handoff', public.offer_account_host('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000001')::text, false);
+  perform set_config('tm.handoff', public.test_handoff_token(public.offer_account_host('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000001'))::text, false);
   delete from public.organization_members where organization_id = '7d000000-0000-0000-0000-000000000001'
      and user_id = '0000007e-0000-0000-0000-000000000001';
   assert (select closed_reason from public.account_host_handoffs where organization_id = '7d000000-0000-0000-0000-000000000001'
@@ -8290,7 +8356,7 @@ end $$;
 -- Someone not involved can't close an offer.
 set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":"tmco1@example.com"}';
 do $$ begin
-  perform set_config('tm.handoff', public.offer_account_host('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000001')::text, false);
+  perform set_config('tm.handoff', public.test_handoff_token(public.offer_account_host('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000001'))::text, false);
 end $$;
 set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000004","email":"tmvl@example.com"}';
 do $$
@@ -8306,7 +8372,55 @@ set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":
 do $$ begin
   assert public.close_account_host_offer(current_setting('tm.handoff')::uuid) = 'withdrawn', 'the Account Host withdraws it';
 end $$;
+-- Withdraw and decline say which they mean, so a stale page can't do the other.
+do $$
+declare ok boolean := false;
+begin
+  perform set_config('tm.handoff', public.test_handoff_token(public.offer_account_host('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000001'))::text, false);
+  begin
+    perform public.close_account_host_offer(current_setting('tm.handoff')::uuid, 'declined');
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'the Account Host can''t decline their own offer';
+  assert public.my_account_host_offer('7d000000-0000-0000-0000-000000000001') is null, 'the offer''s token is only for the person it''s for';
+end $$;
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000001","email":"tmowner@example.com"}';
+do $$
+declare o record;
+begin
+  assert public.my_account_host_offer('7d000000-0000-0000-0000-000000000001') = current_setting('tm.handoff')::uuid, 'the person it''s for gets its token';
+  select * into o from public.get_account_host_offer(current_setting('tm.handoff')::uuid);
+  assert o.open and o.closed_reason is null and o.current_host is not null and not o.host_now, 'the link shows the open offer and who has the role';
+  assert public.accept_account_host(current_setting('tm.handoff')::uuid) = '7d000000-0000-0000-0000-000000000001', 'accepting returns the account';
+  assert public.accept_account_host(current_setting('tm.handoff')::uuid) is null, 'accepting again changes nothing (so nobody is emailed twice)';
+  select * into o from public.get_account_host_offer(current_setting('tm.handoff')::uuid);
+  assert o.accepted and o.host_now, 'the link then shows it was accepted';
+  -- An offer that runs out shows as expired.
+  perform set_config('tm.handoff', public.test_handoff_token(public.offer_account_host('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000002'))::text, false);
+end $$;
 reset role;
+update public.account_host_handoffs set expires_at = now() - interval '1 minute' where token = current_setting('tm.handoff')::uuid;
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":"tmco1@example.com"}';
+do $$
+declare o record;
+begin
+  select * into o from public.get_account_host_offer(current_setting('tm.handoff')::uuid);
+  assert not o.open and o.closed_reason = 'expired', 'an offer that ran out says it expired';
+end $$;
+-- Signed-out visitors can't read offers at all.
+set role anon;
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform 1 from public.account_host_handoffs;
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'offers aren''t readable signed out';
+end $$;
+reset role;
+drop function public.test_handoff_token(uuid);
 delete from public.organizations where id = '7d000000-0000-0000-0000-000000000001';
 
 -- ---------------------------------------------------------------------------

@@ -123,6 +123,9 @@ tap", "directions", "in one step", "the order is filled in", "add a plan", "last
 - **Again in:** My team built ("can't see those events anymore" and "only hosts see these details"
   were both untrue in the database). A privacy sentence gets the same check as a feature claim:
   find the policy that keeps it.
+- **Again in:** My team part 3 built ("puts them back as before" while the offer they'd had stayed
+  ended, and screens still said they "stopped being a co-host"). **Sharper rule:** after an Undo
+  or any other way back, re-read every message about the thing undone; each must still be true.
 
 ## L9. Warnings are earned
 Amber and warning icons only for things that are due soon or block the current step. Anything
@@ -130,6 +133,8 @@ else is a calm "Before contest day" item with a due date and the reason for the 
 - **Why:** warnings that cry wolf get ignored when one matters.
 - **Seen in:** volunteer jobs (amber marks with no reason), band contest v1 and v2 (check-in stops
   flagged a month early, unexplained "due Mar 6").
+- **Again in:** My team part 3 built ("Offer waiting" in amber for a normal pending offer).
+  **Sharper rule:** waiting on someone else is neutral, never amber; amber means you need to act.
 
 ## L10. No doors to empty rooms, no dead ends
 Don't offer a link or action before there's something behind it (a volunteer link with no jobs,
@@ -193,6 +198,10 @@ a state that hasn't started (no "Close" before it opens). Moving the date, or st
 moves everything waiting on it.
 - **Seen in:** band PR 2 built ("Registration open" and "Close registration" before the opening
   day, 8 of 8 reviewers; "Open now" left scheduled invitations waiting for the old date).
+- **Again in:** My team part 3 built (when Undo's 10 minutes ran out, the note went away but rows
+  still said "Undo is at the top of the page" until a reload). **Sharper rule:** anything that ends
+  on a timer refreshes the page when it ends, so every line about it changes together, and focus
+  moves somewhere sensible if it was on the part that went away.
 
 ## L17. When a step is ready, its one action comes first
 Once everything a step needs is in place, the button that finishes it moves to the top of the
@@ -252,5 +261,5 @@ before the panel sees it.
 - [ ] **L21** Nothing under a pinned bar (end of page, keyboard focus); a scrolling panel keeps its heading and says "More below"
 - [ ] **L17** A ready step's action is at the top; a blocked one names its fix there
 - [ ] **L18** Sibling steps save the same way, with Next in the same place
-- [ ] **L19** Every date-based state (opens later, scheduled) shows on every badge, button, and job
+- [ ] **L19** Every date-based state (opens later, scheduled) shows on every badge, button, and job; a timer that ends refreshes the page
 - [ ] `npm run lint` passes (includes the automatic checks)
