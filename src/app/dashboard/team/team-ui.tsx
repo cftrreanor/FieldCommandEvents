@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ActionForm } from "@/components/action-form";
 import { CopyLink } from "@/components/copy-link";
 import { SubmitButton } from "@/components/submit-button";
@@ -516,5 +516,64 @@ export function InviteAgainButton({
         </ActionForm>
       </Window>
     </>
+  );
+}
+
+/**
+ * Right after removing someone: what was removed and one Undo, until the time runs out (shown in
+ * the viewer's own clock time, then the note goes away). A fresh note takes focus so keyboard and
+ * screen-reader users find it (design review 2026-11-07).
+ */
+export function UndoNote({
+  until,
+  minutes,
+  action,
+  name,
+  children,
+}: {
+  until: string;
+  /** How long Undo lasts: a note with nearly all of it left was just made. */
+  minutes: number;
+  action: Action;
+  name: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    const end = new Date(until).getTime();
+    // Clock time only after hydrating (the server's time zone isn't the viewer's).
+    const first = setTimeout(() => setNow(Date.now()), 0);
+    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    const done = setTimeout(() => setNow(end), Math.max(0, end - Date.now()));
+    // After the window closes and the page updates (which moves focus to the section heading).
+    const fresh = end - Date.now() > (minutes * 60 - 30) * 1000;
+    const focus = fresh ? setTimeout(() => ref.current?.focus(), 150) : undefined;
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+      clearTimeout(done);
+      clearTimeout(focus);
+    };
+  }, [until, minutes]);
+  if (now !== null && now >= new Date(until).getTime()) return null;
+  const time = now === null ? null : new Date(until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return (
+    <div
+      ref={ref}
+      tabIndex={-1}
+      role="status"
+      className="flex flex-col gap-3 rounded-lg border border-brand/40 bg-brand-soft px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-brand sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div className="text-sm leading-6">
+        {children}
+        <p className="text-muted">{time ? `You can undo this until ${time}.` : "You can undo this for a few minutes."}</p>
+      </div>
+      <ActionForm action={action} resetOnSuccess={false} className="contents">
+        <SubmitButton variant="secondary" pendingText="Undoing…" className={`${ROW_BUTTON} shrink-0`} aria-label={`Undo: put ${name} back`}>
+          Undo
+        </SubmitButton>
+      </ActionForm>
+    </div>
   );
 }

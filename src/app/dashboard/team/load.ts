@@ -53,7 +53,10 @@ export type Removal = {
 export const UNDO_MINUTES = 10;
 
 /** An open offer of the Account Host role. */
-export type HostOffer = { userId: string; name: string; offeredAt: string; expiresAt: string };
+/** Dates are calendar days in the account's time zone ("2026-11-21"). */
+export type HostOffer = { userId: string; name: string; offeredOn: string; expiresOn: string };
+/** How your last offer of the Account Host role ended, for a week afterward. */
+export type OfferOutcome = { name: string; outcome: "accepted" | "declined" | "expired" | "left"; on: string };
 export type Spots = {
   used: number;
   invited: number;
@@ -80,7 +83,9 @@ export type HostView = {
   /** The Account Host's open offer of their role to a co-host, if any. */
   offer: HostOffer | null;
   /** An open offer of the Account Host role to you (a co-host), with its link. */
-  offerToMe: { token: string; from: string; expiresAt: string } | null;
+  offerToMe: { token: string; from: string; expiresOn: string } | null;
+  /** Your last offer's outcome (accepted, declined, expired, or ended because they left). */
+  lastOffer: OfferOutcome | null;
   /** Each upcoming event's jobs. */
   jobs: EventJobs;
   /** Jobs left with no Coordinator after one left or was removed in the last 30 days. */
@@ -256,7 +261,7 @@ const removedSince = () => new Date(Date.now() - REMOVED_RECENTLY_DAYS * 86_400_
 export async function loadMyTeam(userId: string, origin: string, accountId?: string | null): Promise<MyTeam> {
   const supabase = await createClient();
   const [membersRes, mineRes] = await Promise.all([
-    supabase.from("organization_members").select("organization_id, role, organizations(name)").eq("user_id", userId),
+    supabase.from("organization_members").select("organization_id, role, organizations(name, default_timezone)").eq("user_id", userId),
     supabase
       .from("event_staff")
       .select("role, event_id, events(id, name, starts_on, ends_on, timezone, organization_id)")
@@ -264,7 +269,11 @@ export async function loadMyTeam(userId: string, origin: string, accountId?: str
   ]);
   check([membersRes, mineRes]);
   const [memberData, mine] = [membersRes.data, mineRes.data];
-  const memberships = (memberData ?? []) as unknown as { organization_id: string; role: "owner" | "admin"; organizations: { name: string } | null }[];
+  const memberships = (memberData ?? []) as unknown as {
+    organization_id: string;
+    role: "owner" | "admin";
+    organizations: { name: string; default_timezone: string | null } | null;
+  }[];
   const myStaff = ((mine ?? []) as unknown as { role: StaffRole; event_id: string; events: (EventRow & { organization_id: string }) | null }[]).filter(
     (s) => s.events && !toEvent(s.events).ended,
   );
@@ -287,7 +296,8 @@ export async function loadMyTeam(userId: string, origin: string, accountId?: str
   if (!current) return { me: userId, accounts, current, host: null, lead: null, myRoles: [] };
 
   if (current.role !== "team") {
-    return { me: userId, accounts, current, host: await loadHostView(current, userId, origin), lead: null, myRoles: [] };
+    const timezone = memberships.find((m) => m.organization_id === current.id)?.organizations?.default_timezone || "America/Chicago";
+    return { me: userId, accounts, current, host: await loadHostView({ ...current, timezone }, userId, origin), lead: null, myRoles: [] };
   }
 
   // An account where you're on event teams: Coordinators on the events you lead, and your own roles.
@@ -331,7 +341,7 @@ async function loadJobs(eventIds: string[]): Promise<EventJobs> {
   return jobs;
 }
 
-async function loadHostView(org: { id: string; name: string }, userId: string, origin: string): Promise<HostView> {
+async function loadHostView(org: { id: string; name: string; timezone: string }, userId: string, origin: string): Promise<HostView> {
   const supabase = await createClient();
   const [members, eventsRes, invitesRes, removalsRes, spotsRes, offersRes] = await Promise.all([
     supabase.from("organization_members").select("user_id, role, profiles(full_name, email, phone)").eq("organization_id", org.id).order("created_at"),
@@ -349,15 +359,14 @@ async function loadHostView(org: { id: string; name: string }, userId: string, o
       .gte("removed_at", removedSince())
       .order("removed_at", { ascending: false }),
     supabase.rpc("team_spots", { p_org: org.id }),
-    // An open offer of the Account Host role (one at a time).
+    // Offers of the Account Host role from the last few weeks: the open one, and how the last one ended.
     supabase
       .from("account_host_handoffs")
-      .select("to_user, token, created_at, expires_at")
+      .select("to_user, offered_by, created_at, expires_at, accepted_at, cancelled_at, closed_reason")
       .eq("organization_id", org.id)
-      .is("accepted_at", null)
-      .is("cancelled_at", null)
-      .gt("expires_at", new Date().toISOString())
-      .maybeSingle(),
+      .gte("created_at", new Date(Date.now() - 30 * 86_400_000).toISOString())
+      .order("created_at", { ascending: false })
+      .limit(10),
   ]);
   // A failed load never shows as an empty team or a team with no limit.
   const failed = [members, eventsRes, invitesRes, removalsRes, spotsRes, offersRes].find((r) => r.error)?.error;
@@ -408,20 +417,49 @@ async function loadHostView(org: { id: string; name: string }, userId: string, o
   const jobs = await loadJobs(upcoming.map((e) => e.id));
   const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const packages = (await loadTiers()).filter((t) => t.kind === "package");
-  const openOffer = offersRes.data as { to_user: string; token: string; created_at: string; expires_at: string } | null;
+  type OfferRow = {
+    to_user: string;
+    offered_by: string | null;
+    created_at: string;
+    expires_at: string;
+    accepted_at: string | null;
+    cancelled_at: string | null;
+    closed_reason: string | null;
+  };
+  const offerRows = (offersRes.data ?? []) as OfferRow[];
+  const now = new Date().toISOString();
+  const localDay = (iso: string) => utcToZonedDate(iso, org.timezone);
+  const openOffer = offerRows.find((o) => !o.accepted_at && !o.cancelled_at && o.expires_at > now) ?? null;
   const offeredTo = openOffer ? hosts.find((h) => h.userId === openOffer.to_user) : null;
+  // The token of an offer to you comes from the server (my_account_host_offer), never the table.
+  const myToken = openOffer?.to_user === userId ? ((await supabase.rpc("my_account_host_offer", { p_org: org.id })).data as string | null) : null;
+  // Your last offer, if it ended in the past week (not the ones you withdrew or replaced yourself).
+  const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const last = offerRows.find((o) => o.offered_by === userId && o !== openOffer);
+  const lastEnd = last ? (last.accepted_at ?? last.cancelled_at ?? last.expires_at) : null;
+  const lastOutcome: OfferOutcome["outcome"] | null = !last
+    ? null
+    : last.accepted_at
+      ? "accepted"
+      : last.closed_reason === "declined" || last.closed_reason === "left"
+        ? last.closed_reason
+        : !last.cancelled_at && last.expires_at <= now
+          ? "expired"
+          : null;
+  const lastName = last ? (hosts.find((h) => h.userId === last.to_user) ? personName(hosts.find((h) => h.userId === last.to_user)!.profile) : "the co-host") : "";
   const s = (spotData ?? {}) as { used?: number; invited?: number; max?: number | null; plan?: string | null; event_staff?: boolean };
   return {
     kind: "host",
     org: { id: org.id, name: org.name },
     offer:
       openOffer && offeredTo
-        ? { userId: openOffer.to_user, name: personName(offeredTo.profile), offeredAt: openOffer.created_at, expiresAt: openOffer.expires_at }
+        ? { userId: openOffer.to_user, name: personName(offeredTo.profile), offeredOn: localDay(openOffer.created_at), expiresOn: localDay(new Date(new Date(openOffer.expires_at).getTime() - 1000).toISOString()) }
         : null,
     offerToMe:
-      openOffer && openOffer.to_user === userId && accountHost
-        ? { token: openOffer.token, from: personName(accountHost.profile), expiresAt: openOffer.expires_at }
+      openOffer && myToken && accountHost
+        ? { token: myToken, from: personName(accountHost.profile), expiresOn: localDay(new Date(new Date(openOffer.expires_at).getTime() - 1000).toISOString()) }
         : null,
+    lastOffer: last && lastOutcome && lastEnd && lastEnd >= weekAgo ? { name: lastName, outcome: lastOutcome, on: localDay(lastEnd) } : null,
     isAccountHost: accountHost?.userId === userId,
     accountHost,
     hosts,

@@ -74,20 +74,40 @@ export function removedEmail(o: {
   };
 }
 
-/** To a co-host offered the Account Host role: what changes, and the link to accept or decline. */
-export function hostOfferEmail(o: { from: string; organization: string; url: string; expiresAt: string }) {
+/**
+ * To a co-host offered the Account Host role: what changes, that it's one-way, and the link to
+ * accept or decline. Design review 2026-11-07, finding 1.
+ */
+export function hostOfferEmail(o: { from: string; organization: string; url: string; /** "2026-11-21", the account's time zone. */ lastDay: string }) {
   return {
     subject: `${o.from} offered you the Account Host role for ${o.organization}`,
     ...emailLayout({
       heading: `Become the Account Host for ${o.organization}`,
       paragraphs: [
         `${o.from} would like you to take over as the Account Host for ${o.organization}.`,
-        "As the Account Host, you invite and remove co-hosts, and you can hand the role on later. Your access to events stays the same.",
-        `${o.from} becomes a co-host, with the same access to every event as now.`,
+        "As the Account Host, you invite and remove co-hosts, you get and renew the plan, and you can hand the role on later. Your access to events stays the same.",
+        `${o.from} becomes a co-host, with the same access to every event as now. They can't take the role back: only you could offer it to them again.`,
         "Nothing changes until you accept.",
       ],
       button: { label: "Accept or decline", url: o.url },
-      footer: `This offer works until ${formatDate(o.expiresAt.slice(0, 10))}. It's only for you, so please don't forward it. If you weren't expecting it, you can ignore this email.`,
+      footer: `This offer is open through ${formatDate(o.lastDay)}. It's only for you, so please don't forward it. If you weren't expecting it, you can ignore this email.`,
+    }),
+  };
+}
+
+/** To a co-host whose offer was withdrawn, or replaced by an offer to someone else. */
+export function hostOfferEndedEmail(o: { from: string; organization: string; reason: "withdrawn" | "replaced" }) {
+  const title = `${o.from} withdrew the Account Host offer`;
+  return {
+    subject: title,
+    ...emailLayout({
+      heading: title,
+      paragraphs: [
+        o.reason === "replaced"
+          ? `${o.from} offered the Account Host role for ${o.organization} to someone else, so the link we sent you no longer works.`
+          : `${o.from} withdrew their offer of the Account Host role for ${o.organization}, so the link we sent you no longer works.`,
+        "You're still a co-host, with the same access as before.",
+      ],
     }),
   };
 }
@@ -101,7 +121,7 @@ export function hostOfferAnsweredEmail(o: { who: string; organization: string; a
           heading: `${o.who} is now the Account Host`,
           paragraphs: [
             `${o.who} accepted your offer. They're the Account Host for ${o.organization} now, and you're a co-host, with the same access to every event as before.`,
-            `Only ${o.who} can invite or remove co-hosts from now on.`,
+            `Only ${o.who} can invite or remove co-hosts, or get and renew the plan, from now on.`,
           ],
           button: { label: "Open My team", url: o.url },
         }),
@@ -118,7 +138,7 @@ export function hostOfferAnsweredEmail(o: { who: string; organization: string; a
 
 /** Undoing a removal: to the person (if they were told they were removed) or to those told about the gap. */
 export function undoneEmail(o: { who: string; remover: string; roles: string[]; toPerson: boolean }) {
-  const what = o.roles.join(" and ");
+  const what = o.roles.length < 3 ? o.roles.join(" and ") : `${o.roles.slice(0, -1).join(", ")}, and ${o.roles[o.roles.length - 1]}`;
   return o.toPerson
     ? {
         subject: `You're still ${what}`,
