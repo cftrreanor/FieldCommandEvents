@@ -8,7 +8,7 @@ import { friendlyDbError, type ActionState } from "@/lib/action-state";
 import { requireUser } from "@/lib/auth";
 import { getOrigin } from "@/lib/data";
 import { sendEmail } from "@/lib/email";
-import { leftEventEmail, removedEmail } from "@/lib/team-emails";
+import { hostOfferAnsweredEmail, hostOfferEmail, hostOfferEndedEmail, leftEventEmail, removedEmail, undoneEmail } from "@/lib/team-emails";
 import { invitationEmail, invitationEmailKey, type InvitationDetails } from "@/lib/invitation-email";
 import { loadSystemEmail } from "@/lib/system-email-overrides";
 import { hasBands, leadWords } from "@/lib/event-types";
@@ -337,9 +337,10 @@ export async function removeFromEvents(userId: string, name: string, _prev: Acti
   const label = { volunteer_director: "Volunteer Lead", section_lead: "Coordinator" } as const;
   // The email names what was actually removed (not what was asked for).
   const roleNames = data.map((d) => `${label[d.role as StaffRole]} of ${(events ?? []).find((e) => e.id === d.event_id)?.name ?? "an event"}`);
-  await tellRemoved(formData, userId, (events ?? [])[0]?.organization_id ?? null, roleNames);
+  const toldPerson = await tellRemoved(formData, userId, (events ?? [])[0]?.organization_id ?? null, roleNames);
   // The event's Volunteer Leads (and the Account Host, if someone else did it) hear about the gap.
   const remover = await requireUser();
+  const toldHosts: Record<string, string[]> = {};
   const { data: removerProfile } = await supabase.from("profiles").select("full_name").eq("id", remover.id).maybeSingle();
   const led = (ledRows ?? []) as unknown as { event_id: string; stations: { name: string } | null }[];
   await Promise.all(
@@ -351,8 +352,15 @@ export async function removeFromEvents(userId: string, name: string, _prev: Acti
         d.role as StaffRole,
         d.role === "section_lead" ? led.filter((l) => l.event_id === d.event_id).map((l) => l.stations?.name ?? "").filter(Boolean) : [],
         { id: remover.id, name: removerProfile?.full_name || remover.email },
+        (toldHosts[d.event_id] ??= []),
       ),
     ),
+  );
+  await noteWhoWasTold(
+    userId,
+    remover.id,
+    data.map((d) => ({ eventId: d.event_id, role: d.role as string, hosts: toldHosts[d.event_id] ?? [] })),
+    toldPerson,
   );
   revalidatePath("/dashboard", "layout");
   const removed = new Set(data.map((d) => d.event_id)).size;
@@ -375,7 +383,10 @@ export async function removeAccountCoHost(orgId: string, userId: string, name: s
     revalidatePath("/dashboard", "layout");
     return { error: userId === user.id ? "You're no longer a co-host here. The page has been refreshed." : `${name} isn't a co-host anymore. The page has been refreshed.` };
   }
-  if (userId !== user.id && formData) await tellRemoved(formData, userId, orgId, ["co-host"]);
+  if (userId !== user.id && formData) {
+    const told = await tellRemoved(formData, userId, orgId, ["co-host"]);
+    await noteWhoWasTold(userId, user.id, [{ eventId: null, role: "co_host", hosts: [] }], told, orgId);
+  }
   revalidatePath("/dashboard", "layout");
   // Leaving yourself: the account's events are no longer yours to see.
   if (userId === user.id) redirect("/dashboard");
@@ -430,6 +441,8 @@ async function tellHostsSomeoneLeft(
   role: StaffRole,
   jobs: string[],
   removedBy: { id: string; name: string } | null = null,
+  /** Filled with the addresses the email went to (so Undo can tell them). */
+  sentTo: string[] = [],
 ): Promise<string | null> {
   const admin = createAdminClient();
   const { data: event } = await admin.from("events").select("id, name, starts_on, ends_on, organization_id").eq("id", eventId).maybeSingle();
@@ -457,14 +470,18 @@ async function tellHostsSomeoneLeft(
     removedBy: removedBy?.name ?? null,
   });
   const sent = await Promise.all([...to].map((addr) => sendEmail({ to: addr, subject, html, text })));
+  sentTo.push(...[...to].filter((_, i) => sent[i]));
   if (!sent.some(Boolean)) return null;
   const lead = leadsToTell.length ? `the event's Volunteer Lead${leadsToTell.length > 1 ? "s" : ""}` : null;
   return [tellOwner ? "the Account Host" : null, lead].filter(Boolean).join(" and ") || null;
 }
 
-/** Email someone that they were removed, when the remover ticked "Let them know by email". */
-async function tellRemoved(formData: FormData, removedId: string, orgId: string | null, roles: string[]) {
-  if (formData.get("notify") !== "on") return;
+/**
+ * Email someone that they were removed, when the remover ticked "Let them know by email".
+ * Returns the address it went to, or null.
+ */
+async function tellRemoved(formData: FormData, removedId: string, orgId: string | null, roles: string[]): Promise<string | null> {
+  if (formData.get("notify") !== "on") return null;
   const user = await requireUser();
   const admin = createAdminClient();
   const [{ data: person }, { data: me }, { data: org }] = await Promise.all([
@@ -472,7 +489,7 @@ async function tellRemoved(formData: FormData, removedId: string, orgId: string 
     admin.from("profiles").select("full_name").eq("id", user.id).maybeSingle(),
     orgId ? admin.from("organizations").select("name").eq("id", orgId).maybeSingle() : Promise.resolve({ data: null }),
   ]);
-  if (!person?.email) return;
+  if (!person?.email) return null;
   // The roles they keep on this account's events that aren't over, so the email doesn't say they're off the team.
   const today = new Date().toISOString().slice(0, 10);
   const { data: kept } = orgId
@@ -492,5 +509,277 @@ async function tellRemoved(formData: FormData, removedId: string, orgId: string 
     keeps,
     contact: user.email,
   });
-  await sendEmail({ to: person.email, subject, html, text, replyTo: user.email });
+  return (await sendEmail({ to: person.email, subject, html, text, replyTo: user.email })) ? person.email : null;
+}
+
+/**
+ * Note who was emailed about a removal, so Undo can send them a short "never mind"
+ * (team_removal_notices: server only). The removals are the ones just recorded by the database.
+ */
+async function noteWhoWasTold(
+  userId: string,
+  removerId: string,
+  removed: { eventId: string | null; role: string; hosts: string[] }[],
+  person: string | null,
+  orgId?: string,
+) {
+  if (!person && !removed.some((r) => r.hosts.length)) return;
+  const admin = createAdminClient();
+  let query = admin
+    .from("team_removals")
+    .select("id, event_id, role")
+    .eq("user_id", userId)
+    .eq("removed_by", removerId)
+    .gte("removed_at", new Date(Date.now() - 5 * 60_000).toISOString());
+  if (orgId) query = query.eq("organization_id", orgId);
+  const { data: rows } = await query;
+  const notices = (rows ?? []).flatMap((row) => {
+    const match = removed.find((r) => r.eventId === row.event_id && r.role === row.role);
+    if (!match) return [];
+    return [
+      ...(person ? [{ removal_id: row.id, email: person.toLowerCase(), to_person: true }] : []),
+      ...match.hosts.map((email) => ({ removal_id: row.id, email: email.toLowerCase(), to_person: false })),
+    ];
+  });
+  if (!notices.length) return;
+  const { error } = await admin.from("team_removal_notices").upsert(notices, { onConflict: "removal_id,email", ignoreDuplicates: true });
+  // Undo would then send no "never mind" emails; say so in the server log.
+  if (error) console.error("Couldn't note who was told about a removal", error);
+}
+
+/** The part-3 functions' messages are written for people (even "not allowed" ones): show them. */
+function teamDbError(error: { code?: string; message: string }) {
+  return error.code === "42501" && !/^(permission denied|new row violates)/i.test(error.message) ? error.message : friendlyDbError(error);
+}
+
+// -----------------------------------------------------------------------------
+// Handing on the Account Host role (20270113000000_my_team.sql, 20270120000000_undo_and_handing_on.sql:
+// offer_account_host, close_account_host_offer, accept_account_host). Tokens stay on the server.
+// -----------------------------------------------------------------------------
+
+/** The Account Host offers their role to a co-host, who accepts by email. A replaced offer's co-host is told. */
+export async function offerAccountHost(orgId: string, userId: string, name: string): Promise<ActionState> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const admin = createAdminClient();
+  const before = await openOffer(orgId);
+  // The offer's id comes back, never its token: that's read here, on the server, for the email.
+  const { data: id, error } = await supabase.rpc("offer_account_host", { p_org: orgId, p_user: userId });
+  if (error) return { error: teamDbError(error) };
+  if (before && before.to_user !== userId) await tellOfferEnded(orgId, before.to_user, user, "replaced");
+  const { data: offer } = await admin.from("account_host_handoffs").select("token, expires_at").eq("id", id as string).maybeSingle();
+  revalidatePath("/dashboard/team");
+  const sent = offer ? await sendOfferEmail(orgId, userId, offer.token, offer.expires_at, user) : false;
+  // The first email counts toward Resend's wait.
+  if (sent) await admin.from("account_host_handoffs").update({ last_sent_at: new Date().toISOString() }).eq("id", id as string);
+  return {
+    ok: true,
+    message: sent
+      ? `Offer sent to ${name}. Nothing changes until they accept.`
+      : `Offer saved, but the email didn't go out. Ask ${name} to open My team to accept.`,
+  };
+}
+
+/** Send the offer email again (the Account Host only: the database checks it's still theirs). */
+export async function resendAccountHostOffer(orgId: string, name: string): Promise<ActionState> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const { data: isOwner } = await supabase.rpc("is_org_owner", { org: orgId });
+  const offer = isOwner ? await openOffer(orgId) : null;
+  if (!offer || offer.offered_by !== user.id) {
+    revalidatePath("/dashboard/team");
+    return { error: "That offer isn't open anymore. The page has been refreshed." };
+  }
+  // One email every RESEND_MINUTES: claim the send first, so two quick clicks send one email.
+  const admin = createAdminClient();
+  const cutoff = new Date(Date.now() - RESEND_MINUTES * 60_000).toISOString();
+  const { data: claimed } = await admin
+    .from("account_host_handoffs")
+    .update({ last_sent_at: new Date().toISOString() })
+    .eq("token", offer.token)
+    .or(`last_sent_at.is.null,last_sent_at.lt.${cutoff}`)
+    .select("token");
+  if (!claimed?.length) {
+    // Not an error: the email already went out. Say so, and when they can send it again.
+    const wait = Math.max(1, Math.ceil((new Date(offer.last_sent_at ?? Date.now()).getTime() + RESEND_MINUTES * 60_000 - Date.now()) / 60_000));
+    return {
+      ok: true,
+      message: `Already sent to ${name} a few minutes ago. Ask them to check their spam folder. You can send it again in about ${wait === 1 ? "1 minute" : `${wait} minutes`}.`,
+    };
+  }
+  const sent = await sendOfferEmail(orgId, offer.to_user, offer.token, offer.expires_at, user);
+  // Didn't go out: don't make them wait to try again.
+  if (!sent) await admin.from("account_host_handoffs").update({ last_sent_at: offer.last_sent_at }).eq("token", offer.token);
+  return sent ? { ok: true, message: `Offer email sent to ${name} again. If it doesn't arrive in a few minutes, ask them to check their spam folder.` } : { error: `The email didn't go out. Ask ${name} to open My team to accept.` };
+}
+
+/** How long Resend email waits between sends of the same offer. */
+const RESEND_MINUTES = 10;
+
+/** The open offer for an account, read on the server (its token never reaches the page). */
+async function openOffer(orgId: string) {
+  const { data } = await createAdminClient()
+    .from("account_host_handoffs")
+    .select("token, to_user, offered_by, expires_at, last_sent_at")
+    .eq("organization_id", orgId)
+    .is("accepted_at", null)
+    .is("cancelled_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+  return data as { token: string; to_user: string; offered_by: string | null; expires_at: string; last_sent_at: string | null } | null;
+}
+
+async function sendOfferEmail(orgId: string, userId: string, token: string, expiresAt: string, from: { id: string; email: string }) {
+  const admin = createAdminClient();
+  const [{ data: person }, { data: me }, { data: org }] = await Promise.all([
+    admin.from("profiles").select("email").eq("id", userId).maybeSingle(),
+    admin.from("profiles").select("full_name").eq("id", from.id).maybeSingle(),
+    admin.from("organizations").select("name, default_timezone").eq("id", orgId).maybeSingle(),
+  ]);
+  if (!person?.email) return false;
+  const { subject, html, text } = hostOfferEmail({
+    from: me?.full_name || from.email,
+    organization: org?.name ?? "your account",
+    url: `${await getOrigin()}/account-host/${token}`,
+    // The last day it's open, in the account's time zone.
+    lastDay: utcToZonedDate(new Date(new Date(expiresAt).getTime() - 1000).toISOString(), org?.default_timezone || "America/Chicago"),
+  });
+  return sendEmail({ to: person.email, subject, html, text, replyTo: from.email });
+}
+
+/** Tell a co-host their offer was withdrawn, or replaced by an offer to someone else. */
+async function tellOfferEnded(orgId: string, userId: string, from: { id: string; email: string }, reason: "withdrawn" | "replaced") {
+  const admin = createAdminClient();
+  const [{ data: person }, { data: me }, { data: org }] = await Promise.all([
+    admin.from("profiles").select("email").eq("id", userId).maybeSingle(),
+    admin.from("profiles").select("full_name").eq("id", from.id).maybeSingle(),
+    admin.from("organizations").select("name").eq("id", orgId).maybeSingle(),
+  ]);
+  if (!person?.email) return;
+  const { subject, html, text } = hostOfferEndedEmail({ from: me?.full_name || from.email, organization: org?.name ?? "your account", reason });
+  await sendEmail({ to: person.email, subject, html, text, replyTo: from.email });
+}
+
+/** The Account Host withdraws their open offer to this co-host (the one on screen); the co-host is told. */
+export async function withdrawAccountHostOffer(orgId: string, userId: string, name: string): Promise<ActionState> {
+  const user = await requireUser();
+  const offer = await openOffer(orgId);
+  if (!offer || offer.to_user !== userId) {
+    revalidatePath("/dashboard/team");
+    return { error: "That offer isn't open anymore. The page has been refreshed." };
+  }
+  // The database checks it's the Account Host closing it.
+  const { error } = await (await createClient()).rpc("close_account_host_offer", { p_token: offer.token, p_as: "withdrawn" });
+  if (error) return { error: teamDbError(error) };
+  await tellOfferEnded(orgId, offer.to_user, user, "withdrawn");
+  revalidatePath("/dashboard", "layout");
+  return { ok: true, message: `Offer withdrawn. We've let ${name} know. You're still the Account Host.` };
+}
+
+/** The co-host declines the offer sent to them (by its token); the Account Host is told. */
+export async function declineAccountHost(token: string): Promise<ActionState> {
+  const user = await requireUser();
+  if (!UUID.test(token)) return { error: "This link isn't valid." };
+  const supabase = await createClient();
+  const { data: offer } = await supabase.rpc("get_account_host_offer", { p_token: token });
+  const orgId = (offer as { organization_id: string | null }[] | null)?.[0]?.organization_id;
+  const { error } = await supabase.rpc("close_account_host_offer", { p_token: token, p_as: "declined" });
+  if (error) return { error: teamDbError(error) };
+  if (orgId) await tellAccountHostAnswered(orgId, user.id, user.email, false);
+  revalidatePath("/dashboard", "layout");
+  return { ok: true, message: "You declined. You're still a co-host, and we've let the Account Host know." };
+}
+
+/** The co-host accepts: they become the Account Host, and the old one a co-host. */
+export async function acceptAccountHost(token: string): Promise<ActionState> {
+  const user = await requireUser();
+  if (!UUID.test(token)) return { error: "This link isn't valid." };
+  const supabase = await createClient();
+  const { data: orgId, error } = await supabase.rpc("accept_account_host", { p_token: token });
+  if (error) return { error: teamDbError(error) };
+  if (!orgId) {
+    // Already accepted (a second tap, another tab): nobody is emailed twice.
+    const { data: offer } = await supabase.rpc("get_account_host_offer", { p_token: token });
+    const org = (offer as { organization_id: string | null }[] | null)?.[0]?.organization_id;
+    redirect(org ? `/dashboard/team?account=${org}` : "/dashboard/team");
+  }
+  await tellAccountHostAnswered(orgId as string, user.id, user.email, true);
+  revalidatePath("/dashboard", "layout");
+  // My team then says what changed (see the note under its heading).
+  redirect(`/dashboard/team?account=${orgId}&became=host`);
+}
+
+/** Email whoever made the offer that it was accepted or declined. */
+async function tellAccountHostAnswered(orgId: string, userId: string, email: string, accepted: boolean) {
+  const admin = createAdminClient();
+  const [{ data: offer }, { data: me }, { data: org }] = await Promise.all([
+    admin
+      .from("account_host_handoffs")
+      .select("profiles!account_host_handoffs_offered_by_fkey(email)")
+      .eq("organization_id", orgId)
+      .eq("to_user", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    admin.from("profiles").select("full_name").eq("id", userId).maybeSingle(),
+    admin.from("organizations").select("name").eq("id", orgId).maybeSingle(),
+  ]);
+  const to = (offer as unknown as { profiles: { email: string } | null } | null)?.profiles?.email;
+  if (!to) return;
+  const { subject, html, text } = hostOfferAnsweredEmail({
+    who: me?.full_name || email,
+    organization: org?.name ?? "your account",
+    accepted,
+    url: `${await getOrigin()}/dashboard/team?account=${orgId}`,
+  });
+  await sendEmail({ to, subject, html, text, replyTo: email });
+}
+
+/**
+ * Undo removing someone, within UNDO_MINUTES and only by whoever removed them: they're put back
+ * in each role (with their jobs), and anyone emailed about the removal gets a short "never mind".
+ */
+export async function undoRemoval(removalIds: string[]): Promise<ActionState> {
+  const user = await requireUser();
+  const ids = removalIds.filter((id) => UUID.test(id));
+  if (!ids.length) return { error: "Nothing to undo." };
+  const admin = createAdminClient();
+  // Read before undoing: undoing clears the removal and what it noted.
+  const { data: notices } = await admin.from("team_removal_notices").select("removal_id, email, to_person").in("removal_id", ids);
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("undo_team_removals", { p_ids: ids });
+  if (error) return { error: teamDbError(error) };
+  const restored = (data ?? []) as { removal_id: string; full_name: string; role: string; event_name: string | null }[];
+  if (!restored.length) return { error: "That can't be undone anymore. Use Invite again instead." };
+  const roleName = (r: (typeof restored)[number]) =>
+    r.role === "co_host" ? "a co-host" : `${r.role === "volunteer_director" ? "Volunteer Lead" : "Coordinator"} of ${r.event_name ?? "an event"}`;
+  const who = restored[0].full_name;
+  const { data: me } = await admin.from("profiles").select("full_name").eq("id", user.id).maybeSingle();
+  const byEmail = new Map<string, { toPerson: boolean; roles: string[] }>();
+  for (const n of (notices ?? []) as { removal_id: string; email: string; to_person: boolean }[]) {
+    const r = restored.find((x) => x.removal_id === n.removal_id);
+    if (!r) continue;
+    const entry = byEmail.get(n.email) ?? { toPerson: n.to_person, roles: [] };
+    entry.roles.push(roleName(r));
+    byEmail.set(n.email, entry);
+  }
+  const sent = await Promise.all(
+    [...byEmail].map(([to, { toPerson, roles }]) => {
+      const { subject, html, text } = undoneEmail({ who, remover: me?.full_name || user.email, roles: [...new Set(roles)], toPerson });
+      return sendEmail({ to, subject, html, text, replyTo: user.email });
+    }),
+  );
+  revalidatePath("/dashboard", "layout");
+  const told = sent.filter(Boolean).length;
+  return {
+    ok: true,
+    message: `${who} is back as ${listAnd([...new Set(restored.map(roleName))])}, with their jobs.${
+      told ? ` We've emailed ${told === 1 ? "the 1 person" : `the ${told} people`} we told about the removal.` : ""
+    }`,
+  };
+}
+
+/** "a, b, and c". */
+function listAnd(items: string[]) {
+  return items.length < 3 ? items.join(" and ") : `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }

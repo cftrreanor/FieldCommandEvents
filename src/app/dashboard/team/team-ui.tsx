@@ -1,6 +1,7 @@
 "use client";
 
-import { useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useRouter } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import { CopyLink } from "@/components/copy-link";
 import { SubmitButton } from "@/components/submit-button";
@@ -156,10 +157,13 @@ export function RowButton({
   confirm,
   confirmLabel,
   label,
+  primary = false,
 }: {
   action: Action;
   children: ReactNode;
   pendingText: string;
+  /** The one filled button in its spot (Accept). */
+  primary?: boolean;
   /** "The question? What happens." */
   confirm?: string;
   confirmLabel?: string;
@@ -167,7 +171,7 @@ export function RowButton({
 }) {
   return (
     <ActionForm action={action} confirmMessage={confirm} confirmLabel={confirmLabel} resetOnSuccess={false} className="contents">
-      <SubmitButton variant="secondary" pendingText={pendingText} className={ROW_BUTTON} aria-label={label}>
+      <SubmitButton variant={primary ? "primary" : "secondary"} pendingText={pendingText} className={ROW_BUTTON} aria-label={label}>
         {children}
       </SubmitButton>
     </ActionForm>
@@ -513,5 +517,82 @@ export function InviteAgainButton({
         </ActionForm>
       </Window>
     </>
+  );
+}
+
+/**
+ * Right after removing someone: what was removed and one Undo, until the time runs out (shown in
+ * the viewer's own clock time, then the note goes away). A fresh note takes focus so keyboard and
+ * screen-reader users find it (design review 2026-11-07).
+ */
+export function UndoNote({
+  until,
+  minutes,
+  action,
+  name,
+  children,
+}: {
+  until: string;
+  /** How long Undo lasts: a note with nearly all of it left was just made. */
+  minutes: number;
+  action: Action;
+  name: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    const end = new Date(until).getTime();
+    // Clock time only after hydrating (the server's time zone isn't the viewer's).
+    const first = setTimeout(() => setNow(Date.now()), 0);
+    const timer = setInterval(() => setNow(Date.now()), 5_000);
+    // When time's up: keep keyboard users on the page, and redraw it so rows offer Invite again.
+    const done = setTimeout(() => {
+      if (ref.current?.contains(document.activeElement)) {
+        const heading = document.querySelector<HTMLElement>("main h1");
+        if (heading) {
+          heading.tabIndex = -1;
+          heading.focus();
+        }
+      }
+      setNow(end);
+      router.refresh();
+    }, Math.max(0, end - Date.now()));
+    // After the window closes and the page updates (which moves focus to the section heading).
+    const fresh = end - Date.now() > (minutes * 60 - 30) * 1000;
+    const focus = fresh ? setTimeout(() => ref.current?.focus(), 150) : undefined;
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+      clearTimeout(done);
+      clearTimeout(focus);
+    };
+  }, [until, minutes, router]);
+  if (now !== null && now >= new Date(until).getTime()) return null;
+  const time = now === null ? null : new Date(until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  // The last minute says so (announced once, politely), so a glance back isn't a surprise.
+  const lastMinute = now !== null && new Date(until).getTime() - now <= 60_000;
+  return (
+    <div
+      ref={ref}
+      tabIndex={-1}
+      // Focus moves here after a removal, which reads it out; a live region as well would read it twice.
+      role="group"
+      aria-label={`Just removed ${name}`}
+      className="flex flex-col gap-3 rounded-lg border border-brand/40 bg-brand-soft px-4 py-3 focus:outline-2 focus:outline-offset-2 focus:outline-[var(--focus)] sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div className="text-sm leading-6">
+        {children}
+        <p className={lastMinute ? "font-semibold" : "text-muted"} aria-live="polite">
+          {lastMinute ? "Undo ends in under a minute." : time ? `You can undo this until ${time}.` : "You can undo this for a few minutes."}
+        </p>
+      </div>
+      <ActionForm action={action} resetOnSuccess={false} className="contents">
+        <SubmitButton variant="secondary" pendingText="Undoing…" className={`${ROW_BUTTON} shrink-0`} aria-label={`Undo: put ${name} back`}>
+          Undo
+        </SubmitButton>
+      </ActionForm>
+    </div>
   );
 }

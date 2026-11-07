@@ -30,6 +30,7 @@ export function ActionForm({
   className,
   confirmMessage,
   confirmLabel,
+  cancelLabel,
   resetOnSuccess = true,
   onSuccess,
   validate,
@@ -48,6 +49,8 @@ export function ActionForm({
   confirmMessage?: string;
   /** The confirm window's action button ("Delete sign-up"); "Continue" if not given. */
   confirmLabel?: string;
+  /** The confirm window's back-out button (default "Never mind"). */
+  cancelLabel?: string;
   resetOnSuccess?: boolean;
   onSuccess?: () => void;
   validate?: (data: FormData) => ActionState | null;
@@ -120,7 +123,7 @@ export function ActionForm({
         const form = e.currentTarget;
         const failed = () => void form.dispatchEvent(new Event("form-failed", { bubbles: true }));
         if (problem) return failed();
-        if (confirmMessage && !(await confirmDialog(confirmFromText(confirmMessage, confirmLabel ? { confirmLabel } : undefined)))) return failed();
+        if (confirmMessage && !(await confirmDialog(confirmFromText(confirmMessage, { ...(confirmLabel ? { confirmLabel } : {}), ...(cancelLabel ? { cancelLabel } : {}) })))) return failed();
         startTransition(() => formAction(data));
       }}
     >
