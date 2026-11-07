@@ -261,8 +261,39 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
                   h.profile.email,
                   formatPhone(h.profile.phone),
                   h.role === "admin" ? "Every event" : null,
-                  view.offer?.userId === h.userId && !you ? `Offered the Account Host role ${short(view.offer.offeredOn)}, open through ${short(view.offer.expiresOn)}` : null,
+                  view.offer?.userId === h.userId && !you && !isAccountHost ? `Offered the Account Host role ${short(view.offer.offeredOn)}, open through ${short(view.offer.expiresOn)}` : null,
                 ]}
+                // The offer's own buttons sit under its line, apart from Remove… (which stays put on every row).
+                after={
+                  view.offer?.userId === h.userId && isAccountHost ? (
+                    // The offer as its own block (its line and its buttons), so it reads apart from Remove… at every width.
+                    <div className="mt-3 space-y-2 rounded-md border-l-2 border-brand/40 bg-brand-soft px-3 py-2">
+                      <p className="text-sm leading-6">
+                        Offered the Account Host role {short(view.offer.offeredOn)}, open through {short(view.offer.expiresOn)}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                      <RowButton action={resendAccountHostOffer.bind(null, org.id, name)} pendingText="Sending…" label={`Resend email: ${name}`}>
+                        Resend email
+                      </RowButton>
+                      <ConfirmButton
+                        action={withdrawAccountHostOffer.bind(null, org.id, h.userId, name)}
+                        label={`Withdraw offer… ${name}`}
+                        title={`Withdraw your offer to ${name}?`}
+                        points={[
+                          `${first(name)}'s link stops working, and we'll email them that you withdrew it`,
+                          "You stay the Account Host. You can offer the role again any time",
+                        ]}
+                        keepLabel="Keep the offer"
+                        confirmLabel="Withdraw offer"
+                        pendingText="Withdrawing…"
+                        danger={false}
+                      >
+                        Withdraw offer…
+                      </ConfirmButton>
+                      </div>
+                    </div>
+                  ) : null
+                }
                 actions={
                   h.role === "admin" && you ? (
                     <ConfirmButton
@@ -282,28 +313,7 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
                     </ConfirmButton>
                   ) : h.role === "admin" && isAccountHost ? (
                     <>
-                    {view.offer?.userId === h.userId ? (
-                      <>
-                        <RowButton action={resendAccountHostOffer.bind(null, org.id, name)} pendingText="Sending…" label={`Resend offer email: ${name}`}>
-                          Resend email
-                        </RowButton>
-                        <ConfirmButton
-                          action={withdrawAccountHostOffer.bind(null, org.id, h.userId, name)}
-                          label={`Withdraw offer… ${name}`}
-                          title={`Withdraw your offer to ${name}?`}
-                          points={[
-                            `${first(name)}'s link stops working, and we'll email them that you withdrew it`,
-                            "You stay the Account Host. You can offer the role again any time",
-                          ]}
-                          keepLabel="Keep the offer"
-                          confirmLabel="Withdraw offer"
-                          pendingText="Withdrawing…"
-                          danger={false}
-                        >
-                          Withdraw offer…
-                        </ConfirmButton>
-                      </>
-                    ) : (
+                    {view.offer?.userId === h.userId ? null : (
                       <ConfirmButton
                         action={offerAccountHost.bind(null, org.id, h.userId, name)}
                         label={`Offer Account Host role… ${name}`}
