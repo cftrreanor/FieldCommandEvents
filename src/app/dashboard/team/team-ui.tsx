@@ -546,7 +546,7 @@ export function UndoNote({
     const end = new Date(until).getTime();
     // Clock time only after hydrating (the server's time zone isn't the viewer's).
     const first = setTimeout(() => setNow(Date.now()), 0);
-    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    const timer = setInterval(() => setNow(Date.now()), 5_000);
     // When time's up: keep keyboard users on the page, and redraw it so rows offer Invite again.
     const done = setTimeout(() => {
       if (ref.current?.contains(document.activeElement)) {
@@ -571,6 +571,8 @@ export function UndoNote({
   }, [until, minutes, router]);
   if (now !== null && now >= new Date(until).getTime()) return null;
   const time = now === null ? null : new Date(until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  // The last minute says so (announced once, politely), so a glance back isn't a surprise.
+  const lastMinute = now !== null && new Date(until).getTime() - now <= 60_000;
   return (
     <div
       ref={ref}
@@ -582,7 +584,9 @@ export function UndoNote({
     >
       <div className="text-sm leading-6">
         {children}
-        <p className="text-muted">{time ? `You can undo this until ${time}.` : "You can undo this for a few minutes."}</p>
+        <p className={lastMinute ? "font-semibold" : "text-muted"} aria-live="polite">
+          {lastMinute ? "Undo ends in under a minute." : time ? `You can undo this until ${time}.` : "You can undo this for a few minutes."}
+        </p>
       </div>
       <ActionForm action={action} resetOnSuccess={false} className="contents">
         <SubmitButton variant="secondary" pendingText="Undoing…" className={`${ROW_BUTTON} shrink-0`} aria-label={`Undo: put ${name} back`}>

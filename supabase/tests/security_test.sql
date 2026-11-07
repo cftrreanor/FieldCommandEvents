@@ -8419,6 +8419,17 @@ begin
   end;
   assert ok, 'offers aren''t readable signed out';
 end $$;
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":"tmco1@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform last_sent_at from public.account_host_handoffs;
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'when an offer email went out is server-only';
+end $$;
 reset role;
 drop function public.test_handoff_token(uuid);
 delete from public.organizations where id = '7d000000-0000-0000-0000-000000000001';

@@ -232,6 +232,12 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
           {CO_HOST_POWERS}
           {!isAccountHost && <> Your Account Host is {accountHostName}.</>}
         </p>
+        {isAccountHost && !view.offer && !justYou && (
+          // Passing the account on usually goes to someone new (the next PTO president): say how, quietly.
+          <p className="text-sm leading-6 text-muted">
+            <strong className="font-semibold text-foreground">Passing the account to someone new?</strong> {PASS_ON(view.hosts.some((h) => h.role === "admin"))}
+          </p>
+        )}
         <ul className="divide-y divide-border rounded-lg border border-border bg-surface">
           {view.hosts.map((h) => {
             const name = personName(h.profile);
@@ -355,6 +361,11 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
             A co-host shares the whole load: every event, start to finish. For one event, add a Volunteer Lead to run volunteers, or Coordinators to
             lead single jobs like parking or the gate.
           </p>
+          {isAccountHost && !view.offer && (
+            <p className="text-sm leading-6">
+              <strong className="font-semibold">Passing the account to someone new?</strong> {PASS_ON(false)}
+            </p>
+          )}
           <AddStaffLinks view={view} canAdd={canAddStaff} />
         </Card>
       ) : (
@@ -902,6 +913,12 @@ function offerOutcome(o: NonNullable<HostView["lastOffer"]>, isAccountHost: bool
       return <>Your offer to {who} ended on {on}, when you removed them for a moment.{still}</>;
   }
 }
+
+/** How to pass the Account Host role on, with co-hosts to choose from or none yet. */
+const PASS_ON = (coHosts: boolean) =>
+  coHosts
+    ? "Choose Offer Account Host role on their row. If they aren't a co-host yet, invite them as one first. They take over the plan, and you stay on as a co-host."
+    : "Invite them as a co-host first. Once they join, you can offer them the Account Host role from their row. They take over the plan, and you stay on as a co-host.";
 
 /** "a, b, and c". */
 const listAnd = (items: string[]) => (items.length < 3 ? items.join(" and ") : `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`);

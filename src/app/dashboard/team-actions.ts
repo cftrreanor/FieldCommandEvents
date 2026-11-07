@@ -570,6 +570,8 @@ export async function offerAccountHost(orgId: string, userId: string, name: stri
   const { data: offer } = await admin.from("account_host_handoffs").select("token, expires_at").eq("id", id as string).maybeSingle();
   revalidatePath("/dashboard/team");
   const sent = offer ? await sendOfferEmail(orgId, userId, offer.token, offer.expires_at, user) : false;
+  // The first email counts toward Resend's wait.
+  if (sent) await admin.from("account_host_handoffs").update({ last_sent_at: new Date().toISOString() }).eq("id", id as string);
   return {
     ok: true,
     message: sent
@@ -588,21 +590,43 @@ export async function resendAccountHostOffer(orgId: string, name: string): Promi
     revalidatePath("/dashboard/team");
     return { error: "That offer isn't open anymore. The page has been refreshed." };
   }
+  // One email every RESEND_MINUTES: claim the send first, so two quick clicks send one email.
+  const admin = createAdminClient();
+  const cutoff = new Date(Date.now() - RESEND_MINUTES * 60_000).toISOString();
+  const { data: claimed } = await admin
+    .from("account_host_handoffs")
+    .update({ last_sent_at: new Date().toISOString() })
+    .eq("token", offer.token)
+    .or(`last_sent_at.is.null,last_sent_at.lt.${cutoff}`)
+    .select("token");
+  if (!claimed?.length) {
+    // Not an error: the email already went out. Say so, and when they can send it again.
+    const wait = Math.max(1, Math.ceil((new Date(offer.last_sent_at ?? Date.now()).getTime() + RESEND_MINUTES * 60_000 - Date.now()) / 60_000));
+    return {
+      ok: true,
+      message: `Already sent to ${name} a few minutes ago. Ask them to check their spam folder. You can send it again in about ${wait === 1 ? "1 minute" : `${wait} minutes`}.`,
+    };
+  }
   const sent = await sendOfferEmail(orgId, offer.to_user, offer.token, offer.expires_at, user);
-  return sent ? { ok: true, message: `Offer email sent to ${name} again.` } : { error: `The email didn't go out. Ask ${name} to open My team to accept.` };
+  // Didn't go out: don't make them wait to try again.
+  if (!sent) await admin.from("account_host_handoffs").update({ last_sent_at: offer.last_sent_at }).eq("token", offer.token);
+  return sent ? { ok: true, message: `Offer email sent to ${name} again. If it doesn't arrive in a few minutes, ask them to check their spam folder.` } : { error: `The email didn't go out. Ask ${name} to open My team to accept.` };
 }
+
+/** How long Resend email waits between sends of the same offer. */
+const RESEND_MINUTES = 10;
 
 /** The open offer for an account, read on the server (its token never reaches the page). */
 async function openOffer(orgId: string) {
   const { data } = await createAdminClient()
     .from("account_host_handoffs")
-    .select("token, to_user, offered_by, expires_at")
+    .select("token, to_user, offered_by, expires_at, last_sent_at")
     .eq("organization_id", orgId)
     .is("accepted_at", null)
     .is("cancelled_at", null)
     .gt("expires_at", new Date().toISOString())
     .maybeSingle();
-  return data as { token: string; to_user: string; offered_by: string | null; expires_at: string } | null;
+  return data as { token: string; to_user: string; offered_by: string | null; expires_at: string; last_sent_at: string | null } | null;
 }
 
 async function sendOfferEmail(orgId: string, userId: string, token: string, expiresAt: string, from: { id: string; email: string }) {
