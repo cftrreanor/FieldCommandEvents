@@ -156,10 +156,13 @@ export function RowButton({
   confirm,
   confirmLabel,
   label,
+  primary = false,
 }: {
   action: Action;
   children: ReactNode;
   pendingText: string;
+  /** The one filled button in its spot (Accept). */
+  primary?: boolean;
   /** "The question? What happens." */
   confirm?: string;
   confirmLabel?: string;
@@ -167,7 +170,7 @@ export function RowButton({
 }) {
   return (
     <ActionForm action={action} confirmMessage={confirm} confirmLabel={confirmLabel} resetOnSuccess={false} className="contents">
-      <SubmitButton variant="secondary" pendingText={pendingText} className={ROW_BUTTON} aria-label={label}>
+      <SubmitButton variant={primary ? "primary" : "secondary"} pendingText={pendingText} className={ROW_BUTTON} aria-label={label}>
         {children}
       </SubmitButton>
     </ActionForm>

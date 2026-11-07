@@ -8,7 +8,7 @@ import { friendlyDbError, type ActionState } from "@/lib/action-state";
 import { requireUser } from "@/lib/auth";
 import { getOrigin } from "@/lib/data";
 import { sendEmail } from "@/lib/email";
-import { leftEventEmail, removedEmail } from "@/lib/team-emails";
+import { hostOfferAnsweredEmail, hostOfferEmail, leftEventEmail, removedEmail, undoneEmail } from "@/lib/team-emails";
 import { invitationEmail, invitationEmailKey, type InvitationDetails } from "@/lib/invitation-email";
 import { loadSystemEmail } from "@/lib/system-email-overrides";
 import { hasBands, leadWords } from "@/lib/event-types";
@@ -493,4 +493,103 @@ async function tellRemoved(formData: FormData, removedId: string, orgId: string 
     contact: user.email,
   });
   await sendEmail({ to: person.email, subject, html, text, replyTo: user.email });
+}
+
+// -----------------------------------------------------------------------------
+// Handing on the Account Host role (20270113000000_my_team.sql: offer_account_host,
+// cancel_account_host_offer, accept_account_host).
+// -----------------------------------------------------------------------------
+
+/** The Account Host offers their role to a co-host, who accepts by email. */
+export async function offerAccountHost(orgId: string, userId: string, name: string): Promise<ActionState> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const { data: token, error } = await supabase.rpc("offer_account_host", { p_org: orgId, p_user: userId });
+  if (error) return { error: friendlyDbError(error) };
+  const admin = createAdminClient();
+  const [{ data: person }, { data: me }, { data: org }, { data: offer }] = await Promise.all([
+    admin.from("profiles").select("email").eq("id", userId).maybeSingle(),
+    admin.from("profiles").select("full_name").eq("id", user.id).maybeSingle(),
+    admin.from("organizations").select("name").eq("id", orgId).maybeSingle(),
+    admin.from("account_host_handoffs").select("expires_at").eq("token", token as string).maybeSingle(),
+  ]);
+  revalidatePath("/dashboard/team");
+  if (!person?.email || !offer) return { ok: true, message: `Offer saved, but the email didn't go out. Ask ${name} to open My team to accept.` };
+  const { subject, html, text } = hostOfferEmail({
+    from: me?.full_name || user.email,
+    organization: org?.name ?? "your account",
+    url: `${await getOrigin()}/account-host/${token}`,
+    expiresAt: offer.expires_at,
+  });
+  const sent = await sendEmail({ to: person.email, subject, html, text, replyTo: user.email });
+  return {
+    ok: true,
+    message: sent ? `Offer sent to ${name}. Nothing changes until they accept.` : `Offer saved, but the email didn't go out. Ask ${name} to open My team to accept.`,
+  };
+}
+
+/** The Account Host withdraws their offer, or the co-host declines it. */
+export async function withdrawAccountHostOffer(orgId: string, declining = false): Promise<ActionState> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("cancel_account_host_offer", { p_org: orgId });
+  if (error) return { error: friendlyDbError(error) };
+  if (declining) await tellAccountHostAnswered(orgId, user.id, user.email, false);
+  revalidatePath("/dashboard", "layout");
+  return { ok: true, message: declining ? "You declined. The Account Host has been told." : "Offer withdrawn." };
+}
+
+/** The co-host accepts: they become the Account Host, and the old one a co-host. */
+export async function acceptAccountHost(token: string): Promise<ActionState> {
+  const user = await requireUser();
+  if (!UUID.test(token)) return { error: "This link isn't valid." };
+  const supabase = await createClient();
+  const { data: orgId, error } = await supabase.rpc("accept_account_host", { p_token: token });
+  if (error) return { error: friendlyDbError(error) };
+  await tellAccountHostAnswered(orgId as string, user.id, user.email, true);
+  revalidatePath("/dashboard", "layout");
+  redirect(`/dashboard/team?account=${orgId}`);
+}
+
+/** Email whoever made the offer that it was accepted or declined. */
+async function tellAccountHostAnswered(orgId: string, userId: string, email: string, accepted: boolean) {
+  const admin = createAdminClient();
+  const [{ data: offer }, { data: me }, { data: org }] = await Promise.all([
+    admin
+      .from("account_host_handoffs")
+      .select("profiles!account_host_handoffs_offered_by_fkey(email)")
+      .eq("organization_id", orgId)
+      .eq("to_user", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    admin.from("profiles").select("full_name").eq("id", userId).maybeSingle(),
+    admin.from("organizations").select("name").eq("id", orgId).maybeSingle(),
+  ]);
+  const to = (offer as unknown as { profiles: { email: string } | null } | null)?.profiles?.email;
+  if (!to) return;
+  const { subject, html, text } = hostOfferAnsweredEmail({
+    who: me?.full_name || email,
+    organization: org?.name ?? "your account",
+    accepted,
+    url: `${await getOrigin()}/dashboard/team?account=${orgId}`,
+  });
+  await sendEmail({ to, subject, html, text, replyTo: email });
+}
+
+/**
+ * Undo removing someone, within UNDO_MINUTES and only by whoever removed them: they're put back
+ * in each role (with their jobs), and anyone emailed about the removal hears it was undone.
+ */
+export async function undoRemoval(removalIds: string[]): Promise<ActionState> {
+  await requireUser();
+  const ids = removalIds.filter((id) => UUID.test(id));
+  if (!ids.length) return { error: "Nothing to undo." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("undo_team_removals", { p_ids: ids });
+  if (error) return { error: friendlyDbError(error) };
+  const restored = (data ?? []) as { full_name: string }[];
+  if (!restored.length) return { error: "That can't be undone anymore. Use Invite again instead." };
+  revalidatePath("/dashboard", "layout");
+  return { ok: true, message: `${restored[0].full_name} is back, as before.` };
 }

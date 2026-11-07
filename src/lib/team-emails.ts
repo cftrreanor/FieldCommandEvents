@@ -1,6 +1,6 @@
 import "server-only";
 import { emailLayout } from "@/lib/email";
-import { formatDateRange } from "@/lib/time";
+import { formatDate, formatDateRange } from "@/lib/time";
 
 // Emails about the team changing: someone left an event (to its Account Host and Volunteer
 // Leads), and someone was removed (to that person, when the remover ticks "Let them know").
@@ -72,4 +72,66 @@ export function removedEmail(o: {
       footer: "Your own account and any volunteer sign-ups you made stay as they are.",
     }),
   };
+}
+
+/** To a co-host offered the Account Host role: what changes, and the link to accept or decline. */
+export function hostOfferEmail(o: { from: string; organization: string; url: string; expiresAt: string }) {
+  return {
+    subject: `${o.from} offered you the Account Host role for ${o.organization}`,
+    ...emailLayout({
+      heading: `Become the Account Host for ${o.organization}`,
+      paragraphs: [
+        `${o.from} would like you to take over as the Account Host for ${o.organization}.`,
+        "As the Account Host, you invite and remove co-hosts, and you can hand the role on later. Your access to events stays the same.",
+        `${o.from} becomes a co-host, with the same access to every event as now.`,
+        "Nothing changes until you accept.",
+      ],
+      button: { label: "Accept or decline", url: o.url },
+      footer: `This offer works until ${formatDate(o.expiresAt.slice(0, 10))}. It's only for you, so please don't forward it. If you weren't expecting it, you can ignore this email.`,
+    }),
+  };
+}
+
+/** To the Account Host, when the co-host answers their offer. */
+export function hostOfferAnsweredEmail(o: { who: string; organization: string; accepted: boolean; url: string }) {
+  return o.accepted
+    ? {
+        subject: `${o.who} is now the Account Host for ${o.organization}`,
+        ...emailLayout({
+          heading: `${o.who} is now the Account Host`,
+          paragraphs: [
+            `${o.who} accepted your offer. They're the Account Host for ${o.organization} now, and you're a co-host, with the same access to every event as before.`,
+            `Only ${o.who} can invite or remove co-hosts from now on.`,
+          ],
+          button: { label: "Open My team", url: o.url },
+        }),
+      }
+    : {
+        subject: `${o.who} declined the Account Host role`,
+        ...emailLayout({
+          heading: `${o.who} declined the Account Host role`,
+          paragraphs: [`You're still the Account Host for ${o.organization}. Nothing changed. You can offer the role to a co-host again any time.`],
+          button: { label: "Open My team", url: o.url },
+        }),
+      };
+}
+
+/** Undoing a removal: to the person (if they were told they were removed) or to those told about the gap. */
+export function undoneEmail(o: { who: string; remover: string; roles: string[]; toPerson: boolean }) {
+  const what = o.roles.join(" and ");
+  return o.toPerson
+    ? {
+        subject: `You're still ${what}`,
+        ...emailLayout({
+          heading: `You're still ${what}`,
+          paragraphs: [`${o.remover} undid removing you a few minutes ago. Nothing changed: you're still ${what}.`],
+        }),
+      }
+    : {
+        subject: `${o.who} is back as ${what}`,
+        ...emailLayout({
+          heading: `${o.who} is back as ${what}`,
+          paragraphs: [`${o.remover} undid removing ${o.who} a few minutes ago, so you can ignore the earlier email. Their jobs are as they were.`],
+        }),
+      };
 }

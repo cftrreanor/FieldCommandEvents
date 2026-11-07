@@ -14,8 +14,12 @@ import {
   removeAccountCoHost,
   removeFromEvents,
   resendTeamInvitation,
+  acceptAccountHost,
+  offerAccountHost,
+  undoRemoval,
+  withdrawAccountHostOffer,
 } from "../team-actions";
-import { personName, type HostView, type Invite, type LeadView, type MyRole, type MyTeam, type TeamAccount, type Person, type Removal, type RoleOn, type StaffRole, type TeamEvent } from "./load";
+import { personName, UNDO_MINUTES, type HostView, type Invite, type LeadView, type MyRole, type MyTeam, type TeamAccount, type Person, type Removal, type RoleOn, type StaffRole, type TeamEvent } from "./load";
 import { ConfirmButton, CopyInviteLink, InviteAgainButton, InviteCoHostButton, RemovePersonButton, RowButton, type RemoveChoice } from "./team-ui";
 
 /** Events offered in Invite again, with their dates. */
@@ -174,6 +178,9 @@ function HostSections({ view, me }: { view: HostView; me: string }) {
         )}
       </header>
 
+      {view.offerToMe && <OfferToMe offer={view.offerToMe} orgId={org.id} orgName={org.name} />}
+      <JustRemoved removed={view.removed} />
+
       <section aria-labelledby="hosts-heading" className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h2 id="hosts-heading" className="text-xl font-semibold">
@@ -225,7 +232,12 @@ function HostSections({ view, me }: { view: HostView; me: string }) {
                     {you && " (you)"} <Badge tone="info">{h.role === "owner" ? "Account Host" : "Co-host"}</Badge>
                   </>
                 }
-                detail={[h.profile.email, formatPhone(h.profile.phone), h.role === "admin" ? "Every event" : null]}
+                detail={[
+                  h.profile.email,
+                  formatPhone(h.profile.phone),
+                  h.role === "admin" ? "Every event" : null,
+                  view.offer?.userId === h.userId ? `Offered the Account Host role ${short(view.offer.offeredAt)}, open until ${short(view.offer.expiresAt)}` : null,
+                ]}
                 actions={
                   h.role === "admin" && you ? (
                     <ConfirmButton
@@ -243,6 +255,39 @@ function HostSections({ view, me }: { view: HostView; me: string }) {
                       Stop being a co-host
                     </ConfirmButton>
                   ) : h.role === "admin" && isAccountHost ? (
+                    <>
+                    {view.offer?.userId === h.userId ? (
+                      <ConfirmButton
+                        action={withdrawAccountHostOffer.bind(null, org.id, false)}
+                        label={`Withdraw offer: ${name}`}
+                        title={`Withdraw your offer to ${name}?`}
+                        points={[`${first(name)}'s link stops working`, "You stay the Account Host. You can offer the role again any time"]}
+                        keepLabel="Keep the offer"
+                        confirmLabel="Withdraw offer"
+                        pendingText="Withdrawing…"
+                        danger={false}
+                      >
+                        Withdraw offer
+                      </ConfirmButton>
+                    ) : (
+                      <ConfirmButton
+                        action={offerAccountHost.bind(null, org.id, h.userId, name)}
+                        label={`Make Account Host… ${name}`}
+                        title={`Make ${name} the Account Host?`}
+                        points={[
+                          `${first(name)} becomes the Account Host: they invite and remove co-hosts, and can hand the role on later`,
+                          "You become a co-host, with the same access to every event as now",
+                          `We'll email ${first(name)} a link. Nothing changes until they accept, within 14 days`,
+                          ...(view.offer ? [`This withdraws your open offer to ${view.offer.name}`] : []),
+                        ]}
+                        keepLabel="Not now"
+                        confirmLabel="Send offer"
+                        pendingText="Sending…"
+                        danger={false}
+                      >
+                        Make Account Host…
+                      </ConfirmButton>
+                    )}
                     <ConfirmButton
                       action={removeAccountCoHost.bind(null, org.id, h.userId, name)}
                       label={`Remove… ${name}`}
@@ -260,6 +305,7 @@ function HostSections({ view, me }: { view: HostView; me: string }) {
                     >
                       Remove…
                     </ConfirmButton>
+                    </>
                   ) : null
                 }
               />
@@ -624,7 +670,9 @@ function RemovedRecently({
               `${r.left ? "Left" : "Removed"} ${short(r.removedAt)}`,
             ]}
             actions={
-              blocked(r) ? (
+              r.undoUntil ? (
+                <UndoButton ids={[r.id]} name={r.name} />
+              ) : blocked(r) ? (
                 <p className="text-sm text-muted">{blocked(r)}</p>
               ) : (
                 <InviteAgainButton
@@ -659,6 +707,7 @@ function LeadSections({ view }: { view: LeadView }) {
         <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">My team</h1>
         <p className="mt-2 text-muted">Coordinators on the events where you&apos;re the Volunteer Lead.</p>
       </header>
+      <JustRemoved removed={view.removed} />
       {view.events.map(({ event, coordinators, invites }) => (
         <section key={event.id} aria-labelledby={`event-${event.id}`} className="space-y-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -800,6 +849,74 @@ function MyRoles({ roles, other }: { roles: MyRole[]; other: boolean }) {
           , Account Host
         </p>
       ))}
+    </section>
+  );
+}
+
+/**
+ * Right after removing someone: what was removed, and Undo for UNDO_MINUTES. One note per person,
+ * covering every role removed at once.
+ */
+function JustRemoved({ removed }: { removed: Removal[] }) {
+  const mine = removed.filter((r) => r.undoUntil);
+  if (!mine.length) return null;
+  const people = [...new Map(mine.map((r) => [r.email, mine.filter((o) => o.email === r.email)])).values()];
+  return (
+    <section aria-label="Just removed" className="space-y-2">
+      {people.map((rs) => (
+        <div key={rs[0].email} role="status" className="flex flex-col gap-3 rounded-lg border border-border bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm leading-6">
+            You removed <strong className="font-semibold">{rs[0].name}</strong> as{" "}
+            {rs.map((r) => (r.event ? `${ROLE[r.role]} of ${r.event.name}` : "co-host")).join(" and ")}.{" "}
+            <span className="text-muted">
+              You can undo this for {UNDO_MINUTES} minutes. Undo puts them back in each role, with their jobs, and lets anyone we emailed about it
+              know.
+            </span>
+          </p>
+          <UndoButton ids={rs.map((r) => r.id)} name={rs[0].name} />
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function UndoButton({ ids, name }: { ids: string[]; name: string }) {
+  return (
+    <RowButton action={undoRemoval.bind(null, ids)} pendingText="Undoing…" label={`Undo: put ${name} back`}>
+      Undo
+    </RowButton>
+  );
+}
+
+/** A co-host offered the Account Host role: what changes, and Accept or Decline right here. */
+function OfferToMe({ offer, orgId, orgName }: { offer: NonNullable<HostView["offerToMe"]>; orgId: string; orgName: string }) {
+  return (
+    <section aria-labelledby="offer-heading" className="space-y-3 rounded-lg border border-brand/40 bg-brand-soft px-4 py-4">
+      <h2 id="offer-heading" className="text-lg font-semibold">
+        {offer.from} offered you the Account Host role
+      </h2>
+      <ul className="list-disc space-y-1 pl-5 text-sm leading-6">
+        <li>You&apos;d invite and remove {orgName}&apos;s co-hosts, and could hand the role on later</li>
+        <li>Your access to events stays the same</li>
+        <li>{offer.from} would become a co-host</li>
+        <li>The offer is open until {short(offer.expiresAt)}</li>
+      </ul>
+      <div className="flex flex-wrap gap-2">
+        <RowButton action={acceptAccountHost.bind(null, offer.token)} pendingText="Accepting…" primary>
+          Accept
+        </RowButton>
+        <ConfirmButton
+          action={withdrawAccountHostOffer.bind(null, orgId, true)}
+          title="Decline the Account Host role?"
+          points={[`${offer.from} stays the Account Host, and we'll let them know`, "You stay a co-host"]}
+          keepLabel="Not now"
+          confirmLabel="Decline"
+          pendingText="Declining…"
+          danger={false}
+        >
+          Decline
+        </ConfirmButton>
+      </div>
     </section>
   );
 }

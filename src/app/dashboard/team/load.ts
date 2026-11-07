@@ -45,7 +45,15 @@ export type Removal = {
   event: TeamEvent | null;
   removedAt: string;
   left: boolean;
+  /** You removed them in the last few minutes: until when Undo puts them back. */
+  undoUntil: string | null;
 };
+
+/** How long Undo stays offered after removing someone. */
+export const UNDO_MINUTES = 10;
+
+/** An open offer of the Account Host role. */
+export type HostOffer = { userId: string; name: string; offeredAt: string; expiresAt: string };
 export type Spots = {
   used: number;
   invited: number;
@@ -69,6 +77,10 @@ export type Job = { id: string; name: string; led: boolean };
 export type EventJobs = Record<string, Job[]>;
 
 export type HostView = {
+  /** The Account Host's open offer of their role to a co-host, if any. */
+  offer: HostOffer | null;
+  /** An open offer of the Account Host role to you (a co-host), with its link. */
+  offerToMe: { token: string; from: string; expiresAt: string } | null;
   /** Each upcoming event's jobs. */
   jobs: EventJobs;
   /** Jobs left with no Coordinator after one left or was removed in the last 30 days. */
@@ -204,7 +216,8 @@ function toInvite(i: InviteRow, events: Map<string, TeamEvent>, origin: string):
 }
 
 /** Removed in the last 90 days, and not back on the team or invited again. */
-function recentRemovals(rows: RemovalRow[], events: Map<string, TeamEvent>, back: (r: RemovalRow) => boolean): Removal[] {
+function recentRemovals(rows: RemovalRow[], events: Map<string, TeamEvent>, back: (r: RemovalRow) => boolean, me: string): Removal[] {
+  const undoFrom = Date.now() - UNDO_MINUTES * 60_000;
   const seen = new Set<string>();
   return rows
     .filter((r) => !back(r))
@@ -223,6 +236,10 @@ function recentRemovals(rows: RemovalRow[], events: Map<string, TeamEvent>, back
       event: r.event_id ? (events.get(r.event_id) ?? null) : null,
       removedAt: r.removed_at,
       left: r.removed_by === r.user_id,
+      undoUntil:
+        r.removed_by === me && r.removed_by !== r.user_id && new Date(r.removed_at).getTime() >= undoFrom
+          ? new Date(new Date(r.removed_at).getTime() + UNDO_MINUTES * 60_000).toISOString()
+          : null,
     }));
 }
 
@@ -276,7 +293,7 @@ export async function loadMyTeam(userId: string, origin: string, accountId?: str
   // An account where you're on event teams: Coordinators on the events you lead, and your own roles.
   const here = myStaff.filter((s) => s.events!.organization_id === current.id);
   const ledEvents = here.filter((s) => s.role === "volunteer_director").map((s) => toEvent(s.events!));
-  const lead = ledEvents.length ? await loadLeadView(ledEvents, origin, current.id, owners.get(current.id)?.name ?? null) : null;
+  const lead = ledEvents.length ? await loadLeadView(ledEvents, origin, current.id, owners.get(current.id)?.name ?? null, userId) : null;
   // The jobs you lead there, so leaving can name them.
   const { data: myLeads } = here.length
     ? await supabase.from("station_leads").select("event_id, stations(name)").eq("user_id", userId).in("event_id", here.map((s) => s.event_id))
@@ -316,7 +333,7 @@ async function loadJobs(eventIds: string[]): Promise<EventJobs> {
 
 async function loadHostView(org: { id: string; name: string }, userId: string, origin: string): Promise<HostView> {
   const supabase = await createClient();
-  const [members, eventsRes, invitesRes, removalsRes, spotsRes] = await Promise.all([
+  const [members, eventsRes, invitesRes, removalsRes, spotsRes, offersRes] = await Promise.all([
     supabase.from("organization_members").select("user_id, role, profiles(full_name, email, phone)").eq("organization_id", org.id).order("created_at"),
     supabase.from("events").select("id, name, starts_on, ends_on, timezone").eq("organization_id", org.id).order("starts_on"),
     supabase
@@ -332,9 +349,18 @@ async function loadHostView(org: { id: string; name: string }, userId: string, o
       .gte("removed_at", removedSince())
       .order("removed_at", { ascending: false }),
     supabase.rpc("team_spots", { p_org: org.id }),
+    // An open offer of the Account Host role (one at a time).
+    supabase
+      .from("account_host_handoffs")
+      .select("to_user, token, created_at, expires_at")
+      .eq("organization_id", org.id)
+      .is("accepted_at", null)
+      .is("cancelled_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .maybeSingle(),
   ]);
   // A failed load never shows as an empty team or a team with no limit.
-  const failed = [members, eventsRes, invitesRes, removalsRes, spotsRes].find((r) => r.error)?.error;
+  const failed = [members, eventsRes, invitesRes, removalsRes, spotsRes, offersRes].find((r) => r.error)?.error;
   if (failed) {
     // Before the My team database update has been run: say so.
     if (isSchemaError(failed)) missing();
@@ -369,19 +395,33 @@ async function loadHostView(org: { id: string; name: string }, userId: string, o
   const eventInvites = invites.filter((i) => !i.asHost && i.event && !i.event.ended);
 
   const invited = new Set(invites.map((i) => i.email.toLowerCase()));
-  const removed = recentRemovals((removalData ?? []) as RemovalRow[], events, (r) =>
-    invited.has(r.email.toLowerCase()) ||
-    (r.role === "co_host" ? hosts.some((h) => h.userId === r.user_id) : staff.some((s) => s.user_id === r.user_id && s.event_id === r.event_id && s.role === r.role)),
+  const removed = recentRemovals(
+    (removalData ?? []) as RemovalRow[],
+    events,
+    (r) =>
+      invited.has(r.email.toLowerCase()) ||
+      (r.role === "co_host" ? hosts.some((h) => h.userId === r.user_id) : staff.some((s) => s.user_id === r.user_id && s.event_id === r.event_id && s.role === r.role)),
+    userId,
   );
 
   const upcoming = [...events.values()].filter((e) => !e.ended);
   const jobs = await loadJobs(upcoming.map((e) => e.id));
   const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const packages = (await loadTiers()).filter((t) => t.kind === "package");
+  const openOffer = offersRes.data as { to_user: string; token: string; created_at: string; expires_at: string } | null;
+  const offeredTo = openOffer ? hosts.find((h) => h.userId === openOffer.to_user) : null;
   const s = (spotData ?? {}) as { used?: number; invited?: number; max?: number | null; plan?: string | null; event_staff?: boolean };
   return {
     kind: "host",
     org: { id: org.id, name: org.name },
+    offer:
+      openOffer && offeredTo
+        ? { userId: openOffer.to_user, name: personName(offeredTo.profile), offeredAt: openOffer.created_at, expiresAt: openOffer.expires_at }
+        : null,
+    offerToMe:
+      openOffer && openOffer.to_user === userId && accountHost
+        ? { token: openOffer.token, from: personName(accountHost.profile), expiresAt: openOffer.expires_at }
+        : null,
     isAccountHost: accountHost?.userId === userId,
     accountHost,
     hosts,
@@ -411,7 +451,7 @@ async function loadHostView(org: { id: string; name: string }, userId: string, o
   };
 }
 
-async function loadLeadView(ledEvents: TeamEvent[], origin: string, orgId: string, accountHost: string | null): Promise<LeadView> {
+async function loadLeadView(ledEvents: TeamEvent[], origin: string, orgId: string, accountHost: string | null, userId: string): Promise<LeadView> {
   const supabase = await createClient();
   const ids = ledEvents.map((e) => e.id);
   const events = new Map(ledEvents.map((e) => [e.id, e]));
@@ -456,8 +496,11 @@ async function loadLeadView(ledEvents: TeamEvent[], origin: string, orgId: strin
         ),
         invites: invites.filter((i) => i.event?.id === event.id),
       })),
-    removed: recentRemovals((removalData ?? []) as RemovalRow[], events, (r) =>
-      invited.has(r.email.toLowerCase()) || staff.some((s) => s.user_id === r.user_id && s.event_id === r.event_id && s.role === r.role),
+    removed: recentRemovals(
+      (removalData ?? []) as RemovalRow[],
+      events,
+      (r) => invited.has(r.email.toLowerCase()) || staff.some((s) => s.user_id === r.user_id && s.event_id === r.event_id && s.role === r.role),
+      userId,
     ),
   };
 }
