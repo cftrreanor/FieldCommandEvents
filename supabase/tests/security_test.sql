@@ -8115,7 +8115,7 @@ declare ok boolean := false;
 begin
   begin
     perform public.offer_account_host('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000002');
-  exception when insufficient_privilege then ok := true;
+  exception when sqlstate 'P0001' then ok := true;
   end;
   assert ok, 'a co-host can''t take the account';
 end $$;
@@ -8136,9 +8136,12 @@ declare ok boolean := false;
 begin
   begin
     perform public.accept_account_host(current_setting('tm.handoff')::uuid);
-  exception when insufficient_privilege then ok := true;
+  exception when sqlstate 'P0001' then ok := true;
   end;
   assert ok, 'only the co-host it''s for can accept';
+  assert not (select for_you from public.get_account_host_offer(current_setting('tm.handoff')::uuid)), 'and the link isn''t theirs';
+  assert (select organization from public.get_account_host_offer(current_setting('tm.handoff')::uuid)) is null,
+         'someone else learns nothing about the account from the link';
 end $$;
 set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":"tmco1@example.com"}';
 do $$ begin
@@ -8147,6 +8150,161 @@ do $$ begin
             and user_id = '0000007e-0000-0000-0000-000000000002') = 'owner', 'the co-host becomes the Account Host';
   assert (select role from public.organization_members where organization_id = '7d000000-0000-0000-0000-000000000001'
             and user_id = '0000007e-0000-0000-0000-000000000001') = 'admin', 'and the old Account Host stays on as a co-host';
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- My team part 3 (20270120000000): Undo after removing, and handing on the role.
+-- The Account Host is now tmco1 (…02); tmowner (…01) is a co-host; tmvl (…04) is the
+-- Volunteer Lead of Spring Fair (…e1).
+-- ---------------------------------------------------------------------------
+reset role;
+insert into public.station_leads (station_id, user_id, event_id)
+values ('7d000000-0000-0000-0000-0000000000b1', '0000007e-0000-0000-0000-000000000004', '7d000000-0000-0000-0000-0000000000e1')
+on conflict do nothing;
+set role authenticated;
+-- The Account Host removes the Volunteer Lead (who leads Ring toss), then undoes it.
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":"tmco1@example.com"}';
+do $$ begin
+  delete from public.event_staff where user_id = '0000007e-0000-0000-0000-000000000004' and event_id = '7d000000-0000-0000-0000-0000000000e1';
+  assert not exists (select 1 from public.station_leads where user_id = '0000007e-0000-0000-0000-000000000004'), 'removing takes their jobs';
+end $$;
+reset role;
+select set_config('tm.undo', (select id from public.team_removals where user_id = '0000007e-0000-0000-0000-000000000004'
+                                and event_id = '7d000000-0000-0000-0000-0000000000e1' and role = 'volunteer_director')::text, false);
+do $$ begin
+  assert exists (select 1 from public.team_removal_jobs where removal_id = current_setting('tm.undo')::uuid),
+         'the removal remembers the jobs they led';
+end $$;
+set role authenticated;
+-- Someone else can't undo it, and nobody can read what the removal noted.
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000001","email":"tmowner@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.undo_team_removals(array[current_setting('tm.undo')::uuid]);
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'only whoever removed them can undo it';
+  ok := false;
+  begin
+    perform 1 from public.team_removal_jobs;
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'what a removal noted is server-only';
+  ok := false;
+  begin
+    perform 1 from public.team_removal_notices;
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'who was emailed is server-only';
+end $$;
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":"tmco1@example.com"}';
+do $$ begin
+  perform public.undo_team_removals(array[current_setting('tm.undo')::uuid]);
+  assert exists (select 1 from public.event_staff where user_id = '0000007e-0000-0000-0000-000000000004'
+                   and event_id = '7d000000-0000-0000-0000-0000000000e1' and role = 'volunteer_director'), 'Undo puts them back';
+  assert exists (select 1 from public.station_leads where user_id = '0000007e-0000-0000-0000-000000000004'
+                   and station_id = '7d000000-0000-0000-0000-0000000000b1'), 'with the jobs they led';
+end $$;
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.undo_team_removals(array[current_setting('tm.undo')::uuid]);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'a second Undo finds nothing';
+end $$;
+-- After 10 minutes, Undo is refused.
+do $$ begin
+  delete from public.event_staff where user_id = '0000007e-0000-0000-0000-000000000004' and event_id = '7d000000-0000-0000-0000-0000000000e1';
+end $$;
+reset role;
+update public.team_removals set removed_at = now() - interval '11 minutes'
+ where user_id = '0000007e-0000-0000-0000-000000000004' and event_id = '7d000000-0000-0000-0000-0000000000e1';
+select set_config('tm.undo', (select id from public.team_removals where user_id = '0000007e-0000-0000-0000-000000000004'
+                                and event_id = '7d000000-0000-0000-0000-0000000000e1')::text, false);
+set role authenticated;
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.undo_team_removals(array[current_setting('tm.undo')::uuid]);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'Undo ends after 10 minutes';
+end $$;
+
+-- Handing on: an offer is closed by its own token, by the Account Host (withdrawn) or the
+-- person it's for (declined), and by nobody else.
+do $$ begin
+  perform set_config('tm.handoff', public.offer_account_host('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000001')::text, false);
+end $$;
+reset role;
+do $$ begin
+  assert (select expires_at from public.account_host_handoffs where token = current_setting('tm.handoff')::uuid)
+       = ((((now() at time zone 'America/Chicago')::date + 15)::timestamp) at time zone 'America/Chicago'),
+         'an offer is open to the end of the 14th day in the account''s time zone';
+end $$;
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000001","email":"tmowner@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  assert public.my_account_host_offer('7d000000-0000-0000-0000-000000000001') = current_setting('tm.handoff')::uuid,
+         'the person it''s for can get their link';
+  begin
+    perform token from public.account_host_handoffs;
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'offer tokens stay on the server';
+  assert public.close_account_host_offer(current_setting('tm.handoff')::uuid) = 'declined', 'the person it''s for declines it';
+end $$;
+-- An open offer ends when that co-host is removed, and Undo doesn't bring it back.
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":"tmco1@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  perform set_config('tm.handoff', public.offer_account_host('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000001')::text, false);
+  delete from public.organization_members where organization_id = '7d000000-0000-0000-0000-000000000001'
+     and user_id = '0000007e-0000-0000-0000-000000000001';
+  assert (select closed_reason from public.account_host_handoffs where organization_id = '7d000000-0000-0000-0000-000000000001'
+            and to_user = '0000007e-0000-0000-0000-000000000001' order by created_at desc limit 1) = 'left',
+         'removing the co-host ends the offer';
+  perform public.undo_team_removals(array[(select id from public.team_removals where organization_id = '7d000000-0000-0000-0000-000000000001'
+                                             and user_id = '0000007e-0000-0000-0000-000000000001' and role = 'co_host')]);
+  assert exists (select 1 from public.organization_members where organization_id = '7d000000-0000-0000-0000-000000000001'
+                   and user_id = '0000007e-0000-0000-0000-000000000001' and role = 'admin'), 'Undo puts a co-host back';
+end $$;
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000001","email":"tmowner@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.accept_account_host(current_setting('tm.handoff')::uuid);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'the ended offer stays ended after Undo';
+end $$;
+-- Someone not involved can't close an offer.
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":"tmco1@example.com"}';
+do $$ begin
+  perform set_config('tm.handoff', public.offer_account_host('7d000000-0000-0000-0000-000000000001', '0000007e-0000-0000-0000-000000000001')::text, false);
+end $$;
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000004","email":"tmvl@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.close_account_host_offer(current_setting('tm.handoff')::uuid);
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'only the Account Host or the person it''s for can close an offer';
+end $$;
+set request.jwt.claims = '{"sub":"0000007e-0000-0000-0000-000000000002","email":"tmco1@example.com"}';
+do $$ begin
+  assert public.close_account_host_offer(current_setting('tm.handoff')::uuid) = 'withdrawn', 'the Account Host withdraws it';
 end $$;
 reset role;
 delete from public.organizations where id = '7d000000-0000-0000-0000-000000000001';
