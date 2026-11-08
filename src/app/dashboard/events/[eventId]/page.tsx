@@ -862,7 +862,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
             )}
           </div>
           <Link href={`/dashboard/events/${eventId}/${roomsHere ? "rooms" : "schedule"}`} className={BTN_OUTLINE}>
-            {roomsHere ? "Set up rooms & schedule" : "Set up the schedule"}
+            {roomsHere ? "Set up rooms and schedule" : "Set up the schedule"}
           </Link>
         </Card>
       </PageSection>
@@ -895,17 +895,20 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
               {noJobsYet && (
                 // Nothing to sign up for yet: say so, not "Sign-up open" or a row of zeros.
                 <p className="text-sm leading-6">
-                  <span className="font-semibold">No jobs yet.</span>{" "}
+                  <span className="font-semibold">{usesJobs(event.event_type) ? "No jobs yet." : "No sign-ups yet."}</span>{" "}
                   <span className="text-muted">
                     {published
                       ? `Add one with shifts, and its sign-up link appears in ${contestLive ? "Get the word out" : "Links to share"}.`
-                      : "Volunteers can sign up once you add one and publish."}
+                      : // Only a volunteer event's publish button opens volunteer sign-up; other kinds open it on their own.
+                        event.event_type === "volunteer"
+                        ? "Volunteers can sign up once you add one and publish."
+                        : "Volunteers can sign up once you add one, publish, and open sign-up."}
                   </span>
                 </p>
               )}
             </div>
             <Link href={`/dashboard/events/${eventId}/volunteering`} className={BTN_OUTLINE}>
-              {noJobsYet ? "Add a job" : usesJobs(event.event_type) ? "Jobs and shifts" : "Manage volunteers"}
+              {noJobsYet ? (usesJobs(event.event_type) ? "Add a job" : "Add a sign-up") : usesJobs(event.event_type) ? "Jobs and shifts" : "Manage volunteers"}
             </Link>
           </div>
           {/* Live, with a job nobody can sign up for yet: say so where the organizer checks in, with the fix. */}
@@ -1039,7 +1042,15 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   const labels: Record<string, string> = {
     day: dayTitle,
     // The same words as the sections they jump to (light check, 2026-11-08).
-    signups: groupsHere && access.isHost ? `${words.One} registration` : signupsLabel,
+    signups: groupsHere && access.isHost
+      ? `${words.One} registration`
+      : parentsHere
+        ? access.isHost
+          ? "Parent registration"
+          : "Parent check-in"
+        : hasBooths(event.event_type)
+          ? "Booths and partners"
+          : signupsLabel,
     schedule: roomsHere ? "Rooms and schedule" : "Performance schedule",
     volunteers: "Volunteers",
     files: "Maps and documents",

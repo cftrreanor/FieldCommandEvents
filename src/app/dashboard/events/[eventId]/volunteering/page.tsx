@@ -597,7 +597,8 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                       {bandsHere ? "No volunteer jobs yet? Add them any time before contest day." : "Publishing needs at least one job with a shift or a thing to bring."}
                     </span>
                     <Link href={`/dashboard/events/${eventId}#publish`} className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
-                      Next up: Publish →
+                      {/* A volunteer event can't publish without a job yet, so the link says where it goes, not "next". */}
+                      {bandsHere ? "Next up: Publish →" : "See what publishing needs →"}
                     </Link>
                   </p>
                 )}

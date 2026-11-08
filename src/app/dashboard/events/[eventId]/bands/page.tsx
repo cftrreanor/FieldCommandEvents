@@ -29,7 +29,12 @@ import { SetupTabs } from "../../_components/setup-tabs";
 import { ReopenRegistration } from "./reopen-registration";
 import { RegistrationSettings } from "./registration-settings";
 
-export const metadata: Metadata = { title: "Band registration" };
+export async function generateMetadata({ params }: PageProps<"/dashboard/events/[eventId]/bands">): Promise<Metadata> {
+  const { eventId } = await params;
+  const { data } = await (await createClient()).from("events").select("event_type").eq("id", eventId).maybeSingle();
+  // The page's own heading: "Band registration", or a group event's word for its groups.
+  return { title: `${groupWords(data?.event_type).One} registration` };
+}
 // Sending a long list of invitations finishes after the page answers; give it time.
 export const maxDuration = 300;
 
@@ -252,7 +257,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
                   {copyNote.shiftsOutside === 1 ? "1 shift falls" : `${copyNote.shiftsOutside} shifts fall`} outside the new contest&apos;s hours. Check{" "}
                   {copyNote.shiftsOutside === 1 ? "it" : "them"} on the{" "}
                   <Link href={`/dashboard/events/${eventId}/volunteering`} className="font-semibold text-brand underline underline-offset-4">
-                    Volunteers step
+                    Jobs and shifts step
                   </Link>
                   .
                 </p>
@@ -592,7 +597,7 @@ async function copySummary(
   ) as string[];
   if (!check.length) check.push("the settings below");
   const list = check.length > 2 ? `${check.slice(0, -1).join(", ")}, and ${check.at(-1)}` : check.join(" and ");
-  return { jobs: counts ? `, and its ${counts} ${jobs + stops === 1 ? "is" : "are"} on the Volunteers step` : "", dates, shiftsOutside, check: list };
+  return { jobs: counts ? `, and its ${counts} ${jobs + stops === 1 ? "is" : "are"} on the Jobs and shifts step` : "", dates, shiftsOutside, check: list };
 }
 
 /** Picked the wrong contest: delete this one (nothing published, no bands) and pick again. */

@@ -123,7 +123,7 @@ export async function sendVolunteerDigests(admin: SupabaseClient, origin: string
         rows: changes.slice(0, 30),
         button: { label: "See all volunteers", url: `${origin}/dashboard/events/${eventId}/volunteers` },
         footer: person.userId
-          ? `You get this once a day, on days with changes you picked: ${listOf(chosen.map((k) => DIGEST_PARTS.find((p) => p.key === k)!.label.toLowerCase()))}. Change what it includes in Volunteer Setup.`
+          ? `You get this once a day, on days with changes you picked: ${listOf(chosen.map((k) => DIGEST_PARTS.find((p) => p.key === k)!.label.toLowerCase()))}. Change what it includes on the event's volunteer page.`
           : "You get this once a day, on days with changes, because the event's hosts added this address. They can change it in Event settings → Email settings.",
       });
       if (await sendEmail({ to: person.email, subject: `Volunteer sign-ups: ${event.name}`, html, text, eventId })) sent++;

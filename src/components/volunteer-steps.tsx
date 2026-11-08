@@ -29,7 +29,9 @@ export function SetupSteps({
   const base = `/dashboard/events/${eventId}`;
   const steps = STEPS[kind];
   // Event settings (Details with ?section=) is a settings page, not the Details step: it has its own list.
-  const settings = useSearchParams().has("section");
+  const query = useSearchParams();
+  // The same rule as the page: any section asked for, by ?section= or an old ?step= link.
+  const settings = query.has("section") || query.has("step");
   const here = preview ? 0 : settings ? -1 : steps.findIndex((s) => pathname === `${base}${s.path}`);
   if (here < 0) return null;
   const last = steps.length - 1;
@@ -141,6 +143,7 @@ export function SetupSteps({
   );
 }
 
+/** "Add a job" → "add a job"; a note that starts with a name ("BBQ crew needs a shift") keeps its capitals. */
 function lowerFirst(text: string) {
-  return text.charAt(0).toLowerCase() + text.slice(1);
+  return /^(Add|Choose|Pick|Tick)\b/.test(text) ? text.charAt(0).toLowerCase() + text.slice(1) : text;
 }
