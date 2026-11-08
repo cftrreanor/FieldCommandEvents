@@ -46,10 +46,10 @@ export function RoleButtons({
                 if (r?.error) setError(r.error);
               });
             }}
-            className={`min-h-9 shrink-0 rounded-full border px-3 text-sm font-medium transition disabled:opacity-60 ${
+            className={`min-h-11 shrink-0 rounded-full border px-4 text-sm font-medium transition disabled:opacity-60 ${
               p.value === current
                 ? "border-brand bg-brand text-brand-foreground"
-                : "border-border bg-surface hover:border-brand"
+                : "border-[1.5px] border-field-border bg-surface hover:border-brand"
             }`}
           >
             {pending && picked === p.value ? "Switching…" : p.label}
@@ -113,7 +113,7 @@ export function DemoStart({ eventId, personas, active }: { eventId: string; pers
           <Button
             type="button"
             variant="secondary"
-            className="min-h-9 px-3"
+            className="min-h-11 px-4"
             disabled={removing}
             onClick={async () => {
               const ok = await confirmDialog({

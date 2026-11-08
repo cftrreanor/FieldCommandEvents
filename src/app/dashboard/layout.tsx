@@ -52,8 +52,8 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
           )}
           {tracking.length > 0 && (
             <Link href="/dashboard/volunteer-tracking" className={headerLinkClass}>
-              <span className="hidden sm:inline">Volunteer tracking</span>
-              <span className="sm:hidden">Volunteers</span>
+              {/* One name at every width, the page's own title (light check, 2026-11-08). */}
+              Volunteer tracking
             </Link>
           )}
           <Link href="/dashboard/account" className={`${headerLinkClass} hidden sm:block`}>

@@ -133,7 +133,7 @@ export function LogoForm({ eventId, logo, color }: { eventId: string | null; log
             )}
           </div>
           <p className="text-xs text-muted" aria-live="polite">
-            {busy ?? "PNG or JPG, up to 2 MB. Shown on your public event pages and volunteer badges."}
+            {busy ?? "PNG or JPG, up to 2 MB."}
           </p>
         </div>
       </div>

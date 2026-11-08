@@ -110,7 +110,7 @@ export function InvitePastBands({
 
   const chosen = pickable.filter((d) => picked.has(d.email));
   const btn = "inline-flex min-h-11 items-center rounded-md px-4 text-sm font-semibold";
-  const outline = `${btn} border-[1.5px] border-field-border bg-surface hover:border-brand disabled:cursor-not-allowed disabled:border-dashed disabled:text-disabled`;
+  const outline = `${btn} border-[1.5px] border-field-border bg-surface hover:border-brand disabled:cursor-not-allowed disabled:text-disabled`;
   return (
     <div className="space-y-4">
       {!canSend && cantSendReason && <p className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm">{cantSendReason}</p>}
@@ -250,7 +250,7 @@ export function InvitePastBands({
           type="button"
           disabled={!canSend || chosen.length === 0 || pending}
           onClick={() => void go(chosen, false)}
-          className={`${btn} bg-brand text-brand-foreground hover:bg-brand-hover disabled:cursor-not-allowed disabled:border-[1.5px] disabled:border-dashed disabled:border-field-border disabled:bg-transparent disabled:text-disabled`}
+          className={`${btn} bg-brand text-brand-foreground hover:bg-brand-hover disabled:cursor-not-allowed disabled:border-[1.5px] disabled:border-field-border disabled:bg-transparent disabled:text-disabled`}
         >
           {pending
             ? "Saving…"

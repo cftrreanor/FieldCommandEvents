@@ -377,7 +377,7 @@ function JobBar({
             type="button"
             disabled={deleting || signedUp}
             aria-describedby={signedUp ? "job-bar-locked" : undefined}
-            className={`${button} gap-1.5 border border-danger/40 bg-surface text-danger hover:bg-danger/5 disabled:cursor-not-allowed disabled:border-dashed disabled:border-field-border disabled:text-disabled`}
+            className={`${button} gap-1.5 border border-danger/40 bg-surface text-danger hover:bg-danger/5 disabled:cursor-not-allowed disabled:border-field-border disabled:text-disabled`}
             onClick={async () => {
               const ok = await confirmDialog({
                 title: "Delete this job?",
@@ -425,7 +425,7 @@ function JobBar({
             role="link"
             aria-disabled="true"
             aria-describedby="job-bar-note"
-            className="inline-flex min-h-11 cursor-not-allowed items-center rounded-md border-[1.5px] border-dashed border-field-border px-3 text-sm font-semibold text-disabled"
+            className="inline-flex min-h-11 cursor-not-allowed items-center rounded-md border-[1.5px] border-field-border px-3 text-sm font-semibold text-disabled"
           >
             {links.next.label} →
           </span>
