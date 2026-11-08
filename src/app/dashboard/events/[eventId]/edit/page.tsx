@@ -307,7 +307,13 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
             <>
               <Panel
                 title="Event details"
-                intro={when ? `The name and time zone everyone sees. The day or weekly hours are set in ${when.setupName}.` : "The name, dates, times, and venue everyone sees."}
+                intro={
+                  when
+                    ? `The name and time zone everyone sees. The day or weekly hours are set in ${when.setupName}.`
+                    : setup
+                      ? "The name and time zone everyone sees."
+                      : "The name, dates, times, and venue everyone sees."
+                }
               >
                 <EventForm
                   action={updateEvent.bind(null, eventId)}

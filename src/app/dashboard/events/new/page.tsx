@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { Card } from "@/components/ui";
 import { getMyOrganization } from "@/lib/data";
 import { isPlacesConfigured } from "@/lib/places";
 import { createEvent } from "../../actions";
 import { EventForm } from "../_components/event-form";
-import { BAND_SETUP_STEPS, MEETING_SETUP_STEPS, SetupHeader, VOLUNTEER_SETUP_STEPS } from "../_components/setup-steps";
+import { SetupHeader } from "../_components/setup-steps";
+import { SetupSteps } from "@/components/volunteer-steps";
+import type { StepsKind } from "@/lib/setup-steps";
 import { SetupLogo } from "../_components/setup-logo";
 import { ContestPicker } from "../_components/contest-picker";
 import { loadBrand } from "@/lib/badges";
@@ -152,13 +155,15 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
     );
     return (
       <div className="mx-auto max-w-5xl" data-required-marks>
-        <SetupHeader
-          current="details"
-          back={{ href: "/dashboard", label: "My events" }}
-          steps={type === "volunteer" ? VOLUNTEER_SETUP_STEPS : type === "band_contest" ? BAND_SETUP_STEPS : undefined}
-        >
-          {changeKind}
-        </SetupHeader>
+        {type === "volunteer" || type === "band_contest" ? (
+          <FirstStep kind={type === "volunteer" ? "volunteer" : "band"} intro={type === "volunteer" ? "Add your team, maps, and volunteer jobs whenever you're ready, from Event settings." : "Add your team and maps whenever you're ready, from Event settings."}>
+            {changeKind}
+          </FirstStep>
+        ) : (
+          <SetupHeader current="details" back={{ href: "/dashboard", label: "My events" }}>
+            {changeKind}
+          </SetupHeader>
+        )}
         {trialNote}
         {past.length > 0 && (
           // Start from an earlier contest: its setup comes over when this one is saved.
@@ -228,10 +233,9 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
   // this form reads as the start of setup, not all of it (owner, QA 2026-11-08).
   return (
     <div className="mx-auto max-w-5xl" data-required-marks>
-      <SetupHeader current="details" back={{ href: "/dashboard", label: "My events" }} steps={MEETING_SETUP_STEPS}>
-        {type === "conference" && "Free for teachers. "}
+      <FirstStep kind="meeting" intro={`${type === "conference" ? "Free for teachers. " : ""}Next, you'll set your hours and where you'll meet.`}>
         {changeKind}
-      </SetupHeader>
+      </FirstStep>
       {trialNote}
       <Card className="mt-6">
         <h2 className="text-lg font-semibold">Event details</h2>
@@ -249,5 +253,25 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
         </div>
       </Card>
     </div>
+  );
+}
+
+/**
+ * Step 1 of a volunteer event, band contest, or meetings event, before it exists: the same step bar,
+ * back link, and title as its later steps, so this form reads as the start of setup, not all of it
+ * (owner and light check, 2026-11-08).
+ */
+function FirstStep({ kind, intro, children }: { kind: StepsKind; intro: string; children: ReactNode }) {
+  return (
+    <>
+      <SetupSteps eventId="" kind={kind} facts={{ middleDone: false, middleNote: null, count: null }} preview />
+      <Link href="/dashboard" className="text-sm text-muted hover:text-foreground">
+        ← My events
+      </Link>
+      <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">Event details</h1>
+      <p className="mt-2 max-w-3xl text-muted">
+        {intro} Boxes marked * are required. {children}
+      </p>
+    </>
   );
 }

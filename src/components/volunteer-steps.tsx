@@ -10,28 +10,41 @@ import { SETUP_STEPS as STEPS, type SetupStepFacts, type StepsKind } from "@/lib
  * optional Volunteers, and the event page to publish), each a link, with the one you're on marked
  * "Now". Status is said in words at every width, not by color alone. Optional steps never block.
  */
-export function SetupSteps({ eventId, kind, facts }: { eventId: string; kind: StepsKind; facts: SetupStepFacts }) {
+export function SetupSteps({
+  eventId,
+  kind,
+  facts,
+  preview = false,
+}: {
+  eventId: string;
+  kind: StepsKind;
+  facts: SetupStepFacts;
+  /** The new-event form, before the event exists: step 1 is "Now", the rest "Not yet", and none are links yet. */
+  preview?: boolean;
+}) {
   const pathname = usePathname();
   // Something on this page isn't saved: the step it's on doesn't say ready.
   const pending = usePendingCounts();
   const unsaved = pending.failed + pending.incomplete + pending.unadded > 0;
   const base = `/dashboard/events/${eventId}`;
   const steps = STEPS[kind];
-  const here = steps.findIndex((s) => pathname === `${base}${s.path}`);
+  const here = preview ? 0 : steps.findIndex((s) => pathname === `${base}${s.path}`);
   if (here < 0) return null;
   const last = steps.length - 1;
   const done = steps.map((s, i) =>
-    i === 0 ? true : i === last ? false : (facts.done?.[s.key] ?? (s.key === "volunteers" ? Boolean(facts.volunteersDone) : facts.middleDone)),
+    preview ? false : i === 0 ? true : i === last ? false : (facts.done?.[s.key] ?? (s.key === "volunteers" ? Boolean(facts.volunteersDone) : facts.middleDone)),
   );
   // What a required step still needs ("Add your hours"), from its own note or the middle step's.
   const stepNote = (key: string, i: number) => (facts.notes && key in facts.notes ? (facts.notes[key] ?? null) : i === 1 ? facts.middleNote : null);
   const doneCount = done.filter(Boolean).length;
+  // Required steps that still need something, named: shown in words on phones too, not only on wider screens.
+  const needsWork = steps.filter((s, i) => !preview && !s.optional && i > 0 && i < last && !done[i] && Boolean(stepNote(s.key, i)));
   const stepList = (className: string) => (
           <ol className={className}>
             {steps.map((s, i) => {
               const now = i === here;
               // A required middle step that still needs something: amber, saying what. An optional one stays neutral.
-              const needs = !s.optional && i > 0 && i < last && !done[i] && Boolean(stepNote(s.key, i));
+              const needs = needsWork.includes(s);
               const optionalNote = s.optional && !done[i] ? ((s.key === "volunteers" ? facts.volunteersNote : facts.notes?.[s.key]) ?? "Optional") : null;
               // The step you're on says "Now", "Now · ready" once it has everything it needs, or "Now · not saved".
               const note =
@@ -54,8 +67,8 @@ export function SetupSteps({ eventId, kind, facts }: { eventId: string; kind: St
                     aria-hidden
                     className={`block rounded-full ${now ? "h-2 bg-brand" : done[i] ? "h-1.5 bg-success" : needs ? "h-1.5 bg-warning" : s.optional ? "h-1.5 border-[1.5px] border-dashed border-muted bg-surface" : "h-1.5 border border-field-border bg-surface"}`}
                   />
-                  {now ? (
-                    <span aria-current="step" className="mt-1 flex min-h-11 items-center text-sm font-semibold">
+                  {now || preview ? (
+                    <span aria-current={now ? "step" : undefined} className={`mt-1 flex min-h-11 items-center text-sm ${now ? "font-semibold" : "font-medium text-muted"}`}>
                       {s.label}
                     </span>
                   ) : (
@@ -91,10 +104,16 @@ export function SetupSteps({ eventId, kind, facts }: { eventId: string; kind: St
         {steps.map((s, i) => (
           <li
             key={s.key}
-            className={`flex-1 rounded-full ${i === here ? "h-2 bg-brand" : done[i] ? "h-1.5 bg-success" : s.optional ? "h-1.5 border-[1.5px] border-dashed border-muted bg-surface" : "h-1.5 border border-field-border bg-surface"}`}
+            className={`flex-1 rounded-full ${i === here ? "h-2 bg-brand" : done[i] ? "h-1.5 bg-success" : needsWork.includes(s) ? "h-1.5 bg-warning" : s.optional ? "h-1.5 border-[1.5px] border-dashed border-muted bg-surface" : "h-1.5 border border-field-border bg-surface"}`}
           />
         ))}
       </ol>
+      {needsWork.length > 0 && (
+        <p className="mt-2 text-sm font-medium text-warning sm:hidden">
+          <span aria-hidden>◆ </span>
+          {needsWork.length === 1 ? "1 step needs work" : `${needsWork.length} steps need work`}: {needsWork.map((s) => s.label).join(", ")}
+        </p>
+      )}
       <details className="group sm:hidden">
         <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-brand">
           <span aria-hidden className="inline-block transition-transform group-open:rotate-90">

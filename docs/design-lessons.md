@@ -279,3 +279,17 @@ before the panel sees it.
 - [ ] **L18** Sibling steps save the same way, with Next in the same place
 - [ ] **L19** Every date-based state (opens later, scheduled) shows on every badge, button, and job; a timer that ends refreshes the page
 - [ ] `npm run lint` passes (includes the automatic checks)
+
+## L22. Nothing is red until someone has had a go
+A box turns red only after someone leaves it empty or tries to move on, never because a form opened or an
+option was picked. Each red box says why underneath, in words, not color alone. Never prefill a choice the
+person has to make (a day, hours): an empty box is honest; a suggestion gets saved by accident.
+- **Seen in:** meetings start light check (Every week turned four empty boxes red on picking it, 3 of 3;
+  suggested hours saved themselves the moment Meeting times opened, owner).
+
+## L23. A flow's first screen is step 1 of the same steps
+The screen before an item exists shows the same step bar, back link, and title as the steps after it, with
+step 1 "Now" and the rest "Not yet", so filling it in never feels like the whole job.
+- **Seen in:** meetings start (owner: "I don't want people to think that they are only filling out that
+  screen"; step 1 had its own header, 3 of 3).
+

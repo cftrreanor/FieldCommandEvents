@@ -697,7 +697,7 @@ function TimesForm({
         </div>
       )}
       {autosave ? (
-        <AutosaveBar status={auto.status} retry={auto.retry} next={autosave.next} />
+        <AutosaveBar status={auto.status} retry={auto.retry} next={autosave.next} todo={fresh && basics ? "Add your day and hours" : null} />
       ) : (
         <SaveCancel
           editing={editing}

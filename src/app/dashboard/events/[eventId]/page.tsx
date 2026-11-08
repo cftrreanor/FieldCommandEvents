@@ -1154,10 +1154,19 @@ function PublishPanel({
   // A band contest needs a deadline and a classification before it can publish (the database checks too).
   const bandsHere = facts.eventType === "band_contest";
   const bandMissing = bandsHere ? bandRegistrationMissing(facts) : null;
+  // Meetings and conferences need their hours and where they meet before publishing (the database checks too).
+  const meetingsHere = hasConferences(facts.eventType);
+  const meetingTodo = meetingsHere
+    ? [
+        facts.conferenceTimesMissing && { label: facts.conferenceTimesMissing, href: `/dashboard/events/${facts.eventId}/conferences/times` },
+        facts.conferencePlaceMissing && { label: facts.conferencePlaceMissing.replace(/\.$/, ""), href: `/dashboard/events/${facts.eventId}/conferences/place` },
+      ].filter((x): x is { label: string; href: string } => Boolean(x))
+    : [];
+  const blocked = needsJob || Boolean(bandMissing) || meetingTodo.length > 0;
   const effects = publishEffects(facts).filter((line) => !(jobsHere && line.startsWith("Volunteer sign-up")));
   return (
     <Card id="publish" className="mt-8 scroll-mt-6">
-      <h2 className="text-lg font-semibold">{needsJob || bandMissing ? "Not ready to publish yet" : others.length ? "Almost ready to publish" : "Ready to publish"}</h2>
+      <h2 className="text-lg font-semibold">{blocked ? "Not ready to publish yet" : others.length ? "Almost ready to publish" : "Ready to publish"}</h2>
       {needsJob && (
         // The one thing stopping them, first.
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
@@ -1179,6 +1188,21 @@ function PublishPanel({
           </Link>
         </div>
       )}
+      {meetingTodo.length > 0 && (
+        // What's left, in step order, each with the way there.
+        <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
+          <p className="font-semibold">Publishing needs your hours and where you&apos;ll meet</p>
+          <ul className="mt-1">
+            {meetingTodo.map((t) => (
+              <li key={t.href}>
+                <Link href={t.href} className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
+                  {t.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {!needsJob && empty.length > 0 && (
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
           <p className="font-semibold">
@@ -1197,7 +1221,7 @@ function PublishPanel({
           </ul>
         </div>
       )}
-      {needsJob || bandMissing ? null : others.length ? (
+      {blocked ? null : others.length ? (
         // The checklist beside the page lists every step; here, just the first one left.
         <p className="mt-2 text-sm">
           <span className="text-muted">We recommend finishing {others.length === 1 ? "one more step" : `${others.length} more steps`} first, starting with </span>
@@ -1220,7 +1244,7 @@ function PublishPanel({
           </li>
         ))}
       </ul>
-      {needsJob || bandMissing ? null : facts.planBlock ? (
+      {blocked ? null : facts.planBlock ? (
         // Say why before they try, and what they can do: not an error after the click.
         <div className="mt-5 rounded-md border border-brand/25 bg-brand-soft p-4 text-sm leading-6">
           <p className="font-semibold">Your plan doesn&apos;t allow publishing this yet</p>

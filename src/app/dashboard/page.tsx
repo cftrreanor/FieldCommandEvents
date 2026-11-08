@@ -606,7 +606,12 @@ function DraftNext({ draft: d, href, ask }: { draft: DraftStatus; href: string; 
         <p className="font-medium">Next: finish setup and publish</p>
       ) : c.remaining.length ? (
         <>
-          <p className="font-medium">Next: {c.next?.label}</p>
+          {/* The next step is a link of its own, above the card's link (light check, 2026-11-08). */}
+          {c.next ? (
+            <Link href={c.next.href} className="relative z-10 inline-flex min-h-11 items-center font-medium text-brand underline underline-offset-4">
+              Next: {c.next.label}
+            </Link>
+          ) : null}
           <p className="text-muted">
             {left} {d.planBlock ? "setup " : ""}
             {left === 1 ? "step" : "steps"} left{d.planBlock ? "" : " to publish"}
