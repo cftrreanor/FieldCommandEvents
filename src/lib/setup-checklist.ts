@@ -128,8 +128,8 @@ function jobsStep(f: SetupFacts, base: string): SetupStep {
 /** What a band contest still needs before directors can register ("Add a deadline"), or null. */
 export function bandRegistrationMissing(f: Pick<SetupFacts, "registrationDeadline" | "classifications" | "registrationDeadlinePast" | "published">) {
   const cls = (f.classifications ?? 0) > 0;
-  if (f.registrationDeadlinePast && !f.published) return cls ? "Pick a new deadline: it has passed" : "Pick a new deadline and add a classification";
-  if (!f.registrationDeadline && !cls) return "Add a deadline and a classification";
+  if (f.registrationDeadlinePast && !f.published) return cls ? "Pick a new deadline: it has passed" : "Add a classification and pick a new deadline";
+  if (!f.registrationDeadline && !cls) return "Add a classification and a deadline";
   if (!f.registrationDeadline) return "Add a deadline";
   if (!cls) return "Add a classification";
   return null;

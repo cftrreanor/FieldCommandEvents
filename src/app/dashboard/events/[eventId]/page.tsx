@@ -899,7 +899,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
                   <span className="text-muted">
                     {published
                       ? `Add one with shifts, and its sign-up link appears in ${contestLive ? "Get the word out" : "Links to share"}.`
-                      : "Add one with shifts, and volunteers can sign up once you publish."}
+                      : "Volunteers can sign up once you add one and publish."}
                   </span>
                 </p>
               )}
@@ -1241,7 +1241,10 @@ function PublishPanel({
       {meetingTodo.length > 0 && (
         // The one thing stopping them, first, with one button to it: the same box as volunteer events and band contests.
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
-          <p className="font-semibold">{meetingTodo[0].label.replace(/^./, (c) => c.toUpperCase())} before you publish</p>
+          <p className="font-semibold">
+            {/* Everything still missing, in step order, as the band contest box does. */}
+            {meetingTodo.length > 1 ? "Add your hours and where you'll meet" : `${meetingTodo[0].label.replace(/^./, (c) => c.toUpperCase())} before you publish`}
+          </p>
           <p className="mt-1">Publishing needs your hours and where you&apos;ll meet.</p>
           <Link href={meetingTodo[0].href} className={`${BTN} mt-3`}>
             {meetingTodo[0].step === "times" ? "Go to meeting times" : "Go to where you'll meet"}

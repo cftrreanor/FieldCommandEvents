@@ -61,7 +61,7 @@ export function SetupSteps({
                         : stepNote(s.key, i)
                       : now
                         ? done[i] && i < last
-                          ? "Now · ready"
+                          ? "Now · all set"
                           : optionalNote
                             ? `Now · ${optionalNote.charAt(0).toLowerCase()}${optionalNote.slice(1)}`
                             : "Now"

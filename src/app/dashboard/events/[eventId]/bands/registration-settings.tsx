@@ -679,7 +679,7 @@ export function RegistrationSettings({
                 Saved
               </p>
             ) : (
-              <p className="text-muted">Changes save automatically</p>
+              <p className="text-muted">Saves as you go</p>
             )}
           </div>
           {next && (

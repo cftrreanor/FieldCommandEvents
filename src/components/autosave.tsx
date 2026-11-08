@@ -79,7 +79,7 @@ export function AutosaveBar({
   status: AutoStatus;
   retry: () => void;
   next?: { href: string; label: string };
-  /** The step has nothing saved yet ("Add your day and hours"): said instead of "Changes save automatically", with Next lighter until then. */
+  /** The step has nothing saved yet ("Add your day and hours"): said instead of "Saves as you go", with Next lighter until then. */
   todo?: string | null;
 }) {
   return (
@@ -114,11 +114,8 @@ export function AutosaveBar({
             <span aria-hidden>◆ </span>Not saved yet. {todo}
           </p>
         ) : (
-          // Short on phones, so the bar stays one line over the form.
-          <p className="text-muted">
-            <span className="sm:hidden">Saves as you go</span>
-            <span className="hidden sm:inline">Changes save automatically</span>
-          </p>
+          // Short, so the bar stays one line over the form on phones; the same words at every width.
+          <p className="text-muted">Saves as you go</p>
         )}
       </div>
       {next && (

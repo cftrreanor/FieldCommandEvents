@@ -104,9 +104,9 @@ function SaveCancel({
             ✓
           </span>
         )}
-        <span className="shrink-0 font-semibold">{problem ? problem.text : editing ? "Unsaved changes" : saved ? "All changes saved" : "Not saved yet"}</span>
-        {/* Why this page has a Save button when the setup steps save themselves (light check, 2026-11-08). */}
-        {!problem && saved && !editing && <span className="hidden text-muted sm:inline">· Nothing changes for people who booked until you save</span>}
+        <span className="shrink-0 font-semibold">{problem ? problem.text : editing ? "Not saved yet" : saved ? "All changes saved" : "Not saved yet"}</span>
+        {/* Why this page has a Save button when the setup steps save themselves, said only once there's a change (light check, 2026-11-08). */}
+        {!problem && editing && <span className="text-muted">· People who booked see no change until you save</span>}
         {problem && (
           <button
             type="button"
