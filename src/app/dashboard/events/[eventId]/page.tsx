@@ -328,7 +328,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           fix: { label: "Publish the schedule", href: `${base}/${roomsHere ? "rooms#order-heading" : "schedule"}` },
         }
       : conferenceHere
-        ? { who: booking.Bookers, what: "Book a time", url: publicUrl, on: true }
+        ? // One name for this link everywhere: the booking page (Meeting setup calls it the booking link).
+          { who: "Booking page", what: `${booking.Bookers} book a time here`, url: publicUrl, on: true }
         : hasBooths(event.event_type)
           ? { who: "Everyone", what: "What's at the event: booths and partners", url: publicUrl, on: true }
           : { who: "Everyone", what: "Event page: date, place, and maps", url: publicUrl, on: true },
@@ -592,7 +593,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   const conferenceReady = !!conference?.times_saved_at && (published || conferenceBooked > 0);
   const signups = conferenceHere ? (
     access.isHost ? (
-      <PageSection id="signups" title={booking.child ? "Conference setup" : "Meeting setup"}>
+      <PageSection id="signups" title={booking.child ? "Conferences" : "Meetings"}>
         <Card className={isEventDay ? "border-brand" : ""}>
           <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between [&>*:last-child]:shrink-0">
             <div className="space-y-1 text-sm leading-6">
@@ -611,7 +612,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
               )}
               {/* What's missing is the button itself (in the step bar's words), so it isn't said twice. */}
               {!notReady(conference, event.venue_address, event.event_type) && (
-                <p className="text-muted">{published ? `${booking.Bookers} book from your public page link.` : "Ready to publish."}</p>
+                <p className="text-muted">{published ? `${booking.Bookers} book from your booking link.` : "Ready to publish."}</p>
               )}
             </div>
             <div className="flex flex-wrap gap-2">
@@ -625,7 +626,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
                 const timesTodo = !published && (!conference?.times_saved_at || (conference.schedule === "weekly" && !conference.weekly_hours.length));
                 const placeTodo = !published && !timesTodo && placeMissing(conference, event.venue_address, event.event_type);
                 const step = published
-                  ? { href: "", label: event.event_type === "meeting" ? "Meeting setup" : "Conference setup" }
+                  ? // Says what it's for, not the page's name (the section is "Meetings").
+                    { href: "", label: "Change times or place" }
                   : timesTodo
                     ? { href: "/times", label: "Add your hours" }
                     : placeTodo
@@ -836,7 +838,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
       <BoothsCard eventId={eventId} isDay={isEventDay} />
     </PageSection>
   ) : null;
-  const signupsLabel = conferenceHere ? (booking.child ? "Conference" : "Meetings") : parentsHere ? "Parents" : groupsHere ? words.Many : "Booths";
+  const signupsLabel = conferenceHere ? (booking.child ? "Conferences" : "Meetings") : parentsHere ? "Parents" : groupsHere ? words.Many : "Booths";
 
   const schedule =
     groupsHere && access.isHost ? (
@@ -844,7 +846,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         <Card className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between [&>*:last-child]:shrink-0">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={event.performance_order_published ? "success" : "neutral"}>
-              {event.performance_order_published ? "Published" : "Not published"}
+              {event.performance_order_published ? "Schedule published" : "Schedule not published"}
             </Badge>
             <span className="text-sm text-muted">
               {roomsHere
@@ -854,16 +856,19 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
             {event.event_type === "band_contest" && !event.performance_order_published && !past && (
               // When to post times by, and why: directors book buses from them. Before publishing, it's later work.
               <span className="basis-full text-sm">
-                <span className="font-semibold">Publish it by {formatDate(twoWeeksBefore(event.starts_on), { year: undefined })}</span>
-                <span className="text-muted">
-                  , two weeks before contest day, so directors can book buses.{published ? "" : " You can start once registration is published."}
-                </span>
+                <span className="font-semibold">Publish the schedule by {formatDate(twoWeeksBefore(event.starts_on), { year: undefined })}</span>
+                <span className="text-muted">, two weeks before contest day, so directors can book buses.</span>
               </span>
             )}
           </div>
-          <Link href={`/dashboard/events/${eventId}/${roomsHere ? "rooms" : "schedule"}`} className={BTN_OUTLINE}>
-            {roomsHere ? "Set up rooms and schedule" : "Set up the schedule"}
-          </Link>
+          {/* A band contest's schedule is built from who registered: before the event is published, say when it opens instead of a button. */}
+          {event.event_type === "band_contest" && !published ? (
+            <p className="text-sm font-medium text-muted">Opens after you publish</p>
+          ) : (
+            <Link href={`/dashboard/events/${eventId}/${roomsHere ? "rooms" : "schedule"}`} className={BTN_OUTLINE}>
+              {roomsHere ? "Set up rooms and schedule" : "Set up the schedule"}
+            </Link>
+          )}
         </Card>
       </PageSection>
     ) : null;
@@ -874,7 +879,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   const noJobsYet = stations.length === 0;
   const volunteers =
     access.canManage && !conferenceHere ? (
-      <PageSection id="volunteers" title="Volunteers">
+      // Named like its step where there is one ("Jobs and shifts").
+      <PageSection id="volunteers" title={usesJobs(event.event_type) ? "Jobs and shifts" : "Volunteers"}>
         <Card className="space-y-5">
           <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between [&>*:last-child]:shrink-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -1052,7 +1058,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           ? "Booths and partners"
           : signupsLabel,
     schedule: roomsHere ? "Rooms and schedule" : "Performance schedule",
-    volunteers: "Volunteers",
+    volunteers: usesJobs(event.event_type) ? "Jobs and shifts" : "Volunteers",
     files: "Maps and documents",
   };
   const navLinks = order.filter((k) => labels[k] && blocks[k]).map((k) => ({ id: k, label: labels[k] }));
@@ -1224,7 +1230,10 @@ function PublishPanel({
       ].filter((x): x is { step: string; label: string; href: string } => Boolean(x))
     : [];
   const blocked = needsJob || Boolean(bandMissing) || meetingTodo.length > 0;
-  const effects = publishEffects(facts).filter((line) => !(jobsHere && line.startsWith("Volunteer sign-up")));
+  // A volunteer event says what its own button opens (it chooses when sign-up opens), as band contests do.
+  const effects = publishEffects(facts).map((line) =>
+    jobsHere && line.startsWith("Volunteer sign-up") ? "With Publish and open sign-up, volunteers can pick a shift or an item right away." : line,
+  );
   return (
     <Card id="publish" className="mt-8 scroll-mt-6">
       <h2 className="text-lg font-semibold">{blocked ? "Not ready to publish yet" : others.length ? "Almost ready to publish" : "Ready to publish"}</h2>

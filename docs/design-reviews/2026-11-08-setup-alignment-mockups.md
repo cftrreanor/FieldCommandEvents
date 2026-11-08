@@ -101,3 +101,21 @@ where Unpublish now lives.
 
 An AI review of mock-ups with sample data, not testing with real people. For finding 1, ask two or three
 organizers to find Unpublish on a phone.
+
+## Light check on the built pages (2026-11-08)
+
+UI Designer, Software Engineer, UX Content Manager, Marketing Manager, usability consultant, on
+`docs/design-reviews/2026-11-08-setup-alignment-built/`. Consultant: "fix one thing, then ship".
+
+- **Severity 3:** live Meeting setup's bar said "All changes saved · … until you save" (4 of 5); the empty
+  Volunteers card said sign-up opens on publishing for kinds where it doesn't (Software Engineer). Both fixed.
+- **Bugs fixed:** wording for non-job kinds, job names lowercased after "Now", old `?step=` links, quick-link
+  names for parents and booths, leftover names.
+- **Severity 2, done (owner: "1–9 now"):** the pinned bar on Jobs and shifts and a filled "Add job"; no
+  "Back to [event]" on step pages; the band schedule card says "Opens after you publish"; section names match
+  steps ("Jobs and shifts", "Meetings", "Change times or place", "Booking page"); "Now" first on phones;
+  dark-mode checkboxes and radio buttons; pinned bars never cover the box being typed in; unpublish and delete
+  say how many people and what happens; "When you publish" says what opens for every kind.
+- **Later (owner):** the nav's "Volunteers" vs "Volunteer tracking", two bus-booking rules, the band logo
+  card's wording, the cut-off contact email, dashed borders meaning three things, a few small targets, the
+  demo card's chips.

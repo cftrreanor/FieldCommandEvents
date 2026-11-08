@@ -273,17 +273,37 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const published = event.status === "published";
   // Could it be published again after unpublishing? Not after a plan ends, or once another event takes a one-at-a-time spot.
   const republishBlocked = published && section === "more" ? await republishReason(supabase, eventId) : null;
-  // A live meetings event: how many have booked, so unpublishing says what happens to them.
-  const bookedNow = published && section === "more" && hasConferences(event.event_type) ? await conferenceBookedCount(supabase, eventId) : 0;
-  const booked = bookedNow === 1 ? "1 person has" : `${bookedNow} people have`;
-  // What unpublishing stops, in each kind's own words (light check, 2026-11-08).
+  // A live event: how many people are in it (booked, signed up, or registered), so unpublishing and deleting
+  // say what happens to them (light check, 2026-11-08). Only fetched on Publishing and more.
+  const onMore = section === "more";
+  const [bookedNow, volunteersNow, bandsNow] = onMore
+    ? await Promise.all([
+        hasConferences(event.event_type) ? conferenceBookedCount(supabase, eventId) : Promise.resolve(0),
+        usesJobs(event.event_type)
+          ? supabase.from("volunteers").select("id", { count: "exact", head: true }).eq("event_id", eventId).then((r) => r.count ?? 0)
+          : Promise.resolve(0),
+        event.event_type === "band_contest"
+          ? supabase.from("bands").select("id", { count: "exact", head: true }).eq("event_id", eventId).then((r) => r.count ?? 0)
+          : Promise.resolve(0),
+      ])
+    : [0, 0, 0];
+  const people = (n: number, one: string, many: string) => (n === 1 ? `1 ${one} has` : `${n} ${many} have`);
+  // What unpublishing stops, in each kind's own words, and what happens to the people already in it.
   const unpublishIntro = hasConferences(event.event_type)
-    ? `Your booking page is live${bookedNow ? `, and ${booked} booked` : ""}. Unpublishing hides the page and stops new bookings.${bookedNow ? " Their times stay booked, and nobody is emailed." : " Nobody is emailed."}`
+    ? `Your booking page is live${bookedNow ? `, and ${people(bookedNow, "person", "people")} booked` : ""}. Unpublishing hides the page and stops new bookings.${bookedNow ? " Their times stay booked, and nobody is emailed." : " Nobody is emailed."}`
     : event.event_type === "band_contest"
-      ? "Your event is live. Unpublishing hides its public pages and closes band registration and volunteer sign-up. Nobody is emailed."
+      ? `Your event is live${bandsNow || volunteersNow ? `, and ${[bandsNow ? people(bandsNow, "band", "bands").replace(/ ha(s|ve)$/, "") : null, volunteersNow ? people(volunteersNow, "volunteer", "volunteers").replace(/ ha(s|ve)$/, "") : null].filter(Boolean).join(" and ")} ${bandsNow + volunteersNow === 1 ? "has" : "have"} signed up` : ""}. Unpublishing hides its public pages and closes band registration and volunteer sign-up.${bandsNow || volunteersNow ? " They stay registered and signed up, and nobody is emailed." : " Nobody is emailed."} After you publish again, open volunteer sign-up again from the event page.`
       : event.event_type === "volunteer"
-        ? "Your event is live. Unpublishing hides its public pages and closes volunteer sign-up. Nobody is emailed."
+        ? `Your event is live${volunteersNow ? `, and ${people(volunteersNow, "volunteer", "volunteers")} signed up` : ""}. Unpublishing hides its public pages and closes volunteer sign-up.${volunteersNow ? " They keep their shifts, and nobody is emailed." : " Nobody is emailed."}`
         : "Your event is live. Unpublishing hides its public pages and stops every sign-up and registration. Nobody is emailed.";
+  // Deleting: what goes with it.
+  const deleteWhat = hasConferences(event.event_type) && bookedNow
+    ? `Removes the event and its ${bookedNow === 1 ? "1 booking" : `${bookedNow} bookings`}.`
+    : event.event_type === "band_contest" && (bandsNow || volunteersNow)
+      ? `Removes the event and its ${[bandsNow ? (bandsNow === 1 ? "1 registered band" : `${bandsNow} registered bands`) : null, volunteersNow ? (volunteersNow === 1 ? "1 volunteer" : `${volunteersNow} volunteers`) : null].filter(Boolean).join(" and ")}.`
+      : usesJobs(event.event_type) && volunteersNow
+        ? `Removes the event and its ${volunteersNow === 1 ? "1 volunteer" : `${volunteersNow} volunteers`}.`
+        : null;
   const afterUnpublish = republishBlocked
     ? `${republishBlocked} If you unpublish it, you can't publish it again until that changes.`
     : "You can publish again anytime.";
@@ -306,11 +326,13 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
         <SetupHeader current={section} back={{ href: `/dashboard/events/${eventId}`, label: "Save and finish later", guard: true }} />
       ) : (
         <>
-          <Link href={`/dashboard/events/${eventId}`} className="text-sm text-muted hover:text-foreground">
-            {/* Event settings opened during setup: the way back to the steps. */}
-            ← {!published && steppedSetup && !stepOnly ? "Back to setup" : `Back to ${event.name}`}
-          </Link>
-          <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">{stepOnly ? "Event details" : "Event settings"}</h1>
+          {/* The Details step has no "Back to" link (it would jump ahead to Publish); Event settings opened during setup goes back to the steps. */}
+          {!stepOnly && (
+            <Link href={`/dashboard/events/${eventId}`} className="mb-3 inline-block text-sm text-muted hover:text-foreground">
+              ← {!published && steppedSetup ? "Back to setup" : `Back to ${event.name}`}
+            </Link>
+          )}
+          <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">{stepOnly ? "Event details" : "Event settings"}</h1>
           <SavedBy eventId={eventId} area={["details", "files"]} className="mt-2" />
           {/* Only where there are boxes to fill in. */}
           {section !== "more" && <p className="mt-1 text-sm text-muted">Boxes marked * are required.</p>}
@@ -632,7 +654,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
               {guided ? (
                 stepFooter
               ) : (
-                <Panel title="Delete this event" intro="Removes the event and everything in it. This can't be undone.">
+                <Panel title="Delete this event" intro={`${deleteWhat ?? "Removes the event and everything in it."} This can't be undone.`}>
                   <DeleteEventButton name={event.name} action={deleteEvent.bind(null, eventId)} />
                 </Panel>
               )}

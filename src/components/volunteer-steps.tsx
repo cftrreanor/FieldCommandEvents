@@ -123,10 +123,20 @@ export function SetupSteps({
           />
         ))}
       </ol>
-      {needsWork.length > 0 && (
+      {/* Phones: the step you're on first ("Now · add a job"), then any other step that needs something. */}
+      {needsWork.includes(steps[here]) && (
         <p className="mt-2 text-sm font-medium text-warning sm:hidden">
+          <span aria-hidden>◆ </span>Now · {lowerFirst(stepNote(steps[here].key, here) ?? "")}
+        </p>
+      )}
+      {needsWork.some((s) => s !== steps[here]) && (
+        <p className="mt-1 text-sm font-medium text-warning sm:hidden">
           <span aria-hidden>◆ </span>
-          {needsWork.length === 1 ? "1 step needs work" : `${needsWork.length} steps need work`}: {needsWork.map((s) => s.label).join(", ")}
+          {needsWork.includes(steps[here]) ? "Also needs work" : needsWork.length === 1 ? "1 step needs work" : `${needsWork.length} steps need work`}:{" "}
+          {needsWork
+            .filter((s) => s !== steps[here])
+            .map((s) => s.label)
+            .join(", ")}
         </p>
       )}
       <details className="group sm:hidden">

@@ -225,10 +225,8 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
     const copyNote = copiedFrom && !copyFailed ? await copySummary(supabase, eventId, copiedFrom, event) : null;
     return (
       <div data-required-marks>
-        <Link href={`/dashboard/events/${eventId}`} className="text-sm text-muted hover:text-foreground">
-          ← Back to {event.name}
-        </Link>
-        <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">Band registration</h1>
+        {/* No "Back to" link while setting up: it would jump ahead to Publish. The step bar is the way around. */}
+        <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">Band registration</h1>
         <p className="mt-2 max-w-2xl text-muted">
           What directors pick and read when they register. You can invite directors and share the link once you publish.
         </p>

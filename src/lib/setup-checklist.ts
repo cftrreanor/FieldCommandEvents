@@ -422,6 +422,8 @@ export function publishEffects(f: SetupFacts): string[] {
   if (isMeeting(f.eventType)) {
     return [
       ...lines,
+      // What opens, as the band contest list says (light check, 2026-11-08).
+      "Booking opens, and people can pick a time.",
       "Nobody is emailed or notified. People only find out when you share your link.",
       "You can keep editing everything, and unpublish at any time.",
     ];
@@ -429,6 +431,7 @@ export function publishEffects(f: SetupFacts): string[] {
   if (hasConferences(f.eventType)) {
     return [
       ...lines,
+      "Booking opens, and families can pick a time.",
       "Nobody is emailed or notified. Families only find out when you share your link.",
       "You can keep editing everything, and unpublish at any time.",
     ];

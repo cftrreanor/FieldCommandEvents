@@ -723,7 +723,8 @@ export function NewStationForm({
         <Input name="name" required maxLength={80} />
       </Field>
       {!job && picker}
-      <SubmitButton variant="go" pendingText="Adding…">
+      {/* The page's one main action: it stays filled, and tapping it with no name says what's missing (light check, 2026-11-08). */}
+      <SubmitButton variant="go" pendingText="Adding…" data-solid>
         {job ? "Add job" : "Add sign-up"}
       </SubmitButton>
     </ActionForm>
