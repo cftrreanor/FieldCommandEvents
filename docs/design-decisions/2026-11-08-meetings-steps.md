@@ -15,3 +15,13 @@ Review: docs/design-reviews/2026-11-08-meetings-steps.md
 | — | Booking severity 2: no "You choose below" after booking or when full; a contact email the organizer chooses, hidden once it's over; the group's name on the booking page and email; exact deletion wording and "Who sees your details"; the brand tagline and footer; Meetings and conferences cards told apart; dark-mode windows and open times; the email's place as readable as the time | 2 | Take the advice | |
 | — | Book for someone, copy an earlier event, a note for people booking, a waiting list, measures | 2 | Later | |
 | — | Polish (severity 1) | 1 | Take the advice where it's in the same code | |
+
+## Light check (2026-11-08)
+
+Review: docs/design-reviews/2026-11-08-meetings-steps-light-check.md
+
+| # | Finding | Severity | Decision | Notes |
+|---|---|---|---|---|
+| 1 | Cutting hours after people book | 3 | Take the advice | One question, "What should happen to these N meetings?": keep them booked and email each a link to pick a new time, or keep them booked and contact them myself. Save says what happens. Starts on "contact them myself" when there aren't enough open times, and says why. Only meetings this change leaves out count, and no one is emailed twice. Phone layout for the bar |
+| 2 | Bugs in the build | 3 | Fix | Day move plus cut hours; summary on the day; unpublished events with bookings use Meeting setup |
+| — | Severity 2 and polish | 2 | Take the advice | All of the list in the report |
