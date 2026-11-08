@@ -4,6 +4,7 @@ import { createContext, use, useEffect, useRef, useState, useTransition, type Re
 import { linkFrom, passcodeFrom } from "@/lib/meeting-link";
 import { ActionForm } from "@/components/action-form";
 import { AutosaveBar, useAutosaveForm } from "@/components/autosave";
+import { LineIcon } from "@/components/line-icon";
 import { NumberInput } from "@/components/number-input";
 import { SubmitButton } from "@/components/submit-button";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
@@ -329,7 +330,7 @@ function TimesForm({
             return (
             <label
               key={o.value}
-              className={`flex gap-3 rounded-lg border p-3 ${locked ? "cursor-not-allowed border-dashed border-field-border" : "cursor-pointer"} ${schedule === o.value ? "border-brand bg-brand-soft" : locked ? "" : "border-field-border"}`}
+              className={`flex gap-3 rounded-lg border p-3 ${locked ? "cursor-not-allowed border-field-border" : "cursor-pointer"} ${schedule === o.value ? "border-brand bg-brand-soft" : locked ? "" : "border-field-border"}`}
             >
               <input
                 type="radio"
@@ -357,6 +358,8 @@ function TimesForm({
               />
               <span>
                 <span className="flex flex-wrap items-center gap-2 font-semibold">
+                  {/* Locked, not optional: a solid border and a lock, since dashed means optional or empty (light check, 2026-11-08). */}
+                  {locked && <LineIcon name="lock" inline />}
                   {o.label}
                   {/* Meetings always need a plan, so weekly hours aren't an extra for them. */}
                   {o.value === "weekly" && !forMeetings && <span className="rounded-full bg-brand px-2 py-0.5 text-xs font-semibold text-brand-foreground">Premium</span>}

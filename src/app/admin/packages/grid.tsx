@@ -522,7 +522,7 @@ function Editor({
           type="button"
           disabled={!changed || saving || checking || !!problem}
           onClick={save}
-          className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground disabled:cursor-not-allowed disabled:border disabled:border-dashed disabled:border-field-border disabled:bg-transparent disabled:text-disabled"
+          className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground disabled:cursor-not-allowed disabled:border disabled:border-field-border disabled:bg-transparent disabled:text-disabled"
         >
           {saving ? "Saving…" : checking ? "Checking…" : "Save change"}
         </button>

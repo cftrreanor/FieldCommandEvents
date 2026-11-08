@@ -98,7 +98,7 @@ export function InviteCoHostButton({
           type="button"
           aria-disabled
           aria-describedby="invite-co-host-blocked"
-          className="inline-flex min-h-11 cursor-not-allowed items-center rounded-md border border-dashed border-border px-4 text-sm font-semibold text-disabled"
+          className="inline-flex min-h-11 cursor-not-allowed items-center rounded-md border border-border px-4 text-sm font-semibold text-disabled"
         >
           Invite a co-host
         </button>

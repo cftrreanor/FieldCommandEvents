@@ -28,9 +28,11 @@ export const personaLabel = (p: Persona) => PERSONAS.find((x) => x.value === p)!
  * and group events.
  */
 export function personasFor(eventType: string | null | undefined) {
-  // Meetings: the person booking isn't a parent.
-  if (eventType === "meeting") return PERSONAS.filter((p) => p.value === "host" || p.value === "parent").map((p) => (p.value === "parent" ? { ...p, label: "Guest" } : p));
-  if (hasConferences(eventType)) return PERSONAS.filter((p) => p.value === "host" || p.value === "parent");
+  // Meetings and conferences: named for who they are on these events, not a permission level (light check, 2026-11-08).
+  if (eventType === "meeting")
+    return PERSONAS.filter((p) => p.value === "host" || p.value === "parent").map((p) => ({ ...p, label: p.value === "host" ? "Organizer" : "Someone booking" }));
+  if (hasConferences(eventType))
+    return PERSONAS.filter((p) => p.value === "host" || p.value === "parent").map((p) => ({ ...p, label: p.value === "host" ? "Teacher" : "Parent" }));
   if (eventType === "band_contest" || eventType === "group_event" || !eventType) return PERSONAS;
   return PERSONAS.filter((p) => p.value !== "director");
 }

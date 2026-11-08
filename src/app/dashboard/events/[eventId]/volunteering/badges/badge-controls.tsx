@@ -11,7 +11,7 @@ export function PrintBadgesButton({ disabled }: { disabled?: boolean }) {
       type="button"
       disabled={disabled}
       onClick={() => window.print()}
-      className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover disabled:cursor-not-allowed disabled:border-[1.5px] disabled:border-dashed disabled:border-field-border disabled:bg-surface disabled:text-disabled"
+      className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover disabled:cursor-not-allowed disabled:border-[1.5px] disabled:border-field-border disabled:bg-surface disabled:text-disabled"
     >
       Print or save as PDF
     </button>

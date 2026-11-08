@@ -120,7 +120,7 @@ export function ChipAdder({
             type="button"
             disabled={busy || fresh.length === 0}
             onClick={addTyped}
-            className="inline-flex min-h-11 items-center rounded-md border-[1.5px] border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand disabled:cursor-not-allowed disabled:border-dashed disabled:text-disabled"
+            className="inline-flex min-h-11 items-center rounded-md border-[1.5px] border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand disabled:cursor-not-allowed disabled:text-disabled"
           >
             Add
           </button>

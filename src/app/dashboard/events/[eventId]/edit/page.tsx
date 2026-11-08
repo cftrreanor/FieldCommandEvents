@@ -398,8 +398,11 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
               {badgesHere && !guided && (
                 <Panel id="logo" title="Logo and color">
                   <p className="text-sm text-muted">
-                    One logo for your account, shown next to ours at the top of your public event pages and printed on volunteer
-                    badges. Print badges from{" "}
+                    {/* Each kind hears where its logo shows first (light check, 2026-11-08). */}
+                    {event.event_type === "band_contest"
+                      ? "One logo for your account, shown next to ours on your registration page and each band's page, and printed on volunteer badges."
+                      : "One logo for your account, shown next to ours at the top of your public event pages and printed on volunteer badges."}{" "}
+                    Print badges from{" "}
                     <Link href={`/dashboard/events/${eventId}/volunteering/badges`} className="font-medium text-brand underline">
                       {usesJobs(event.event_type) ? "Jobs and shifts" : "Volunteer Setup"}
                     </Link>
@@ -610,13 +613,13 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                         <p>
                           {booking.child ? (
                             <>
-                              Tap <strong className="text-foreground">Host</strong> to see it as the teacher, or{" "}
+                              Tap <strong className="text-foreground">Teacher</strong> to see it as the teacher, or{" "}
                               <strong className="text-foreground">Parent</strong> to see the booking page a family gets (publish the conference first).
                             </>
                           ) : (
                             <>
-                              Tap <strong className="text-foreground">Host</strong> to see it as yourself, or{" "}
-                              <strong className="text-foreground">Guest</strong> to see the booking page people get (publish your meetings first).
+                              Tap <strong className="text-foreground">Organizer</strong> to see it as yourself, or{" "}
+                              <strong className="text-foreground">Someone booking</strong> to see the booking page people get (publish your meetings first).
                             </>
                           )}
                           A bar at the top switches between them; <strong className="text-foreground">Back to me</strong> returns you here.

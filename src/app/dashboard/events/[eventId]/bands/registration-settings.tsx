@@ -352,7 +352,7 @@ export function RegistrationSettings({
   const missing = [list.length === 0 && "at least one classification", !deadline.value && "a deadline"].filter(Boolean) as string[];
   const chip = "inline-flex min-h-11 items-center rounded-lg border-[1.5px] border-field-border bg-background text-sm font-semibold";
   const outline =
-    "inline-flex min-h-11 items-center rounded-md border-[1.5px] border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand disabled:cursor-not-allowed disabled:border-dashed disabled:text-disabled";
+    "inline-flex min-h-11 items-center rounded-md border-[1.5px] border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand disabled:cursor-not-allowed disabled:text-disabled";
 
   return (
     <div ref={root} className="rounded-xl border border-border bg-surface shadow-card">
@@ -492,7 +492,7 @@ export function RegistrationSettings({
           id="reg-deadline"
           label="Registration deadline"
           required
-          hint={`Directors can register until 11:59 PM on this day, in your event's time zone. Pick a date before contest day (${contest.label}). Most contests close about three weeks early, so bands can book buses.`}
+          hint={`Directors can register until 11:59 PM on this day, in your event's time zone. Pick a date before contest day (${contest.label}), with time to build the schedule: directors get their times two weeks before, so they can book buses.`}
           saver={deadline}
         >
           <Input
@@ -625,16 +625,19 @@ export function RegistrationSettings({
             who registered for this contest (even if they later withdraw) and your team see it.
             {!contactSaved && " We filled in your details. Change them if someone else handles bands."}
           </p>
-          <div className="mt-3 grid gap-4 sm:grid-cols-3">
+          {/* Name and mobile side by side; the email gets a row of its own, so a long address shows in full. */}
+          <div className="mt-3 grid gap-4 sm:grid-cols-2">
             <AutoField id="reg-cname" label="Name" saver={contactName}>
               <Input value={contactName.value} onChange={(e) => contactName.change(e.target.value)} autoComplete="name" {...withClass(marked("reg-cname", contactName, false), "w-full")} />
             </AutoField>
             <AutoField id="reg-cphone" label="Mobile" saver={contactPhone}>
               <Input type="tel" inputMode="tel" value={contactPhone.value} onChange={(e) => contactPhone.change(e.target.value)} {...withClass(marked("reg-cphone", contactPhone, false), "w-full")} />
             </AutoField>
-            <AutoField id="reg-cemail" label="Email" saver={contactEmail}>
-              <Input type="email" value={contactEmail.value} onChange={(e) => contactEmail.change(e.target.value)} {...withClass(marked("reg-cemail", contactEmail, false), "w-full")} />
-            </AutoField>
+            <div className="sm:col-span-2">
+              <AutoField id="reg-cemail" label="Email" saver={contactEmail}>
+                <Input type="email" value={contactEmail.value} onChange={(e) => contactEmail.change(e.target.value)} {...withClass(marked("reg-cemail", contactEmail, false), "w-full")} />
+              </AutoField>
+            </div>
           </div>
         </fieldset>
 
