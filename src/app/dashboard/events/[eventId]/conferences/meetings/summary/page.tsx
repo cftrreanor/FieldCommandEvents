@@ -149,21 +149,21 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
           <tbody className="max-sm:block print:table-row-group">
             {bookings.map((b) => (
               <tr key={b.id} className="break-inside-avoid border-b border-border align-top max-sm:block max-sm:py-2 print:table-row">
-                <td data-label="Time" className="whitespace-nowrap py-2 pr-3 tabular-nums max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] print:table-cell">{time(b.starts_at)}</td>
-                {students && <td data-label="Student" className="py-2 pr-3 font-medium max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] print:table-cell">{b.child_name}</td>}
-                <td data-label="Who" className="py-2 pr-3 max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] print:table-cell">{b.parents.map((p) => p.name).join(", ")}</td>
+                <td data-label="Time" className="whitespace-nowrap py-2 pr-3 tabular-nums max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell">{time(b.starts_at)}</td>
+                {students && <td data-label="Student" className="py-2 pr-3 font-medium max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell">{b.child_name}</td>}
+                <td data-label="Who" className="py-2 pr-3 max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell">{b.parents.map((p) => p.name).join(", ")}</td>
                 {beforeDay && (
                   <>
-                    <td data-label="How" className="whitespace-nowrap py-2 pr-3 max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] print:table-cell">{HOW[b.meeting_mode] ?? ""}</td>
-                    <td data-label="Phone" className="whitespace-nowrap py-2 pr-3 tabular-nums max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] print:table-cell">
+                    <td data-label="How" className="whitespace-nowrap py-2 pr-3 max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell">{HOW[b.meeting_mode] ?? ""}</td>
+                    <td data-label="Phone" className="whitespace-nowrap py-2 pr-3 tabular-nums max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell">
                       {/* A phone call: the number they gave to be called on. */}
                       {formatPhone((b.meeting_mode === "phone" ? b.call_phone : null) ?? b.parents.find((p) => p.phone)?.phone ?? null)}
                     </td>
-                    <td data-label="Note" className="py-2 pr-3 max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] print:table-cell">{b.note}</td>
+                    <td data-label="Note" className="py-2 pr-3 max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell">{b.note}</td>
                   </>
                 )}
                 {outcomesReady && (
-                  <td data-label="Met" className="whitespace-nowrap py-2 max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] print:table-cell">
+                  <td data-label="Met" className={`${beforeDay ? "max-sm:hidden" : "max-sm:block"} whitespace-nowrap py-2 max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell`}>
                     {beforeDay ? (
                       // A box to tick on paper; on screen it would look like a button.
                       <span aria-label="Not yet" className="hidden size-5 rounded-sm border-2 border-foreground align-middle print:inline-block" />

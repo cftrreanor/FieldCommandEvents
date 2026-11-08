@@ -322,11 +322,14 @@ function TimesForm({
                   setSchedule(o.value);
                   // Switching to every week keeps what's set: the chosen day's weekday and hours, from that day
                   // for twelve weeks (decisions 2026-11-08, finding 1).
-                  if (o.value === "weekly" && !groups.length) {
-                    const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
-                    setGroups([{ key: newKey(), days: Number.isNaN(weekday) ? [] : [weekday], start: from || "15:30", end: to || "16:30" }]);
-                    setFirstDay(day);
-                    if (!lastDay && day) setLastDay(new Date(Date.parse(`${day}T12:00:00Z`) + 83 * 86_400_000).toISOString().slice(0, 10));
+                  if (o.value === "weekly") {
+                    if (!groups.length) {
+                      const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
+                      setGroups([{ key: newKey(), days: Number.isNaN(weekday) ? [] : [weekday], start: from || "15:30", end: to || "16:30" }]);
+                    }
+                    if (!firstDay) setFirstDay(day);
+                    // Never an empty, red Last day on switching: twelve weeks from the first day, to change.
+                    if (!lastDay && day) setLastDay(new Date(Date.parse(`${firstDay || day}T12:00:00Z`) + 83 * 86_400_000).toISOString().slice(0, 10));
                   }
                   setEditing(true);
                 }}
