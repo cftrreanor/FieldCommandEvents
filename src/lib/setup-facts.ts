@@ -1,6 +1,6 @@
 import "server-only";
 import { getEventAccess } from "@/lib/data";
-import { notReady } from "@/lib/conferences";
+import { notReady, placeMissing } from "@/lib/conferences";
 import { loadConferenceSettings } from "@/lib/conference-settings";
 import { hasBooths, hasConferences, hasRooms } from "@/lib/event-types";
 import type { SetupFacts } from "@/lib/setup-checklist";
@@ -92,6 +92,15 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
     parentRegistrationOpen: event.parent_registration_open,
     parentClosesAt: Boolean(event.parent_registration_closes_at),
     conferenceMissing: conferenceHere ? notReady(conference, event.venue_address, event.event_type) : null,
+    // The setup steps split it: what Meeting times and Where you'll meet each still need.
+    conferenceTimesMissing: conferenceHere
+      ? !conference?.times_saved_at
+        ? "Add your hours"
+        : conference.schedule === "weekly" && !conference.weekly_hours.length
+          ? "Add your weekly hours"
+          : null
+      : null,
+    conferencePlaceMissing: conferenceHere ? placeMissing(conference, event.venue_address, event.event_type) : null,
     planBlock,
   };
 }

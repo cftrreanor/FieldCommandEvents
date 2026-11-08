@@ -98,14 +98,17 @@ export function CancelBookingButton({
   return (
     <ActionForm
       action={async () => action()}
+      // Buttons that say what happens (decisions 2026-11-07, finding 4): never "Continue".
       confirmMessage={
         meeting
-          ? "Cancel the meeting? The time opens up for someone else, and everyone on this booking is emailed."
-          : `Cancel the conference${child ? ` for ${child}` : ""}? The time opens up for another family, and everyone on this booking is emailed.`
+          ? "Cancel your meeting? Your time opens up for someone else. We'll email everyone on this booking, and your details are deleted."
+          : `Cancel your conference${child ? ` for ${child}` : ""}? Your time opens up for another family. We'll email everyone on this booking, and your details are deleted.`
       }
+      confirmLabel={meeting ? "Cancel my meeting" : "Cancel my conference"}
+      cancelLabel={meeting ? "Keep my meeting" : "Keep my conference"}
     >
       <SubmitButton variant="danger" pendingText="Canceling…">
-        {meeting ? "Cancel Meeting" : "Cancel Conference"}
+        {meeting ? "Cancel meeting" : "Cancel conference"}
       </SubmitButton>
     </ActionForm>
   );

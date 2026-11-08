@@ -362,6 +362,8 @@ export type EmailRow = {
   detail: string;
   /** Show the detail large and dark: the thing people look for (like when). */
   strong?: boolean;
+  /** Show the detail in body color, not grey: something people need, like where to go. */
+  plain?: boolean;
   links?: { label: string; url: string }[];
   /** Words before the links, like "Other calendars:". */
   linksLabel?: string;
@@ -396,7 +398,7 @@ export function emailLayout({
             `<tr><td style="padding:12px 0;border-top:1px solid #dfe3e8">${
               r.strong
                 ? `<div style="color:#4b5f72;font-size:14px;line-height:20px">${escape(r.title)}</div><div style="font-weight:bold;font-size:17px;line-height:24px">${escape(r.detail)}</div>`
-                : `<div style="font-weight:bold;font-size:15px">${escape(r.title)}</div><div style="color:#4b5f72;font-size:14px;line-height:20px">${escape(r.detail)}</div>`
+                : `<div style="font-weight:bold;font-size:15px">${escape(r.title)}</div><div style="color:${r.plain ? "#1a1a1a" : "#4b5f72"};font-size:${r.plain ? 15 : 14}px;line-height:${r.plain ? 22 : 20}px">${escape(r.detail).replace(/\n/g, "<br>")}</div>`
             }${
               r.links?.length
                 ? `<div style="font-size:14px;line-height:22px;margin-top:4px;color:#4b5f72">${r.linksLabel ? `${escape(r.linksLabel)} ` : ""}${r.links.map(a).join(" &nbsp;·&nbsp; ")}</div>`

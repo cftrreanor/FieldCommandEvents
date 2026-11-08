@@ -1,5 +1,5 @@
 import "server-only";
-import { DEFAULT_SETTINGS, LEGACY_SETTINGS_COLUMNS, MODES_SETTINGS_COLUMNS, SETTINGS_COLUMNS, WEEKLY_SETTINGS_COLUMNS, type ConferenceSettings } from "@/lib/conferences";
+import { DEFAULT_SETTINGS, LEGACY_SETTINGS_COLUMNS, MODES_SETTINGS_COLUMNS, PASSCODE_SETTINGS_COLUMNS, SETTINGS_COLUMNS, WEEKLY_SETTINGS_COLUMNS, type ConferenceSettings } from "@/lib/conferences";
 import { isSchemaError } from "@/lib/schema-check";
 import type { createAdminClient, createClient } from "@/lib/supabase/server";
 
@@ -14,6 +14,8 @@ type Client = Awaited<ReturnType<typeof createClient>> | ReturnType<typeof creat
 export async function loadConferenceSettings(client: Client, eventId: string) {
   const read = (columns: string) => client.from("conference_settings").select(columns).eq("event_id", eventId).maybeSingle();
   let { data, error } = await read(SETTINGS_COLUMNS);
+  // Before the contact email update (20270124000000).
+  if (isSchemaError(error)) ({ data, error } = await read(PASSCODE_SETTINGS_COLUMNS));
   // Before the passcode update (20261229000000).
   if (isSchemaError(error)) ({ data, error } = await read(MODES_SETTINGS_COLUMNS));
   const modesColumn = !isSchemaError(error);

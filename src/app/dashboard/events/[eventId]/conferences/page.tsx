@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import QRCode from "qrcode";
 import { Badge, Card } from "@/components/ui";
-import { meetingStarts, meetingSummary, modesLabel, modesOf, notReady, placeMissing, weeklyMeetingCount, weeklySummary } from "@/lib/conferences";
+import { type BookedTime, meetingStarts, meetingSummary, modesLabel, modesOf, notReady, placeMissing, weeklyMeetingCount, weeklySummary } from "@/lib/conferences";
 import { loadConferenceSettings } from "@/lib/conference-settings";
 import { getEventAccess, getOrigin } from "@/lib/data";
 import { isPlacesConfigured } from "@/lib/places";
@@ -12,14 +12,15 @@ import { displayTime } from "@/lib/schedule";
 import { loadAccountPlan } from "@/lib/plan";
 import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate, formatDateRange, utcToZonedTime, zoneName } from "@/lib/time";
+import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime, zoneName } from "@/lib/time";
 import { publishAndOpen, setEventPublished } from "../../../actions";
 import { ActionButton, CopyLinkButton } from "../forms";
-import { saveDaysOff, saveMeetingPlace, saveMeetingTimes } from "./actions";
+import { copyAsWeekly, saveDaysOff, saveMeetingContact, saveMeetingPlace, saveMeetingTimes } from "./actions";
 import { conferenceBookedCount } from "@/lib/conference-access";
-import { ConferenceSetup, DaysOffForm, MeetingPlaceForm, MeetingTimesForm, PublishWhenSaved } from "./conference-forms";
+import { ConferenceSetup, DaysOffForm, MeetingContactForm, MeetingPlaceForm, MeetingTimesForm, PublishWhenSaved } from "./conference-forms";
 import { SetupTabs } from "../../_components/setup-tabs";
 import { SavedBy } from "@/components/saved-by";
+import { lastRoom } from "./load";
 
 export const metadata: Metadata = { title: "Setup" };
 
@@ -30,7 +31,7 @@ export const metadata: Metadata = { title: "Setup" };
  */
 export default async function ConferencesPage({ params, searchParams }: PageProps<"/dashboard/events/[eventId]/conferences">) {
   const { eventId } = await params;
-  const { tab } = await searchParams;
+  const { tab, copy } = await searchParams;
   const access = await getEventAccess(eventId);
   if (!access.isHost) redirect(`/dashboard/events/${eventId}`);
 
@@ -57,12 +58,24 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
   const perWeek = weeklyMeetingCount(settings.weekly_hours, settings);
   const timesDone = Boolean(saved?.times_saved_at);
   const published = event.status === "published";
+  // Before publishing, setup is a series of steps that save themselves (decisions 2026-11-07): go to the one still to do.
   const [booked, plan, { data: planReason }] = await Promise.all([
     conferenceBookedCount(supabase, eventId),
     loadAccountPlan(supabase, event.organization_id),
     // Why the plan won't let it publish (weekly hours, one at a time...), or null.
     published ? Promise.resolve({ data: null }) : supabase.rpc("org_can_publish", { p_event: eventId }),
   ]);
+  // (Unpublished but with people still booked: here, with Save buttons, so nothing moves under them unasked.)
+  if (!published && booked === 0) {
+    const stepBase = `/dashboard/events/${eventId}/conferences`;
+    redirect(
+      !timesDone || (weekly && !settings.weekly_hours.length)
+        ? `${stepBase}/times`
+        : placeMissing(saved, event.venue_address, event.event_type)
+          ? `${stepBase}/place`
+          : `/dashboard/events/${eventId}#publish`,
+    );
+  }
   const weeklyIncluded = plan?.weekly_hours ?? true;
   const placeTodo = placeMissing(saved, event.venue_address, event.event_type);
 
@@ -81,8 +94,8 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
     QRCode.toString(bookingUrl, { type: "svg", margin: 1, width: 160 }),
     QRCode.toDataURL(bookingUrl, { margin: 2, width: 1024 }),
   ]);
-  const smallButton = "inline-flex min-h-9 items-center rounded-md border border-border bg-surface px-3 text-xs font-medium hover:bg-background";
-  const count = weekly ? `${perWeek} ${perWeek === 1 ? "meeting" : "meetings"} each week` : meetingSummary(starts, settings.meeting_minutes);
+  const smallButton = "inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-3 text-sm font-medium hover:bg-background";
+  const count = weekly ? `${perWeek} ${perWeek === 1 ? "time" : "times"} each week` : meetingSummary(starts, settings.meeting_minutes);
 
   return (
     // data-required-marks: a small asterisk on each box that has to be filled in (globals.css).
@@ -90,8 +103,13 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
       <Link href={`/dashboard/events/${eventId}`} className="text-sm text-muted hover:text-foreground">
         ← Back to {event.name}
       </Link>
-      <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">{meeting ? "Meeting Setup" : "Conference Setup"}</h1>
+      <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">{meeting ? "Meeting setup" : "Conference setup"}</h1>
       <SavedBy eventId={eventId} area="conference" className="mt-2" />
+      {copy === "failed" && (
+        <p role="status" className="mt-4 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm">
+          We couldn&apos;t make a weekly copy. Making a new event takes the account&apos;s Account Host or a co-host on the account. Ask them to make it.
+        </p>
+      )}
       <p className="mt-2 text-muted">
         {weekly
           ? `${weeklySummary(settings.weekly_hours)} · ${formatDateRange(event.starts_on, event.ends_on)}`
@@ -113,32 +131,26 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
             <p className="text-sm font-medium">Booking link</p>
             <p className="mt-1 break-all text-sm text-muted">{bookingUrl}</p>
             <div className="mt-2 flex flex-wrap gap-2">
+              {/* Once published, seeing who's booked is the main job here (decisions 2026-11-08). */}
+              {published && (
+                <Link
+                  href={`${base}/meetings`}
+                  className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover"
+                >
+                  Your meetings{booked ? ` (${booked} booked)` : ""}
+                </Link>
+              )}
               <CopyLinkButton url={bookingUrl} label="Copy link" />
               <a href={`/e/${event.slug}/book`} target="_blank" className={smallButton}>
-                Preview page
+                Preview booking page
               </a>
-              <Link href={`${base}/meetings`} className={smallButton}>
-                Meetings list
-              </Link>
-              <PublishWhenSaved>
-                {published ? (
-                  <ActionButton
-                    action={setEventPublished.bind(null, eventId, false)}
-                    variant="stop"
-                    className="px-3! text-xs!"
-                    pendingText="Unpublishing…"
-                    confirmMessage={`Unpublish your ${meeting ? "meetings" : "conference"}? Your public page will be hidden. You can publish again anytime.`}
-                  >
-                    Unpublish
+              {!published && !blocked && (
+                <PublishWhenSaved>
+                  <ActionButton action={publishAndOpen.bind(null, eventId)} variant="go" className="px-3! text-xs!" pendingText="Publishing…">
+                    Publish
                   </ActionButton>
-                ) : (
-                  !blocked && (
-                    <ActionButton action={publishAndOpen.bind(null, eventId)} variant="go" className="px-3! text-xs!" pendingText="Publishing…">
-                      Publish
-                    </ActionButton>
-                  )
-                )}
-              </PublishWhenSaved>
+                </PublishWhenSaved>
+              )}
             </div>
             {!published && blocked && (
               <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm">
@@ -171,6 +183,27 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
               </div>
             </details>
           </div>
+          {/* Apart from the everyday buttons, and saying what happens to the people already booked (decisions 2026-11-07). */}
+          {published && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+              <p className="text-sm text-muted">
+                Unpublishing hides your booking page.{" "}
+                {booked > 0
+                  ? `The ${booked} ${booked === 1 ? "meeting" : "meetings"} already booked stay booked, and no one is emailed.`
+                  : "No one has booked yet."}
+              </p>
+              <PublishWhenSaved>
+                <ActionButton
+                  action={setEventPublished.bind(null, eventId, false)}
+                  variant="stop"
+                  pendingText="Unpublishing…"
+                  confirmMessage={`Unpublish your ${meeting ? "meetings" : "conference"}? Your booking page will be hidden.${booked > 0 ? ` The ${booked} ${booked === 1 ? "meeting" : "meetings"} already booked stay booked, and no one is emailed.` : ""} You can publish again anytime.`}
+                >
+                  Unpublish
+                </ActionButton>
+              </PublishWhenSaved>
+            </div>
+          )}
         </Card>
 
         <div className="mt-10">
@@ -180,7 +213,7 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
               {
                 key: "times",
                 label: "Meeting times",
-                status: timesDone ? (weekly ? `Every week · ${perWeek} ${perWeek === 1 ? "meeting" : "meetings"}` : count) : "Needs to be done",
+                status: timesDone ? (weekly ? `Every week · ${perWeek} ${perWeek === 1 ? "time" : "times"}` : count) : "Needs to be done",
                 mark: timesDone ? "done" : "todo",
                 href: `${base}?tab=times`,
                 active: current === "times",
@@ -213,9 +246,11 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
               <>
                 <h2 className="text-lg font-semibold">Meeting times</h2>
                 <p className="mt-1 mb-4 text-sm text-muted">
-                  One day or the same times every week, how long each meeting is, and any breaks. Your hours are cut into meetings {who} can book.
+                  One day or the same times every week, how long each meeting is, and any breaks. Your hours are cut into times {who} can book.
                 </p>
                 <MeetingTimesForm
+                  bookedTimes={await bookedTimes(supabase, eventId, tz)}
+                  copyAction={copyAsWeekly.bind(null, eventId)}
                   action={saveMeetingTimes.bind(null, eventId)}
                   initial={settings}
                   date={event.starts_on}
@@ -265,27 +300,28 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
             )}
           </Card>
         </div>
+        <Card className="mt-6">
+          <h2 className="text-lg font-semibold">When every time is booked</h2>
+          <p className="mt-1 mb-4 text-sm text-muted">What people see if they open your link and nothing is left.</p>
+          <MeetingContactForm action={saveMeetingContact.bind(null, eventId)} initial={settings.contact_email ?? null} autosave />
+        </Card>
       </ConferenceSetup>
     </div>
   );
 }
 
-/** The room and directions from the account's most recent other conference or meeting, if any. */
-async function lastRoom(supabase: Awaited<ReturnType<typeof createClient>>, orgId: string, eventId: string) {
-  const { data: others } = await supabase
-    .from("events")
-    .select("id")
-    .eq("organization_id", orgId)
-    .in("event_type", ["conference", "meeting"])
-    .neq("id", eventId);
-  if (!others?.length) return null;
+/** Each booked meeting's person, day, and start, in the event's time zone (to name any new times leave out). */
+async function bookedTimes(supabase: Awaited<ReturnType<typeof createClient>>, eventId: string, tz: string): Promise<BookedTime[]> {
   const { data } = await supabase
-    .from("conference_settings")
-    .select("room")
-    .in("event_id", others.map((e) => e.id))
-    .not("room", "is", null)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return data?.room ?? null;
+    .from("conference_bookings")
+    .select("id, starts_at, child_name, parents")
+    .eq("event_id", eventId)
+    .gte("starts_at", new Date().toISOString())
+    .order("starts_at");
+  return ((data ?? []) as { id: string; starts_at: string; child_name: string | null; parents: { name: string }[] }[]).map((b) => ({
+    id: b.id,
+    who: b.child_name || b.parents[0]?.name || "Someone",
+    date: utcToZonedDate(b.starts_at, tz),
+    time: utcToZonedTime(b.starts_at, tz),
+  }));
 }

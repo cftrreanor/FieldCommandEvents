@@ -18,9 +18,10 @@ export type ConferenceEvent = BookingEvent & {
   window_start: string;
   window_end: string;
   public_notes: string | null;
+  organization_id: string;
 };
 
-const EVENT_COLUMNS = "id, slug, name, status, event_type, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, public_notes, created_by";
+const EVENT_COLUMNS = "id, slug, name, status, event_type, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, public_notes, created_by, organization_id";
 
 /**
  * A conference as the server sees it: the event, its settings (with the video

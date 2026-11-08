@@ -15,7 +15,8 @@ export type OpenSlot = { value: string; day: string; label: string };
 export type DayRange = { min: string; max: string; zone: string };
 
 const dialogClass =
-  "m-auto w-[calc(100%-2rem)] max-w-lg rounded-xl border border-border bg-surface p-0 text-foreground shadow-elevated backdrop:bg-[#071a31]/50";
+  // team-window: in dark mode a raised color with a visible edge, over a darker page (globals.css).
+  "team-window m-auto w-[calc(100%-2rem)] max-w-lg rounded-xl border border-border p-0 text-foreground shadow-elevated";
 
 /** A button that opens a dialog; the dialog closes on its own Cancel, a click outside, or a successful save. */
 function DialogButton({
@@ -74,7 +75,7 @@ function DialogButton({
 function NoteField({ who }: { who: string }) {
   return (
     <Field label="Add a note to the email (optional)" hint={`${who} sees it in the email we send, under your name.`}>
-      <Textarea name="note" rows={3} maxLength={1000} placeholder="e.g. Sorry for the change. I have a staff meeting at 3:30." />
+      <Textarea name="note" rows={3} maxLength={1000} placeholder="e.g. Sorry for the change. Something came up at that time." />
     </Field>
   );
 }
@@ -109,7 +110,8 @@ export function RescheduleButton({
     <DialogButton
       label="Reschedule"
       title={`Reschedule the meeting with ${who}`}
-      className="inline-flex min-h-11 items-center text-sm font-medium text-brand underline hover:text-brand-hover"
+      // On phones, outlined buttons with room between them (text links were hard to tap).
+      className="inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-3 text-sm font-medium text-brand hover:bg-background"
     >
       {(close) => (
         <ActionForm action={action} resetOnSuccess={false} onSuccess={close} className="mt-4 space-y-4">
@@ -124,7 +126,7 @@ export function RescheduleButton({
                 checked={how === "open"}
                 onChange={() => setHow("open")}
                 disabled={!slots.length}
-                className="h-5 w-5"
+                className="team-radio"
               />
               Pick an open time{!slots.length && <span className="font-normal text-muted"> (none left)</span>}
             </label>
@@ -147,7 +149,7 @@ export function RescheduleButton({
               </Select>
             )}
             <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
-              <input type="radio" name="how" value="custom" checked={how === "custom"} onChange={() => setHow("custom")} className="h-5 w-5" />
+              <input type="radio" name="how" value="custom" checked={how === "custom"} onChange={() => setHow("custom")} className="team-radio" />
               Type in a {oneDay ? "time" : "day and time"}
             </label>
             {how === "custom" && (
@@ -187,12 +189,13 @@ export function CancelMeetingButton({ who, them, action }: { who: string; them: 
     <DialogButton
       label="Cancel meeting"
       title={`Cancel the meeting with ${who}?`}
-      className="inline-flex min-h-11 items-center text-sm font-medium text-muted underline hover:text-danger"
+      // Quieter than Reschedule in both modes (dark mode's muted text is white, lesson L6).
+      className="inline-flex min-h-11 items-center rounded-md border border-danger/60 bg-surface px-3 text-sm font-medium text-danger hover:bg-danger/10"
     >
       {(close) => (
         <ActionForm action={action} resetOnSuccess={false} onSuccess={close} className="mt-4 space-y-4">
           <ul className="list-disc space-y-1 pl-5 text-sm leading-6 text-muted">
-            <li>We email {them} that it&apos;s canceled, and it comes off their calendar.</li>
+            <li>We email {them} that it&apos;s canceled, with an update for their calendar.</li>
             <li>Their details are deleted, and the time opens up again.</li>
           </ul>
           <NoteField who={who} />

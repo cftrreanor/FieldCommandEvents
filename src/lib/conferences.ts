@@ -11,7 +11,7 @@ export type Mode = "in_person" | "video" | "phone";
 export const MODES: { value: Mode; label: string; hint: string }[] = [
   { value: "in_person", label: "In person", hint: "Families come to your room." },
   { value: "video", label: "Video", hint: "Families join your Zoom or Google Meet." },
-  { value: "phone", label: "Phone call", hint: "You call each family at the number they give. Your number isn't shared." },
+  { value: "phone", label: "Phone call", hint: "You call each family at the number they give. We never show your number." },
 ];
 export const isMode = (m: unknown): m is Mode => MODES.some((x) => x.value === m);
 
@@ -65,6 +65,8 @@ export type ConferenceSettings = {
   closed_dates: string[];
   min_notice_hours: number;
   max_days_ahead: number;
+  /** Shown on the booking page when every time is booked, if the organizer adds one (20270124000000). */
+  contact_email?: string | null;
 };
 
 export const DEFAULT_SETTINGS: ConferenceSettings = {
@@ -91,7 +93,9 @@ export const LEGACY_SETTINGS_COLUMNS =
 export const WEEKLY_SETTINGS_COLUMNS = `${LEGACY_SETTINGS_COLUMNS}, schedule, weekly_hours, closed_dates, min_notice_hours, max_days_ahead`;
 /** Before the passcode update (20261229000000) has been run. */
 export const MODES_SETTINGS_COLUMNS = `${WEEKLY_SETTINGS_COLUMNS}, meeting_modes`;
-export const SETTINGS_COLUMNS = `${MODES_SETTINGS_COLUMNS}, video_passcode`;
+/** Before the contact email update (20270124000000) has been run. */
+export const PASSCODE_SETTINGS_COLUMNS = `${MODES_SETTINGS_COLUMNS}, video_passcode`;
+export const SETTINGS_COLUMNS = `${PASSCODE_SETTINGS_COLUMNS}, contact_email`;
 
 /** The ways a conference offers, in a fixed order (from the old single setting before the update). */
 export function modesOf(s: Pick<ConferenceSettings, "meeting_mode" | "meeting_modes"> | null): Mode[] {
@@ -196,11 +200,11 @@ export function weeklySummary(hours: WeeklyRange[]) {
     .join(" · ");
 }
 
-/** "18 meetings · 3:00 PM – 7:15 PM" */
+/** "18 times · 3:00 PM – 7:15 PM": the openings people can book ("meetings" are what's booked). */
 export function meetingSummary(starts: string[], meetingMinutes: number) {
-  if (!starts.length) return "No meetings fit in your hours yet";
+  if (!starts.length) return "No times fit in your hours yet";
   const last = toTime(toMinutes(starts[starts.length - 1]) + meetingMinutes);
-  return `${starts.length} ${starts.length === 1 ? "meeting" : "meetings"} · ${displayTime(starts[0])} – ${displayTime(last)}`;
+  return `${starts.length} ${starts.length === 1 ? "time" : "times"} · ${displayTime(starts[0])} – ${displayTime(last)}`;
 }
 
 /**
@@ -214,8 +218,8 @@ export function placeMissing(s: ConferenceSettings | null, venueAddress: string 
   if (!s || !modes.length) return "Choose where you'll meet.";
   if (modes.includes("in_person") && !venueAddress?.trim()) return eventType === "meeting" ? "Add the address." : "Add your school's address.";
   if (modes.includes("in_person") && !s.room?.trim()) return "Add your room and directions.";
-  if (modes.includes("video") && !s.own_link && !s.video_link) return "Add your meeting link.";
-  if (modes.includes("video") && !s.own_link && !s.waiting_room_confirmed)
+  if (modes.includes("video") && !s.video_link) return "Add your meeting link.";
+  if (modes.includes("video") && !s.waiting_room_confirmed)
     return "Tick that your meeting has a waiting room and runs the whole time.";
   return null;
 }
@@ -227,3 +231,37 @@ export function notReady(s: ConferenceSettings | null, venueAddress: string | nu
   return placeMissing(s, venueAddress, eventType);
 }
 
+
+/** A booked meeting, in the event's time zone: who, the day ("2026-11-14"), and the start ("09:15"). */
+/** A booked meeting: who, its day and time, and (on Meeting setup) the booking, so Save says which ones were shown. */
+export type BookedTime = { who: string; date: string; time: string; id?: string };
+
+/**
+ * The booked meetings that no longer fit new times: on another day, outside the hours, in a break,
+ * or no longer on a meeting start (a new length or gap). They stay booked; the organizer is told
+ * who, before saving (decisions 2026-11-07, finding 2).
+ */
+export function bookingsOutside(
+  booked: BookedTime[],
+  t: {
+    schedule: Schedule;
+    day: string;
+    from: string;
+    to: string;
+    weekly: WeeklyRange[];
+    firstDay: string;
+    lastDay: string;
+    /** Days off (weekly hours): a meeting on one doesn't fit. */
+    closed?: string[];
+    lengths: Pick<ConferenceSettings, "meeting_minutes" | "gap_minutes" | "breaks">;
+    /** One day, moving to another day: booked meetings move with it, so only their time has to fit. */
+    movesWithDay?: boolean;
+  },
+): BookedTime[] {
+  return booked.filter((b) => {
+    if (t.schedule === "one_day") return (!t.movesWithDay && b.date !== t.day) || !meetingStarts(t.from, t.to, t.lengths).includes(b.time);
+    if (b.date < t.firstDay || (t.lastDay && b.date > t.lastDay) || t.closed?.includes(b.date)) return true;
+    const weekday = new Date(`${b.date}T12:00:00Z`).getUTCDay();
+    return !t.weekly.some((h) => h.day === weekday && meetingStarts(h.start, h.end, t.lengths).includes(b.time));
+  });
+}

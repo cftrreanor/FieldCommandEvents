@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { setPending, useLeaveGuard } from "@/components/pending-edits";
+import { useState, type ReactNode } from "react";
+import { AutosaveBar, useAutosaveForm } from "@/components/autosave";
 import { ActionForm } from "@/components/action-form";
 import { SubmitButton } from "@/components/submit-button";
 import { Field, Input, Select } from "@/components/ui";
@@ -79,7 +79,7 @@ export function EventForm({
   focusDate?: boolean;
 }) {
   const [dirty, setDirty] = useState(false);
-  const auto = useAutosaveForm(autosave);
+  const auto = useAutosaveForm(autosave, "A change to the details");
   // Venue search favors the part of the country in the event's time zone.
   const [timezone, setTimezone] = useState(initial.timezone);
   const conference = hasConferences(eventType);
@@ -129,9 +129,9 @@ export function EventForm({
                 </p>
               </div>
             ) : (
-              <p className="rounded-lg border border-border p-3 text-sm text-muted sm:col-span-2">
-                Next, you&apos;ll set your {meeting ? "meeting" : "conference"} day, or the same hours every week, in{" "}
-                {meeting ? "Meeting Setup" : "Conference Setup"}.
+              // Plain text, not a box that looks like a field (decisions 2026-11-07).
+              <p className="text-sm text-muted sm:col-span-2">
+                You&apos;ll set the day and hours in the next step, Meeting times.
               </p>
             )}
           </>
@@ -144,7 +144,7 @@ export function EventForm({
           label="Event time zone"
           hint={
             conference
-              ? `Where you'll meet. Every time ${meeting ? "people" : "families"} see, in emails, and in calendar invites uses this zone, whatever someone's phone is set to.`
+              ? `The time zone where you'll meet. Every time ${meeting ? "people" : "families"} see, in emails, and in calendar invites uses this zone, whatever someone's phone is set to.`
               : "Where the event happens. Every time on volunteer pages, emails, and calendar invites uses this zone, whatever someone's phone is set to."
           }
           className="sm:col-span-2"
@@ -200,14 +200,14 @@ export function EventForm({
       {meeting && (
         <p className="rounded-md border border-border bg-brand-soft px-3 py-2 text-sm leading-6">
           <LineIcon name="lock" inline /><strong>Privacy:</strong> people see only the open times, never who else booked. Names, contact details, and
-          notes are seen only by you and are permanently deleted 30 days after each meeting.
+          notes are seen only by you and your co-hosts, and are permanently deleted 30 days after each meeting.
         </p>
       )}
 
       {conference && !meeting && (
         <p className="rounded-md border border-border bg-brand-soft px-3 py-2 text-sm leading-6">
           <LineIcon name="lock" inline /><strong>Family privacy:</strong> families see only the open times, never who else booked. Children&apos;s
-          names and parents&apos; notes are seen only by you and are permanently deleted 30 days after the conference.
+          names and parents&apos; notes are seen only by you and your co-hosts, and are permanently deleted 30 days after the conference.
         </p>
       )}
 
@@ -241,102 +241,6 @@ export function EventForm({
         <SubmitButton pendingText="Saving…">{submitLabel}</SubmitButton>
       )}
     </ActionForm>
-  );
-}
-
-type AutoStatus = { kind: "idle" | "waiting" | "saving" | "saved" } | { kind: "incomplete"; what: string } | { kind: "failed"; error: string; retry: boolean };
-
-/** Saves the form a moment after each change, once every required box is filled in. */
-function useAutosaveForm(on: boolean) {
-  const key = useId();
-  const [status, setStatus] = useState<AutoStatus>({ kind: "idle" });
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const form = useRef<HTMLFormElement | null>(null);
-  useLeaveGuard("A change to the details");
-
-  const submit = () => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    const f = form.current;
-    if (!f) return;
-    const bad = [...f.elements].find((el): el is HTMLInputElement => el instanceof HTMLInputElement && !el.checkValidity());
-    if (bad) {
-      const what = bad.labels?.[0]?.textContent?.replace("*", "").trim() || "A box";
-      setStatus({ kind: "incomplete", what });
-      setPending(key, { kind: "incomplete", flush: submit });
-      return;
-    }
-    setStatus({ kind: "saving" });
-    setPending(key, { kind: "saving" });
-    f.requestSubmit();
-  };
-
-  useEffect(() => () => setPending(key, null), [key]);
-  return {
-    status,
-    retry: submit,
-    edited: (f: HTMLFormElement) => {
-      if (!on) return;
-      form.current = f;
-      setStatus({ kind: "waiting" });
-      setPending(key, { kind: "saving", flush: submit });
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(submit, 1200);
-    },
-    saved: () => {
-      // A newer change waiting to save keeps it "waiting".
-      if (timer.current) return;
-      setStatus({ kind: "saved" });
-      setPending(key, null);
-    },
-    failed: (error: string) => {
-      // Trying again only helps when the connection dropped; a refusal says why and waits for a change.
-      const retry = error.startsWith("Something went wrong");
-      setStatus({ kind: "failed", error: retry ? "Check your connection, then select Retry." : error, retry });
-      setPending(key, { kind: "failed", flush: retry ? submit : undefined });
-    },
-  };
-}
-
-/** The pinned bar under a draft's Details: whether everything is saved. */
-function AutosaveBar({ status, retry, next }: { status: AutoStatus; retry: () => void; next?: { href: string; label: string } }) {
-  return (
-    <div className="sticky bottom-[var(--day-bar,0px)] z-10 -mx-4 -mb-4 flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 rounded-b-lg border-t-2 border-border bg-surface px-4 py-3 shadow-[0_-6px_16px_rgb(0_0_0/0.10)] sm:-mx-6 sm:-mb-6 sm:px-6">
-      <div className="min-w-0 flex-1 text-sm" role="status">
-        {status.kind === "failed" ? (
-          <p className="flex flex-wrap items-center gap-x-2 font-semibold text-danger">
-            <span>
-              <span aria-hidden>▲ </span>Not saved. {status.error}
-            </span>
-            {status.retry && (
-              <button type="button" onClick={retry} className="inline-flex min-h-11 items-center rounded-md border-[1.5px] border-danger px-3">
-                Retry
-              </button>
-            )}
-          </p>
-        ) : status.kind === "incomplete" ? (
-          <p className="font-medium text-warning">
-            <span aria-hidden>◆ </span>Not saved yet. Fill in “{status.what}”.
-          </p>
-        ) : status.kind === "saving" || status.kind === "waiting" ? (
-          <p className="text-muted">Saving…</p>
-        ) : status.kind === "saved" ? (
-          <p className="font-medium">
-            <span aria-hidden className="text-success">
-              ✓{" "}
-            </span>
-            Saved
-          </p>
-        ) : (
-          <p className="text-muted">Changes save automatically</p>
-        )}
-      </div>
-      {next && (
-        <Link href={next.href} className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover">
-          {next.label} →
-        </Link>
-      )}
-    </div>
   );
 }
 

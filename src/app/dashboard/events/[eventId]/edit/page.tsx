@@ -91,6 +91,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const section: Section = asked && SECTIONS.includes(asked) ? asked : "details";
   // The guided setup, step by step (conferences and meetings have their own setup page instead).
   // Volunteer events and band contests set up in three steps (shown by the layout), not the guided Event settings.
+  const stepOnly = hasConferences(event.event_type) && event.status !== "published";
   const guided = setupParam === "1" && !hasConferences(event.event_type) && event.event_type !== "volunteer" && event.event_type !== "band_contest";
   const at = SETUP_STEPS.findIndex((s) => s.id === section);
   const prevStep = guided && at > 0 ? setupHref(eventId, SETUP_STEPS[at - 1].id) : undefined;
@@ -114,8 +115,9 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
             ? `Every week: ${weeklySummary(setup.weekly_hours)} · ${formatDateRange(event.starts_on, event.ends_on)}`
             : `${formatDate(event.starts_on)} · ${displayTime(utcToZonedTime(event.window_start, event.timezone))} – ${displayTime(utcToZonedTime(event.window_end, event.timezone))}`
         } · ${zoneName(event.timezone)}`,
-        href: `/dashboard/events/${eventId}/conferences#times`,
-        setupName: isMeeting(event.event_type) ? "Meeting Setup" : "Conference Setup",
+        // Before publishing, the setup step; once published, Meeting setup (the same address takes you there).
+        href: `/dashboard/events/${eventId}/conferences/times`,
+        setupName: event.status !== "published" ? "Meeting times" : isMeeting(event.event_type) ? "Meeting setup" : "Conference setup",
       }
     : undefined;
   // One logo and color per account; each event can switch them off (true until the 20261220000000 update).
@@ -291,13 +293,14 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
           <Link href={`/dashboard/events/${eventId}`} className="text-sm text-muted hover:text-foreground">
             ← Back to {event.name}
           </Link>
-          <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">{!published && (event.event_type === "volunteer" || event.event_type === "band_contest") ? "Event details" : "Event settings"}</h1>
+          <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">{!published && (event.event_type === "volunteer" || event.event_type === "band_contest" || hasConferences(event.event_type)) ? "Event details" : "Event settings"}</h1>
           <SavedBy eventId={eventId} area={["details", "files"]} className="mt-2" />
           <p className="mt-1 text-sm text-muted">Boxes marked * are required.</p>
         </>
       )}
-      <div className={guided ? "mt-6" : "mt-6 lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-8"}>
-        {!guided && <SettingsNav sections={sections} current={section} base={base} />}
+      {/* A meetings draft's Details step: the step bar is the one menu, so no second one beside it (decisions 2026-11-08). */}
+      <div className={guided || stepOnly ? "mt-6" : "mt-6 lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-8"}>
+        {!guided && !stepOnly && <SettingsNav sections={sections} current={section} base={base} />}
         <div id="settings-panel" className="min-w-0 space-y-6">
           {section === "details" && (
             <>
@@ -332,10 +335,12 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                   stickySave={!guided}
                   autosave={!guided && !published}
                   next={
-                    !published && (event.event_type === "volunteer" || event.event_type === "band_contest")
+                    !published && (event.event_type === "volunteer" || event.event_type === "band_contest" || hasConferences(event.event_type))
                       ? event.event_type === "volunteer"
                         ? { href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Jobs and shifts" }
-                        : { href: `/dashboard/events/${eventId}/bands`, label: "Next up: Registration" }
+                        : event.event_type === "band_contest"
+                          ? { href: `/dashboard/events/${eventId}/bands`, label: "Next up: Registration" }
+                          : { href: `/dashboard/events/${eventId}/conferences/times`, label: "Next up: Meeting times" }
                       : undefined
                   }
                   setup={guided ? { next: nextStep } : undefined}

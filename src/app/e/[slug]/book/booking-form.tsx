@@ -12,7 +12,7 @@ import { DayCalendar, longDay } from "./day-calendar";
 /** How a family can meet, as they see it. */
 export const FAMILY_MODES: { value: Mode; label: string; hint: string }[] = [
   { value: "in_person", label: "In person", hint: "Come to the classroom." },
-  { value: "video", label: "Video", hint: "Join online." },
+  { value: "video", label: "Video", hint: "The link to join is in your confirmation email." },
   { value: "phone", label: "Phone call", hint: "Your child's teacher calls you." },
 ];
 
@@ -39,6 +39,8 @@ export function BookingForm({
   askChild = true,
   calendar = false,
   meeting = false,
+  contact = null,
+  preview = false,
 }: {
   action: (prev: BookingState, formData: FormData) => Promise<BookingState>;
   times: OpenTime[];
@@ -58,6 +60,10 @@ export function BookingForm({
   calendar?: boolean;
   /** Meetings: "meeting" where conferences say "conference", and no school wording. */
   meeting?: boolean;
+  /** Who to write to when every time is booked (shown only then). */
+  contact?: string | null;
+  /** The organizer previewing a draft: no Book button. */
+  preview?: boolean;
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState(action, {});
@@ -130,17 +136,37 @@ export function BookingForm({
   if (state.booked) {
     const b = state.booked;
     return (
-      <Card className="space-y-3 border-success/30 bg-success-soft" role="status">
-        <h2 className="text-2xl font-semibold">You&apos;re booked</h2>
+      <Card data-booked className="space-y-3 border-success/30 bg-success-soft" role="status">
+        <h2 className="flex items-center gap-2 text-2xl font-semibold">
+          <span aria-hidden className="inline-flex size-8 items-center justify-center rounded-full bg-success text-base text-success-foreground">
+            ✓
+          </span>
+          You&apos;re booked
+        </h2>
         <p className="text-lg font-medium">{b.when}</p>
-        <p>{b.child ? `Conference for ${b.child}.` : `${meeting ? "Meeting" : "Conference"} with ${teacher}.`}</p>
+        <p>{b.child ? `Conference for ${b.child}` : `${meeting ? "Meeting" : "Conference"} with ${teacher}`}</p>
+        {/* How and where, so no one has to open the email to find out (decisions 2026-11-07). */}
+        {mode && (
+          <p>
+            <span className="font-semibold">{FAMILY_MODES.find((x) => x.value === mode)?.label}:</span>{" "}
+            {mode === "in_person"
+              ? place
+                ? `come to ${place}.`
+                : "the place is in your confirmation email."
+              : mode === "video"
+                ? b.emailSent
+                  ? "the link to join is in your confirmation email."
+                  : "the link to join is on your booking page, below."
+                : `${teacher} calls you at the number you gave.`}
+          </p>
+        )}
         <p className="text-sm text-muted">
           {b.emailSent
-            ? `We emailed a calendar invite to ${b.emails.join(" and ")}, with the details and a link to change or cancel. We'll remind you the day before.`
+            ? `We emailed your confirmation to ${b.emails.join(" and ")}. It has the details, a calendar invite, and a link to change or cancel. We'll remind you the day before.`
             : "We couldn't send every confirmation email, but your time is booked. Save the link below to change or cancel."}
         </p>
         <a href={b.link} className="font-medium text-brand underline underline-offset-4">
-          See, change, or cancel this booking
+          See, change, or cancel your {meeting ? "meeting" : "conference"}
         </a>
       </Card>
     );
@@ -149,8 +175,30 @@ export function BookingForm({
   if (!times.length) {
     return (
       <Card>
-        <p className="font-medium">Every time is booked.</p>
-        <p className="mt-1 text-sm text-muted">{meeting ? `Please contact ${teacher} to find another time.` : <>Please contact your child&apos;s teacher to find another time.</>}</p>
+        <p className="font-medium">Every time is booked</p>
+        <p className="mt-1 text-sm text-muted">
+          {contact ? (
+            <>
+              To find another time, write to {meeting ? teacher : <>your child&apos;s teacher</>} at{" "}
+              <a href={`mailto:${contact}`} className="font-medium text-brand underline underline-offset-4 [overflow-wrap:anywhere]">
+                {contact}
+              </a>
+              .
+            </>
+          ) : (
+            "Times open up when someone cancels, so check back later."
+          )}
+        </p>
+        {/* Writing to the organizer is the one thing to do here: a full-size target, not just a link in a sentence. */}
+        {contact && (
+          <a
+            href={`mailto:${contact}`}
+            className="mt-3 inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-medium hover:bg-background max-sm:w-full max-sm:justify-center"
+          >
+            Email {meeting ? teacher : "the teacher"}
+          </a>
+        )}
+        <p className="mt-2 text-sm text-muted">Already booked? Use the link in your confirmation email to change or cancel.</p>
       </Card>
     );
   }
@@ -251,7 +299,7 @@ export function BookingForm({
                     required
                     checked={mode === m.value}
                     onChange={() => setMode(m.value)}
-                    className="mt-1 h-4 w-4 shrink-0 accent-[var(--brand)]"
+                    className="team-radio mt-1"
                   />
                   <span>
                     <span className="block font-semibold">{m.label}</span>
@@ -340,19 +388,39 @@ export function BookingForm({
         <Field
           label="Anything you'd like to talk about? (optional)"
           // Without the child's name, the note isn't about a student, so no medical caution.
-          hint={`Only ${teacher}${shared ? ", their co-hosts, and the people they've chosen to notify" : " and their co-hosts"} see this.${askChild ? " Please leave out health or medical details; share those with the school directly." : ""}`}
+          hint={`Only ${teacher}${shared ? ", their helpers, and the people they've chosen to notify" : " and their helpers"} see your note.${askChild ? " Please leave out health or medical details; share those with the school directly." : ""}`}
         >
           <Textarea name="note" rows={3} maxLength={500} defaultValue={state.values?.note} />
         </Field>
       </section>
 
       <div className="space-y-4">
-        <BotCheck />
-        <FormMessage error={state.error} />
-        <SubmitButton pendingText="Booking…">
-          {pickedTime ? `Book ${days.length > 1 ? `${pickedTime.dayLabel}, ` : ""}${pickedTime.label}` : "Book this time"}
-        </SubmitButton>
+        {preview ? (
+          // The organizer's preview of a draft: everything as people will see it, except booking.
+          <p className="rounded-md border border-border bg-brand-soft px-3 py-2 text-sm">Preview: booking opens when you publish.</p>
+        ) : (
+          <>
+            <BotCheck />
+            <FormMessage error={state.error} />
+            <SubmitButton pendingText="Booking…" className="max-sm:w-full">
+              {pickedTime ? `Book ${days.length > 1 ? `${pickedTime.dayLabel}, ` : ""}${pickedTime.label}` : "Book this time"}
+            </SubmitButton>
+            {/* What's still needed, beside the button (one "not ready yet" signal everywhere, decisions 2026-11-08). */}
+            {(() => {
+              const needed = [!pickedTime && "a time", askMode && !mode && "how you'll meet", !(parents[0]?.name.trim() && parents[0]?.email.trim()) && "your name and email"].filter(
+                (x): x is string => Boolean(x),
+              );
+              return needed.length ? <p className="text-sm text-muted">Still needed: {listWords(needed)}</p> : null;
+            })()}
+          </>
+        )}
       </div>
     </form>
   );
+}
+
+/** "a time", "a time and your name", "a time, how you'll meet, and your name" (Oxford comma). */
+function listWords(items: string[]) {
+  if (items.length < 3) return items.join(" and ");
+  return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
 }

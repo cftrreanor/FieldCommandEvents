@@ -16,7 +16,9 @@ export default async function EventPublicLayout({ children, params }: LayoutProp
   const about =
     event?.event_type === "volunteer"
       ? "volunteer sign-ups and check-in for nonprofits, clubs, and community groups."
-      : "school event management for bands, choirs, PTOs, and front offices.";
+      : event?.event_type === "meeting" || event?.event_type === "conference"
+        ? "meetings and conferences that book themselves, for schools, clubs, and teams."
+        : "sign-ups, schedules, and check-in for bands, choirs, PTOs, and front offices.";
   return (
     <>
       <DemoBar />

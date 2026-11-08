@@ -257,7 +257,7 @@ export function MeetingList({
             </div>
           ) : (
             !r.booking.started && (
-              <div className="flex shrink-0 flex-wrap items-center gap-x-5 print:hidden">
+              <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 print:hidden">
                 <RescheduleButton
                   who={whoOf(r.booking)}
                   them={r.booking.child ? "the family" : "them"}
@@ -273,9 +273,10 @@ export function MeetingList({
         </div>
       </li>
     ) : (
-      <li key={r.key} className="flex gap-4 rounded-xl border border-dashed border-border px-3 py-2.5 text-sm">
-        <span className="w-36 shrink-0 tabular-nums text-muted">{r.time}</span>
-        <span className="text-muted">Open</span>
+      // An open time reads as open in both modes: a dashed edge you can see, and an "Open" tag (dark mode's muted text is white).
+      <li key={r.key} className="flex items-center gap-4 rounded-xl border border-dashed border-field-border px-3 py-2.5 text-sm">
+        <span className="w-44 shrink-0 whitespace-nowrap tabular-nums">{r.time}</span>
+        <span className="rounded-full border border-field-border px-2 py-0.5 text-xs font-semibold">Open</span>
       </li>
     );
 

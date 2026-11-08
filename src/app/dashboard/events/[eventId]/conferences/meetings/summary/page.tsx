@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 import { conferenceBookedCount, isConferenceTeacher } from "@/lib/conference-access";
 import { NotTheTeacher } from "../not-teacher";
 import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime, zoneName } from "@/lib/time";
+import { formatPhone } from "@/lib/phone";
 import { PrintButton } from "./print-button";
 
 export const metadata: Metadata = { title: "Meeting summary" };
@@ -33,22 +34,25 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
   if (!hasConferences(event.event_type)) redirect(`/dashboard/events/${eventId}`);
   if (!(await isConferenceTeacher(supabase, eventId))) return <NotTheTeacher eventId={eventId} booked={await conferenceBookedCount(supabase, eventId)} meeting={isMeeting(event.event_type)} />;
 
-  const columns = "id, starts_at, child_name, parents";
+  const columns = "id, starts_at, child_name, parents, meeting_mode, note";
   const load = (extra: string) =>
     supabase
       .from("conference_bookings")
       .select(columns + extra)
       .eq("event_id", eventId)
       .order("starts_at");
+  // The number to call for phone calls (before its update, without it).
+  const tryCall = await load(", outcome, call_phone");
   const [{ settings }, withOutcomes] = await Promise.all([
     loadConferenceSettings(supabase, eventId),
-    load(", outcome"),
+    isSchemaError(tryCall.error) ? load(", outcome") : Promise.resolve(tryCall),
   ]);
   // Before the conference outcomes update there's no Met / No-show to show.
   const outcomesReady = !isSchemaError(withOutcomes.error);
   const { data, error } = outcomesReady ? withOutcomes : await load("");
   if (error) missing();
-  const bookings = (data ?? []) as unknown as (Pick<Booking, "id" | "starts_at" | "child_name" | "parents"> & {
+  const bookings = (data ?? []) as unknown as (Pick<Booking, "id" | "starts_at" | "child_name" | "parents" | "meeting_mode" | "note"> & {
+    call_phone?: string | null;
     outcome?: keyof typeof OUTCOME_LABEL | null;
   })[];
 
@@ -64,7 +68,18 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
   const students = bookings.some((b) => b.child_name);
   const met = bookings.filter((b) => b.outcome === "met").length;
   const noShows = bookings.filter((b) => b.outcome === "no_show").length;
-  const unmarked = bookings.length - met - noShows;
+  // Printed before the day (no meeting has started): a sheet to work from, with how they're meeting, a
+  // number, their note, and a blank box to tick, instead of "Not marked" on every row (decisions 2026-11-07).
+  // A sheet to work from while any meeting is still to come (the day itself included): how, a number,
+  // and the note. Each row then shows a box to tick if it's still to come, or how it went.
+  const nowIso = new Date().toISOString();
+  const beforeDay = bookings.some((b) => b.starts_at > nowIso);
+  const upcoming = (b: { starts_at: string }) => b.starts_at > nowIso;
+  // The Met column shows on screen once a meeting has happened; before that it's for print only.
+  const metOnScreen = bookings.some((b) => !upcoming(b));
+  // Only meetings that have happened can be "not marked": those still to come aren't counted.
+  const unmarked = bookings.filter((b) => !upcoming(b) && !b.outcome).length;
+  const HOW = { in_person: "In person", video: "Video", phone: "Phone call" } as const;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -74,7 +89,6 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
         </Link>
         <PrintButton />
       </div>
-      <p className="mt-2 text-xs text-muted print:hidden">{RECORDS_NOTE}</p>
 
       <h1 className="mt-6 text-2xl font-semibold print:mt-0">Meeting summary</h1>
       <p className="mt-1 text-sm text-muted">
@@ -83,7 +97,7 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
       </p>
       <p className="mt-2 text-sm">
         <span className="font-semibold">{bookings.length}</span> {bookings.length === 1 ? "meeting" : "meetings"}
-        {outcomesReady && (
+        {outcomesReady && bookings.some((b) => !upcoming(b)) && (
           <>
             {" "}
             · <span className="font-semibold">{met}</span> met · <span className="font-semibold">{noShows}</span>{" "}
@@ -101,8 +115,9 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
       {bookings.length === 0 ? (
         <p className="mt-6 text-muted">No meetings booked.</p>
       ) : (
-        <table className="mt-5 w-full border-collapse text-left text-sm">
-          <thead>
+        // On phones each meeting stacks, with its labels; the table is for wider screens and print (WCAG 1.4.10).
+        <table className="mt-5 w-full border-collapse text-left text-sm max-sm:block print:table">
+          <thead className="max-sm:hidden print:table-header-group">
             <tr className="border-b-2 border-foreground">
               <th scope="col" className="py-2 pr-3 font-semibold">
                 Time
@@ -115,25 +130,65 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
               <th scope="col" className="py-2 pr-3 font-semibold">
                 {students ? "Parents" : "Who"}
               </th>
+              {beforeDay && (
+                <>
+                  <th scope="col" className="py-2 pr-3 font-semibold">
+                    How
+                  </th>
+                  <th scope="col" className="py-2 pr-3 font-semibold">
+                    Contact
+                  </th>
+                  <th scope="col" className="py-2 pr-3 font-semibold">
+                    Note
+                  </th>
+                </>
+              )}
               {outcomesReady && (
-                <th scope="col" className="py-2 font-semibold">
+                // Before any meeting has happened it's only a column of boxes to tick on paper.
+                <th scope="col" className={`${metOnScreen ? "" : "hidden print:table-cell"} w-12 py-2 font-semibold`}>
                   Met
                 </th>
               )}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="max-sm:block print:table-row-group">
             {bookings.map((b) => (
-              <tr key={b.id} className="break-inside-avoid border-b border-border align-top">
-                <td className="whitespace-nowrap py-2 pr-3 tabular-nums">{time(b.starts_at)}</td>
-                {students && <td className="py-2 pr-3 font-medium">{b.child_name}</td>}
-                <td className="py-2 pr-3">{b.parents.map((p) => p.name).join(", ")}</td>
-                {outcomesReady && <td className="whitespace-nowrap py-2">{b.outcome ? OUTCOME_LABEL[b.outcome] : "Not marked"}</td>}
+              <tr key={b.id} className="break-inside-avoid border-b border-border align-top max-sm:block max-sm:py-2 print:table-row">
+                <td data-label="Time" className="whitespace-nowrap py-2 pr-3 tabular-nums max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell">{time(b.starts_at)}</td>
+                {students && <td data-label="Student" className="py-2 pr-3 font-medium max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell">{b.child_name}</td>}
+                <td data-label="Who" className="py-2 pr-3 max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell">{b.parents.map((p) => p.name).join(", ")}</td>
+                {beforeDay && (
+                  <>
+                    <td data-label="How" className="whitespace-nowrap py-2 pr-3 max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell">{HOW[b.meeting_mode] ?? ""}</td>
+                    <td data-label="Contact" className="py-2 pr-3 max-sm:block max-sm:py-0.5 max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell">
+                      {/* A phone call: the number they gave to be called on. No phone: their email, so everyone can be reached. */}
+                      {(() => {
+                        const phone = formatPhone((b.meeting_mode === "phone" ? b.call_phone : null) ?? b.parents.find((p) => p.phone)?.phone ?? null);
+                        return phone ? <span className="whitespace-nowrap">{phone}</span> : <span className="[overflow-wrap:anywhere]">{b.parents[0]?.email ?? ""}</span>;
+                      })()}
+                    </td>
+                    <td data-label="Note" className="py-2 pr-3 max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell">{b.note}</td>
+                  </>
+                )}
+                {outcomesReady && (
+                  <td data-label="Met" className={`${upcoming(b) ? "max-sm:hidden" : "max-sm:block"} ${metOnScreen ? "" : "hidden"} whitespace-nowrap py-2 max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell`}>
+                    {upcoming(b) ? (
+                      // A box to tick on paper; on screen it would look like a button.
+                      <span aria-label="Not yet" className="hidden size-5 rounded-sm border-2 border-foreground align-middle print:inline-block" />
+                    ) : b.outcome ? (
+                      OUTCOME_LABEL[b.outcome]
+                    ) : (
+                      "Not marked"
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       )}
+      {/* After the list, at a readable size: what the page is, then what happens to copies. */}
+      <p className="mt-6 text-sm text-muted print:hidden">{RECORDS_NOTE}</p>
     </div>
   );
 }

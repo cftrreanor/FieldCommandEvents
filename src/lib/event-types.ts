@@ -36,13 +36,14 @@ export const EVENT_TYPES = [
     value: "conference",
     label: "Parent-teacher conferences",
     icon: "apple",
-    blurb: "Free during the pilot. Set aside a day, and families book a meeting time, in person, on video, or by phone, with reminders and a link to change or cancel.",
+    // Each card leads with who it's for, so Meetings and conferences read apart (decisions 2026-11-07).
+    blurb: "For teachers: families book a time to talk about their child, on a day you set aside, in person, on video, or by phone. Free for teachers.",
   },
   {
     value: "meeting",
     label: "Meetings",
     icon: "calendar",
-    blurb: "Set your hours, and people book a time with you, in person, on video, or by phone. They can bring up to three others, and get reminders and a link to change or cancel.",
+    blurb: "For advisers, counselors, coaches, and club officers: your own hours, one day or every week, and anyone with the link books a time, in person, on video, or by phone.",
   },
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number]["value"];

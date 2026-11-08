@@ -32,10 +32,11 @@ export function SetupTabs({
   const row = useTabInView<HTMLElement>(tabs.find((t) => t.active)?.key);
   return (
     <nav ref={row} aria-label={label} className="relative -mx-4 snap-x scroll-px-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-      <ul className={folderTabRow}>
+      {/* Two tabs on a phone share the width (a row as wide as its words ran off the screen). */}
+      <ul className={`${folderTabRow} ${tabs.length > 2 ? "" : "max-sm:min-w-0"}`}>
         {tabs.map((t) => (
           // On a phone each tab is a bit under half the screen, so the next one always peeks in at the edge: a cue to swipe.
-          <li key={t.key} className={tabs.length > 2 ? "max-sm:w-[42vw] max-sm:shrink-0" : undefined}>
+          <li key={t.key} className={tabs.length > 2 ? "max-sm:w-[42vw] max-sm:shrink-0" : "max-sm:min-w-0 max-sm:flex-1"}>
             <LeaveStepLink
               href={t.href}
               way={way}

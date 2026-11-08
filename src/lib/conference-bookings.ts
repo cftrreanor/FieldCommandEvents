@@ -50,9 +50,9 @@ export type Teacher = {
   shared?: boolean;
 };
 
-/** Who sees a family's details: "Ms. Ruiz and their co-hosts", plus anyone else they notify. */
+/** Who sees a family's details: "Ms. Ruiz and the people helping run this", plus anyone else they notify (no in-app role names on public pages). */
 export const whoSees = (teacher: Pick<Teacher, "name" | "shared">) =>
-  teacher.shared ? `${teacher.name}, their co-hosts, and the people they've chosen to notify` : `${teacher.name} and their co-hosts`;
+  teacher.shared ? `${teacher.name}, the people helping run this, and the people they've chosen to notify` : `${teacher.name} and the people helping run this`;
 
 export const BOOKING_COLUMNS = "id, starts_at, child_name, parents, meeting_mode, note, calendar_sequence";
 
@@ -70,8 +70,8 @@ export async function withCallPhone<T extends { error: { code?: string } | null 
 export const privacyLine = (teacher: Teacher, weekly = false, child = true) =>
   // Without the child's name, the short version (like the booking page's privacy note).
   child
-    ? `Only ${whoSees(teacher)} see your child's name, your details, and your note. Other families never see who booked. Everything is deleted 30 days after ${weekly ? "your meeting" : "the conference"}.`
-    : `Only ${whoSees(teacher)} see your details and your note. Everything is deleted 30 days after ${weekly ? "your meeting" : "the conference"}.`;
+    ? `Only ${whoSees(teacher)} see your child's name, your details, and your note. Other families never see who booked. They're deleted from ${brand.name} 30 days after ${weekly ? "your meeting" : "the conference"}.`
+    : `Only ${whoSees(teacher)} see your details and your note. They're deleted from ${brand.name} 30 days after ${weekly ? "your meeting" : "the conference"}.`;
 
 /** A family's link to see, change or cancel their meeting. */
 export const bookingLink = (origin: string, slug: string, token: string) => `${origin}/e/${slug}/book/r/${token}`;
@@ -110,10 +110,11 @@ export function meetingPlace(b: Pick<Booking, "meeting_mode" | "child_name" | "p
       link: null as string | null,
     };
   }
-  if (s.own_link || !s.video_link) {
+  if (!s.video_link) {
+    // Only an event that used the old "add it to each invite" setting and hasn't added a link yet.
     return {
       title: "Video",
-      lines: [`${teacher.name} will send you the video link in a calendar invite before your meeting.`],
+      lines: [`${teacher.name} sends you the link to join before your meeting.`],
       link: null,
     };
   }
@@ -264,14 +265,15 @@ export async function bookingEmail(
                 ? "An updated calendar invite is attached, so your calendar shows the new day."
                 : kind === "rescheduled"
                   ? "An updated calendar invite is attached, so your calendar shows the new time."
-                  : "A calendar invite is attached, so it's on your calendar with the details.",
+                  : "Open the attached calendar invite to add it to your calendar, with the details.",
             ]
           : []),
       ],
       rows: [
         ...noteRow,
         { title: "When", detail: when, strong: true },
-        { title: place.title, detail: place.lines.join(" ") },
+        // Each on its own line, so an address never runs into the next sentence (decisions 2026-11-07).
+        { title: place.title, detail: place.lines.join("\n"), plain: true },
         ...(place.passcode ? [{ title: "Passcode", detail: place.passcode, strong: true }] : []),
         ...(b.parents.length > 1 ? [{ title: b.meeting_mode === "phone" ? "On the call" : "Coming", detail: b.parents.map((p) => p.name).join(", ") }] : []),
         { title: b.child_name ? "Your child's privacy" : "Your privacy", detail: privacyLine(teacher, s.schedule === "weekly" || word === "meeting", Boolean(b.child_name)) },
@@ -408,7 +410,7 @@ export function teacherBookingEmail(
             : b.child_name ? `A family changed their ${word}` : `A ${word} was changed`),
       paragraphs: custom?.paragraphs ?? [
         kind === "booked"
-          ? `${family} booked a ${word} with you (${event.name}). A calendar invite is attached, so it's on your calendar.`
+          ? `${family} booked a ${word} with you (${event.name}). Open the attached calendar invite to add it to your calendar.`
           : kind === "rescheduled"
             ? `${who} moved the ${word} with ${family} to a new time. We emailed ${them}, and your calendar invite is updated.`
             : byTeacher
@@ -425,8 +427,8 @@ export function teacherBookingEmail(
               ? place.lines[0] || "Your room"
               : b.meeting_mode === "phone"
                 ? callLine(b)
-                : s.own_link || !s.video_link
-                  ? `You send ${them} your video link`
+                : !s.video_link
+                  ? `Add your meeting link in Meeting setup, so ${them} can join`
                   : [s.video_link, s.video_passcode && `Passcode: ${s.video_passcode}`].filter(Boolean).join(" · "),
         },
         { title: b.meeting_mode === "phone" ? "On the call" : "Coming", detail: b.parents.map((p) => p.name).join(", ") },
@@ -465,4 +467,33 @@ export async function emailTeacher(
     all = (await sendEmail({ to: email, ...message })) && all;
   }
   return all;
+}
+
+/**
+ * New hours left a booked meeting out (the organizer chose to email them): it's still booked, and
+ * this asks them to pick a new time from their own link (decisions 2026-11-08, finding 2).
+ */
+export function pickNewTimeEmail(b: Booking, event: BookingEvent, s: ConferenceSettings, teacher: Teacher, link: string, to: BookingParent, replies: boolean) {
+  const when = meetingWhen(b.starts_at, s.meeting_minutes, event.timezone);
+  const word = kindWord(event);
+  const first = to.name.split(" ")[0];
+  return {
+    subject: `Please pick a new time for your ${word} with ${teacher.name}`,
+    ...emailLayout({
+      heading: "Please pick a new time",
+      paragraphs: [
+        `Hi ${first}, ${teacher.name} changed the hours for ${event.name}. Your ${word} (${when}) is now outside those hours.`,
+        `Your ${word} stays booked until you pick a new time or cancel.${
+          // Where to turn: replies when they reach the organizer, else the email they chose to show, else nothing.
+          replies
+            ? " If none of the open times work, reply to this email."
+            : s.contact_email
+              ? ` If none of the open times work, write to ${s.contact_email}.`
+              : ""
+        }`,
+      ],
+      button: { label: "Pick a new time", url: link },
+      footer: `Sent by ${brand.name} for ${teacher.name}.`,
+    }),
+  };
 }
