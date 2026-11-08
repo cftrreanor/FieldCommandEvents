@@ -108,7 +108,8 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const askChildName = hasConferences(event.event_type) ? await asksChildName(supabase, eventId) : true;
   // Conferences and meetings: the day or weekly hours, as set in their setup page.
   const setup = hasConferences(event.event_type) ? (await loadConferenceSettings(supabase, eventId)).settings : null;
-  const when = setup
+  // Only once the day and hours are picked: before that the event's dates are placeholders.
+  const when = setup?.times_saved_at
     ? {
         summary: `${
           setup.schedule === "weekly"

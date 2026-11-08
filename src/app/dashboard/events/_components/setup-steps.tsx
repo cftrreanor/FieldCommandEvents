@@ -31,6 +31,15 @@ export const BAND_SETUP_STEPS: SetupStep[] = [
   { id: "publish", label: "Publish registration" },
 ];
 
+/** Meetings and conferences: the same five steps that run along the top of their pages once the event exists. */
+export const MEETING_SETUP_STEPS: SetupStep[] = [
+  { id: "details", label: "Details" },
+  { id: "times", label: "Meeting times" },
+  { id: "place", label: "Where you'll meet" },
+  { id: "options", label: "More options", optional: true },
+  { id: "publish", label: "Publish" },
+];
+
 /** The setup page for a step (the first one is the new-event form, then Event settings with ?setup=1). */
 export function setupHref(eventId: string, step: string) {
   return `/dashboard/events/${eventId}/edit?setup=1&section=${step}`;
@@ -70,6 +79,8 @@ export function SetupHeader({
           ? "Skip anything for now: it's all in Event settings later."
           : steps === BAND_SETUP_STEPS
             ? "Add your team and maps whenever you're ready, from Event settings."
+            : steps === MEETING_SETUP_STEPS
+              ? "Next, you'll set your hours and where you'll meet."
             : "Add your team, maps, and volunteer jobs whenever you're ready, from Event settings."}{" "}
         Boxes marked * are required. {children}
       </p>

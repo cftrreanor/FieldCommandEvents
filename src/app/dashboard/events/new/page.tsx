@@ -6,12 +6,12 @@ import { getMyOrganization } from "@/lib/data";
 import { isPlacesConfigured } from "@/lib/places";
 import { createEvent } from "../../actions";
 import { EventForm } from "../_components/event-form";
-import { BAND_SETUP_STEPS, SetupHeader, VOLUNTEER_SETUP_STEPS } from "../_components/setup-steps";
+import { BAND_SETUP_STEPS, MEETING_SETUP_STEPS, SetupHeader, VOLUNTEER_SETUP_STEPS } from "../_components/setup-steps";
 import { SetupLogo } from "../_components/setup-logo";
 import { ContestPicker } from "../_components/contest-picker";
 import { loadBrand } from "@/lib/badges";
 import { EventTypeChoices } from "@/components/event-type-picker";
-import { eventTypeLabel, hasConferences, isEventType } from "@/lib/event-types";
+import { hasConferences, isEventType } from "@/lib/event-types";
 import { endedSentence, loadAccountHost, loadAccountPlan, pickerGroups, planEnded, startableTypes, typeNotes, typeWords } from "@/lib/plan";
 import { freeStatus } from "@/lib/admin";
 import { requireUser } from "@/lib/auth";
@@ -224,30 +224,29 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
     );
   }
 
+  // Meetings and conferences: step 1 of the same five steps shown on their pages once the event exists, so
+  // this form reads as the start of setup, not all of it (owner, QA 2026-11-08).
   return (
-    <div className="mx-auto max-w-2xl" data-required-marks>
-      <Link href="/dashboard" className="text-sm text-muted hover:text-foreground">
-        ← My events
-      </Link>
-      <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">
-        {type === "conference" ? "New parent-teacher conference" : type === "meeting" ? "New meetings event" : `New ${eventTypeLabel(type).toLowerCase()}`}
-      </h1>
-      <p className="mt-2 leading-7 text-muted">
-        {type === "conference"
-          ? "Free for teachers. Start with a name and time zone. Next, you'll set your hours and where you'll meet."
-          : "Start with a name and time zone. Next, you'll set your hours and where you'll meet."}{" "}
+    <div className="mx-auto max-w-5xl" data-required-marks>
+      <SetupHeader current="details" back={{ href: "/dashboard", label: "My events" }} steps={MEETING_SETUP_STEPS}>
+        {type === "conference" && "Free for teachers. "}
         {changeKind}
-      </p>
+      </SetupHeader>
       {trialNote}
-      <Card className="mt-8">
-        <EventForm
-          action={createEvent}
-          organizationId={org.id}
-          eventType={type}
-          initial={{ timezone: org.default_timezone }}
-          venueSearchEnabled={isPlacesConfigured}
-          submitLabel="Create event"
-        />
+      <Card className="mt-6">
+        <h2 className="text-lg font-semibold">Event details</h2>
+        <p className="mt-1 text-sm text-muted">The name and time zone everyone sees.</p>
+        <div className="mt-4">
+          <EventForm
+            action={createEvent}
+            organizationId={org.id}
+            eventType={type}
+            initial={{ timezone: org.default_timezone }}
+            venueSearchEnabled={isPlacesConfigured}
+            submitLabel="Save and continue"
+            setup={{}}
+          />
+        </div>
       </Card>
     </div>
   );

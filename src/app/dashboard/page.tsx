@@ -42,6 +42,8 @@ type EventSummary = {
   venue_address: string;
   event_type: string | null;
   organization_id: string;
+  /** A meetings or conferences draft whose day and hours aren't picked yet: its dates are only placeholders. */
+  timesUnset?: boolean;
 };
 
 type MyBand = {
@@ -211,6 +213,13 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       ).data ?? []) as EventSummary[]
     : [];
 
+  // Meetings and conferences drafts with no day or hours picked: say so instead of a placeholder date.
+  const bookingDrafts = hosted.filter((e) => e.status !== "published" && hasConferences(e.event_type)).map((e) => e.id);
+  if (bookingDrafts.length) {
+    const { data: saved } = await supabase.from("conference_settings").select("event_id").in("event_id", bookingDrafts).not("times_saved_at", "is", null);
+    const set = new Set((saved ?? []).map((r) => r.event_id as string));
+    for (const e of hosted) if (bookingDrafts.includes(e.id) && !set.has(e.id)) e.timesUnset = true;
+  }
   // Today's events first, then the rest by date.
   hosted.sort((a, b) => Number(isToday(b)) - Number(isToday(a)));
   const counts = await signupCounts(
@@ -520,7 +529,8 @@ function EventCard({
         </p>
       )}
       <p className="mt-2 text-sm text-muted">
-        {formatDateRange(e.starts_on, e.ends_on)} · {where(e)}
+        {e.timesUnset ? "Day and hours not set yet" : formatDateRange(e.starts_on, e.ends_on)}
+        {where(e) ? ` · ${where(e)}` : ""}
       </p>
       {children && <div className="mt-3">{children}</div>}
     </Card>

@@ -1021,7 +1021,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
               <Badge tone="info">{eventTypeLabel(event.event_type)}</Badge>
             </div>
             <p className="mt-3 text-muted">
-              {formatDateRange(event.starts_on, event.ends_on)} · {windowLabel}
+              {/* A meetings draft with no day or hours picked: its stored dates are placeholders. */}
+              {conferenceHere && !conference?.times_saved_at ? "Day and hours not set yet" : `${formatDateRange(event.starts_on, event.ends_on)} · ${windowLabel}`}
             </p>
             <p className="mt-1 text-sm text-muted">All times are {zoneName(tz)}.</p>
             <SavedBy eventId={eventId} area={SAVE_AREAS} label="Last change" className="mt-2" />
