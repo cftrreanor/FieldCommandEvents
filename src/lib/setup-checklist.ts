@@ -103,7 +103,7 @@ export type SetupChecklist = {
 };
 
 // Same order as the sections on the event page: what people sign up for, the schedule, volunteers, the day, team, maps.
-const BEFORE_ORDER = ["details", "registration", "director-info", "booths", "conference", "parents-close", "rooms", "shifts", "team", "files"];
+const BEFORE_ORDER = ["details", "registration", "director-info", "booths", "conference-times", "conference-place", "parents-close", "rooms", "shifts", "team", "files"];
 
 /**
  * A volunteer event's jobs: done once a job has a shift or a thing to bring
@@ -193,15 +193,26 @@ export function setupChecklist(f: SetupFacts): SetupChecklist {
     });
   }
   if (hasConferences(f.eventType)) {
-    before.push({
-      id: "conference",
-      label: "Set meeting times and where you'll meet",
-      hint: f.conferenceMissing ?? "Your meetings, and your room or video link.",
-      href: `${base}/conferences`,
-      done: !f.conferenceMissing,
-      required: true,
-      partial: f.conferenceTimesSaved && f.conferenceMissing ? { fraction: 0.5, note: "Meeting times saved" } : undefined,
-    });
+    // The same two required steps as the step bar along the top (Meeting times, Where you'll meet), so every
+    // page counts what's left the same way (light check, 2026-11-08).
+    before.push(
+      {
+        id: "conference-times",
+        label: "Set your meeting times",
+        hint: f.conferenceTimesMissing ?? "The day or weekly hours, and how long each meeting is.",
+        href: `${base}/conferences/times`,
+        done: !f.conferenceTimesMissing,
+        required: true,
+      },
+      {
+        id: "conference-place",
+        label: "Choose where you'll meet",
+        hint: f.conferencePlaceMissing ?? "In person, video, or phone calls.",
+        href: `${base}/conferences/place`,
+        done: !f.conferencePlaceMissing,
+        required: true,
+      },
+    );
   }
   if (hasParents(f.eventType)) {
     before.push({

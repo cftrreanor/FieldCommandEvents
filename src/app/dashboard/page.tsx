@@ -599,7 +599,8 @@ function HostedCard({
 /** A draft's next step, how far along it is, and anything the plan holds back (with who to ask). */
 function DraftNext({ draft: d, href, ask }: { draft: DraftStatus; href: string; ask: { host: AccountHost; orgName: string } | null }) {
   const c = d.checklist;
-  const left = c ? c.progress.of - c.progress.done : 0;
+  // The steps still needing work, not counting Publish itself: the same count as the step bar on the event's pages.
+  const left = c ? c.remaining.length : 0;
   return (
     <div className="space-y-1 text-sm">
       {!c ? (
@@ -614,7 +615,7 @@ function DraftNext({ draft: d, href, ask }: { draft: DraftStatus; href: string; 
           ) : null}
           <p className="text-muted">
             {left} {d.planBlock ? "setup " : ""}
-            {left === 1 ? "step" : "steps"} left{d.planBlock ? "" : " to publish"}
+            {left === 1 ? "step" : "steps"} left{d.planBlock ? "" : " before you publish"}
           </p>
         </>
       ) : d.planBlock ? (

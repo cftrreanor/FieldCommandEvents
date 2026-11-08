@@ -226,7 +226,7 @@ export function placeMissing(s: ConferenceSettings | null, venueAddress: string 
 
 /** What's still needed before publishing, matching the database's check (null when ready). */
 export function notReady(s: ConferenceSettings | null, venueAddress: string | null, eventType?: string | null): string | null {
-  if (!s?.times_saved_at) return "Save your meeting times.";
+  if (!s?.times_saved_at) return "Add your hours.";
   if (s.schedule === "weekly" && !s.weekly_hours.length) return "Add your weekly hours.";
   return placeMissing(s, venueAddress, eventType);
 }

@@ -35,7 +35,7 @@ import { liveEventBanners } from "@/lib/event-banners";
 import { BoothsCard } from "./booths/booths-card";
 import { FileLinks } from "@/components/file-links";
 import { bookingWords, eventTypeLabel, groupWords, hasBands, hasBooths, hasConferences, hasEnsembles, hasParents, hasRooms, leadWords, usesJobs } from "@/lib/event-types";
-import { meetingStarts, meetingSummary, modesLabel, modesOf, notReady, weeklySummary } from "@/lib/conferences";
+import { meetingStarts, meetingSummary, modesLabel, modesOf, notReady, placeMissing, weeklySummary } from "@/lib/conferences";
 import { loadConferenceSettings } from "@/lib/conference-settings";
 import { groupDay, groupDaySummary, type GroupCheckin, type GroupSlot } from "@/lib/group-day";
 import { closesAtLabel, parentRegistrationClosed } from "@/lib/parents";
@@ -607,11 +607,12 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
                   {modesOf(conference).length > 0 && ` · ${modesLabel(modesOf(conference))}`}
                 </p>
               ) : (
-                <p className="font-medium">Set your meeting length, breaks, and your room or video link.</p>
+                <p className="font-medium">Day and hours not set yet</p>
               )}
-              <p className="text-muted">
-                {notReady(conference, event.venue_address, event.event_type) ?? (published ? `${booking.Bookers} book from your public page link.` : "Ready to publish.")}
-              </p>
+              {/* What's missing is the button itself (in the step bar's words), so it isn't said twice. */}
+              {!notReady(conference, event.venue_address, event.event_type) && (
+                <p className="text-muted">{published ? `${booking.Bookers} book from your public page link.` : "Ready to publish."}</p>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               {conferenceReady && (
@@ -619,13 +620,23 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
                   Your meetings
                 </Link>
               )}
-              <Link
-                href={`/dashboard/events/${eventId}/conferences${published ? "" : "/times"}`}
-                className={!conferenceReady && notReady(conference, event.venue_address, event.event_type) ? BTN : BTN_OUTLINE}
-              >
-                {/* One name per page (decisions 2026-11-07): this opens setup, not the list. */}
-                {notReady(conference, event.venue_address, event.event_type) ? `Set up ${booking.event}` : event.event_type === "meeting" ? "Meeting setup" : "Conference setup"}
-              </Link>
+              {/* One button, named after the step it opens: the same names as the step bar (light check, 2026-11-08). */}
+              {(() => {
+                const timesTodo = !published && (!conference?.times_saved_at || (conference.schedule === "weekly" && !conference.weekly_hours.length));
+                const placeTodo = !published && !timesTodo && placeMissing(conference, event.venue_address, event.event_type);
+                const step = published
+                  ? { href: "", label: event.event_type === "meeting" ? "Meeting setup" : "Conference setup" }
+                  : timesTodo
+                    ? { href: "/times", label: "Add your hours" }
+                    : placeTodo
+                      ? { href: "/place", label: "Choose where you'll meet" }
+                      : { href: "/times", label: "Meeting times" };
+                return (
+                  <Link href={`/dashboard/events/${eventId}/conferences${step.href}`} className={timesTodo || placeTodo ? BTN : BTN_OUTLINE}>
+                    {step.label}
+                  </Link>
+                );
+              })()}
             </div>
           </div>
         </Card>
