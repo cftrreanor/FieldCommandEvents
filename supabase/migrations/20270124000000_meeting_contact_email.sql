@@ -4,3 +4,10 @@
 alter table public.conference_settings
   add column contact_email text check (contact_email is null or (char_length(contact_email) <= 200 and contact_email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$'));
 grant insert (contact_email), update (contact_email) on public.conference_settings to authenticated;
+
+-- When a booked meeting was left outside new hours and its people were emailed a link to pick a new
+-- time: so later saves never email them again (decisions 2026-11-08, light check). Server only.
+alter table public.conference_bookings add column reschedule_requested_at timestamptz;
+-- Readable by those who can read the booking (row-level security still applies): Your meetings says
+-- who was emailed.
+grant select (reschedule_requested_at) on public.conference_bookings to authenticated;

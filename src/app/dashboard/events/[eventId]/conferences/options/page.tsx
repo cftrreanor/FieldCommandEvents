@@ -17,7 +17,8 @@ export const metadata: Metadata = { title: "More options" };
 export default async function MeetingOptionsStep({ params }: PageProps<"/dashboard/events/[eventId]/conferences/options">) {
   const { eventId } = await params;
   const s = await loadMeetingSetup(eventId);
-  if (s.published) redirect(`${s.base}?tab=times`);
+  // Published, or unpublished with people still booked: changes wait for Save, on Meeting setup.
+  if (s.published || s.booked > 0) redirect(`${s.base}?tab=times`);
   const publishHref = `/dashboard/events/${eventId}#publish`;
   return (
     <StepPage

@@ -59,7 +59,14 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
   const timesDone = Boolean(saved?.times_saved_at);
   const published = event.status === "published";
   // Before publishing, setup is a series of steps that save themselves (decisions 2026-11-07): go to the one still to do.
-  if (!published) {
+  const [booked, plan, { data: planReason }] = await Promise.all([
+    conferenceBookedCount(supabase, eventId),
+    loadAccountPlan(supabase, event.organization_id),
+    // Why the plan won't let it publish (weekly hours, one at a time...), or null.
+    published ? Promise.resolve({ data: null }) : supabase.rpc("org_can_publish", { p_event: eventId }),
+  ]);
+  // (Unpublished but with people still booked: here, with Save buttons, so nothing moves under them unasked.)
+  if (!published && booked === 0) {
     const stepBase = `/dashboard/events/${eventId}/conferences`;
     redirect(
       !timesDone || (weekly && !settings.weekly_hours.length)
@@ -69,12 +76,6 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
           : `/dashboard/events/${eventId}#publish`,
     );
   }
-  const [booked, plan, { data: planReason }] = await Promise.all([
-    conferenceBookedCount(supabase, eventId),
-    loadAccountPlan(supabase, event.organization_id),
-    // Why the plan won't let it publish (weekly hours, one at a time...), or null.
-    published ? Promise.resolve({ data: null }) : supabase.rpc("org_can_publish", { p_event: eventId }),
-  ]);
   const weeklyIncluded = plan?.weekly_hours ?? true;
   const placeTodo = placeMissing(saved, event.venue_address, event.event_type);
 
@@ -141,7 +142,7 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
               )}
               <CopyLinkButton url={bookingUrl} label="Copy link" />
               <a href={`/e/${event.slug}/book`} target="_blank" className={smallButton}>
-                Preview page
+                Preview booking page
               </a>
               {!published && !blocked && (
                 <PublishWhenSaved>

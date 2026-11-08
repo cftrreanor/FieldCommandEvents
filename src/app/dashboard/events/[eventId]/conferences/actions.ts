@@ -111,7 +111,24 @@ export async function saveMeetingTimes(eventId: string, _prev: ActionState, form
   if (current.legacy && weekly) return { error: "Weekly hours need a database update first. Please write to us." };
   const common = { ...lengths, times_saved_at: ownsBasics ? new Date().toISOString() : s.times_saved_at };
   const tz = event.timezone;
-  const confirmed = formData.get("confirmOutside") === "on";
+  // What happens to booked meetings these times leave out: email them a link, or the organizer contacts them.
+  const choice = formData.get("outsideChoice") === "email" ? "email" : formData.get("outsideChoice") === "self" ? "self" : null;
+  // The times as saved now, to count only the meetings this change leaves out (decisions 2026-11-08, light check).
+  const savedTimes: Parameters<typeof bookingsOutside>[1] =
+    s.schedule === "weekly"
+      ? { schedule: "weekly", day: event.starts_on, from: "", to: "", weekly: s.weekly_hours, firstDay: event.starts_on, lastDay: event.ends_on, closed: s.closed_dates, lengths: s }
+      : {
+          schedule: "one_day",
+          day: event.starts_on,
+          from: utcToZonedTime(event.window_start, tz),
+          to: utcToZonedTime(event.window_end, tz),
+          weekly: [],
+          firstDay: event.starts_on,
+          lastDay: event.starts_on,
+          closed: [],
+          lengths: s,
+          movesWithDay: true,
+        };
 
   if (weekly) {
     let hours: WeeklyRange[] = s.weekly_hours;
@@ -142,10 +159,11 @@ export async function saveMeetingTimes(eventId: string, _prev: ActionState, form
     const ahead = ownsExtras ? Number(formData.get("maxAhead") ?? s.max_days_ahead) : s.max_days_ahead;
     if (!(NOTICE_HOURS as readonly number[]).includes(notice)) return { error: "Pick how much notice people give." };
     if (!(AHEAD_DAYS as readonly number[]).includes(ahead)) return { error: "Pick how far ahead people can book." };
-    if (booked > 0 && !confirmed && hours.length) {
-      const left = await bookingsLeftOut(supabase, eventId, tz, { schedule: "weekly", day: from, from: "", to: "", weekly: hours, firstDay: from, lastDay: to, closed: s.closed_dates, lengths });
-      if (left) return { error: left };
-    }
+    const leftOut =
+      booked > 0 && hours.length
+        ? await newlyLeftOut(supabase, eventId, tz, savedTimes, { schedule: "weekly", day: from, from: "", to: "", weekly: hours, firstDay: from, lastDay: to, closed: s.closed_dates, lengths })
+        : [];
+    if (leftOut.length && !choice) return { error: leftOutMessage(leftOut) };
     // Settings first (weekly hours may run more than one day), then the event's days.
     const error = await saveSettings(eventId, { ...common, schedule: "weekly", weekly_hours: sortWeekly(hours), min_notice_hours: notice, max_days_ahead: ahead });
     if (error) return { error: friendlyDbError(error) };
@@ -163,9 +181,9 @@ export async function saveMeetingTimes(eventId: string, _prev: ActionState, form
       if (daysError) return { error: friendlyDbError(daysError) };
     }
     refresh(eventId);
-    const told = await emailLeftOut(eventId, tz, formData, { schedule: "weekly", day: from, from: "", to: "", weekly: hours, firstDay: from, lastDay: to, closed: s.closed_dates, lengths });
+    const told = choice === "email" ? await emailLeftOut(eventId, leftOut.map((b) => b.id)) : "";
     // Some meetings were left out: Your meetings lists them first.
-    return { ok: true, message: `Meeting times saved.${told}`, goTo: confirmed ? `/dashboard/events/${eventId}/conferences/meetings` : undefined };
+    return { ok: true, message: `Meeting times saved.${told}`, goTo: leftOut.length ? `/dashboard/events/${eventId}/conferences/meetings` : undefined };
   }
 
   // One day. Changed the day or hours here: the event moves too, and booked meetings move with the day
@@ -180,11 +198,14 @@ export async function saveMeetingTimes(eventId: string, _prev: ActionState, form
     if (!TIME.test(from) || !TIME.test(to)) return { error: "Pick when your first meeting starts and your last one ends." };
     if (to <= from) return { error: "Your last meeting has to end after the first one starts." };
   }
-  if (booked > 0 && !confirmed) {
-    // Booked meetings move with the day, so only their time of day has to fit.
-    const left = await bookingsLeftOut(supabase, eventId, tz, { schedule: "one_day", day: date, from, to, weekly: [], firstDay: date, lastDay: date, closed: [], lengths, movesWithDay: true });
-    if (left) return { error: left };
-  }
+  // Booked meetings move with the day, so only their time of day has to fit.
+  const leftOut =
+    booked > 0
+      ? await newlyLeftOut(supabase, eventId, tz, savedTimes, { schedule: "one_day", day: date, from, to, weekly: [], firstDay: date, lastDay: date, closed: [], lengths, movesWithDay: true })
+      : [];
+  if (leftOut.length && !choice) return { error: leftOutMessage(leftOut) };
+  // Emailed a link to pick a new time instead: one email each, not a "moved" one as well.
+  const emailing = choice === "email" ? leftOut.map((b) => b.id) : [];
   let moved: Awaited<ReturnType<typeof emailMovedMeetings>> | null = null;
   if (dayField !== null) {
     const { error } = await supabase.rpc("reschedule_event", {
@@ -196,20 +217,22 @@ export async function saveMeetingTimes(eventId: string, _prev: ActionState, form
       p_timezone: tz,
     });
     if (error) return { error: friendlyDbError(error) };
-    if (date !== event.starts_on && was === "one_day") moved = await emailMovedMeetings(eventId);
+    if (date !== event.starts_on && was === "one_day") moved = await emailMovedMeetings(eventId, emailing);
   }
   const error = await saveSettings(eventId, current.legacy ? common : { ...common, schedule: "one_day" });
   if (error) return { error: friendlyDbError(error) };
   refresh(eventId);
-  const told = await emailLeftOut(eventId, tz, formData, { schedule: "one_day", day: date, from, to, weekly: [], firstDay: date, lastDay: date, closed: [], lengths, movesWithDay: true });
-  if (confirmed && !moved?.moved) return { ok: true, message: `Meeting times saved.${told}`, goTo: `/dashboard/events/${eventId}/conferences/meetings` };
+  const told = emailing.length ? await emailLeftOut(eventId, emailing) : "";
+  const goTo = leftOut.length ? `/dashboard/events/${eventId}/conferences/meetings` : undefined;
+  if (!moved?.moved) return { ok: true, message: `Meeting times saved.${told}`, goTo };
   if (moved?.moved) {
     const n = moved.moved === 1 ? "Your booked meeting" : `Your ${moved.moved} booked meetings`;
     return {
       ok: true,
       message: moved.allSent
-        ? `Meeting times saved. ${n} moved to the new day at the same time, and we emailed each person an updated calendar invite.`
-        : `Meeting times saved. ${n} moved to the new day at the same time. We couldn't email everyone, so please check Your meetings and let them know.`,
+        ? `Meeting times saved. ${n} moved to the new day at the same time, and we emailed each person an updated calendar invite.${told}`
+        : `Meeting times saved. ${n} moved to the new day at the same time. We couldn't email everyone, so please check Your meetings and let them know.${told}`,
+      goTo,
     };
   }
   return { ok: true, message: "Meeting times saved." };
@@ -477,21 +500,36 @@ export async function setMeetingOutcome(eventId: string, bookingId: string, outc
 }
 
 
-/** "2 booked meetings don't fit these times…", when new times leave any upcoming meeting out, or null. */
-async function bookingsLeftOut(supabase: Awaited<ReturnType<typeof createClient>>, eventId: string, tz: string, t: Parameters<typeof bookingsOutside>[1]) {
+/**
+ * The upcoming booked meetings new times leave out that the saved times didn't (so meetings already
+ * outside, from an earlier change or a day off, aren't counted, or emailed, again).
+ */
+async function newlyLeftOut(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  eventId: string,
+  tz: string,
+  before: Parameters<typeof bookingsOutside>[1],
+  after: Parameters<typeof bookingsOutside>[1],
+) {
   const { data } = await supabase
     .from("conference_bookings")
-    .select("starts_at, child_name, parents")
+    .select("id, starts_at, child_name, parents")
     .eq("event_id", eventId)
     .gte("starts_at", new Date().toISOString());
-  const booked = ((data ?? []) as { starts_at: string; child_name: string | null; parents: { name: string }[] }[]).map((b) => ({
-    who: b.child_name || b.parents[0]?.name || "Someone",
-    date: utcToZonedDate(b.starts_at, tz),
-    time: utcToZonedTime(b.starts_at, tz),
-  }));
-  const out = bookingsOutside(booked, t);
-  if (!out.length) return null;
-  return `${out.length === 1 ? "1 booked meeting doesn't" : `${out.length} booked meetings don't`} fit these times: ${out.map((b) => `${b.who} at ${displayTime(b.time)}`).join(", ")}. They stay booked. Reload this page to review them, then save again.`;
+  const rows = (data ?? []) as { id: string; starts_at: string; child_name: string | null; parents: { name: string }[] }[];
+  const times = rows.map((b) => ({ who: b.id, date: utcToZonedDate(b.starts_at, tz), time: utcToZonedTime(b.starts_at, tz) }));
+  const already = new Set(bookingsOutside(times, before).map((b) => b.who));
+  return bookingsOutside(times, after)
+    .filter((b) => !already.has(b.who))
+    .map((b) => {
+      const row = rows.find((r) => r.id === b.who)!;
+      return { id: row.id, name: row.child_name || row.parents[0]?.name || "Someone", time: b.time };
+    });
+}
+
+/** When the page didn't show them (someone booked since it loaded): who, and what to do. */
+function leftOutMessage(out: { name: string; time: string }[]) {
+  return `${out.length === 1 ? "1 booked meeting doesn't" : `${out.length} booked meetings don't`} fit these times: ${out.map((b) => `${b.name} at ${displayTime(b.time)}`).join(", ")}. Someone may have just booked: reload the page to choose what happens to them (your changes here aren't saved yet).`;
 }
 
 /**
@@ -511,6 +549,10 @@ export async function copyAsWeekly(eventId: string): Promise<void> {
     loadConferenceSettings(supabase, eventId),
   ]);
   if (!ev) redirect(`/dashboard/events/${eventId}`);
+  // From today (or the original day, if later), for twelve weeks: never weekly hours that are already over.
+  const today = utcToZonedDate(new Date().toISOString(), ev.timezone);
+  const first = ev.starts_on > today ? ev.starts_on : today;
+  const last = new Date(Date.parse(`${first}T12:00:00Z`) + 83 * 86_400_000).toISOString().slice(0, 10);
   const { data: copy, error } = await supabase
     .from("events")
     .insert({
@@ -519,10 +561,10 @@ export async function copyAsWeekly(eventId: string): Promise<void> {
       name: `${ev.name} (every week)`.slice(0, 120),
       slug: `${ev.slug}-weekly-${Math.random().toString(36).slice(2, 6)}`,
       timezone: ev.timezone,
-      starts_on: ev.starts_on,
-      ends_on: ev.starts_on,
-      window_start: ev.window_start,
-      window_end: ev.window_end,
+      starts_on: first,
+      ends_on: last,
+      window_start: zonedToUtc(first, utcToZonedTime(ev.window_start, ev.timezone), ev.timezone).toISOString(),
+      window_end: zonedToUtc(last, utcToZonedTime(ev.window_end, ev.timezone), ev.timezone).toISOString(),
       venue_name: ev.venue_name,
       venue_address: ev.venue_address ?? "",
       venue_place_id: ev.venue_place_id,
@@ -535,7 +577,7 @@ export async function copyAsWeekly(eventId: string): Promise<void> {
     .select("id")
     .single();
   if (error || !copy) redirect(`/dashboard/events/${eventId}/conferences?tab=times&copy=failed`);
-  await saveSettings(copy.id, {
+  const settingsError = await saveSettings(copy.id, {
     meeting_minutes: settings.meeting_minutes,
     gap_minutes: settings.gap_minutes,
     breaks: settings.breaks,
@@ -548,17 +590,18 @@ export async function copyAsWeekly(eventId: string): Promise<void> {
     schedule: "weekly",
     weekly_hours: [],
   });
+  if (settingsError) console.error("Copying meeting settings failed", settingsError.code, settingsError.message);
   revalidatePath("/dashboard");
   redirect(`/dashboard/events/${copy.id}/conferences/times`);
 }
 
 /**
- * After saving new times: when the organizer chose "email them", each booked meeting the new times
- * leave out gets a link to pick a new time (it stays booked meanwhile). Returns a sentence for the
- * saved message, or "".
+ * After saving new times, when the organizer chose to email them: each person on a booked meeting the
+ * change left out gets a link to pick a new time (it stays booked meanwhile). Never twice: the booking
+ * notes when it was asked. Returns a sentence for the saved message.
  */
-async function emailLeftOut(eventId: string, tz: string, formData: FormData, t: Parameters<typeof bookingsOutside>[1]) {
-  if (formData.get("confirmOutside") !== "on" || formData.get("emailOutside") !== "on") return "";
+async function emailLeftOut(eventId: string, ids: string[]) {
+  if (!ids.length) return "";
   const conf = await loadConference({ id: eventId });
   if (!conf) return "";
   const admin = createAdminClient();
@@ -566,26 +609,30 @@ async function emailLeftOut(eventId: string, tz: string, formData: FormData, t: 
     .from("conference_bookings")
     .select(`${BOOKING_COLUMNS}, access_token`)
     .eq("event_id", eventId)
-    .gte("starts_at", new Date().toISOString());
+    .in("id", ids)
+    .is("reschedule_requested_at", null);
   const rows = (data ?? []) as unknown as (Booking & { access_token: string })[];
-  const out = bookingsOutside(
-    rows.map((b) => ({ who: b.id, date: utcToZonedDate(b.starts_at, tz), time: utcToZonedTime(b.starts_at, tz) })),
-    t,
-  ).map((o) => rows.find((b) => b.id === o.who)!);
-  if (!out.length) return "";
+  if (!rows.length) return "";
   const origin = await getOrigin();
   let sent = 0;
-  for (const b of out) {
+  const failed: string[] = [];
+  for (const b of rows) {
     const link = bookingLink(origin, conf.event.slug, b.access_token);
+    let any = false;
     for (const p of b.parents) {
-      if (sent) await pause();
+      if (sent || failed.length) await pause();
       const message = pickNewTimeEmail(b, conf.event, conf.settings, conf.teacher, link, p);
-      if (await sendEmail({ to: p.email, ...message, eventId })) sent++;
+      // Replies go to the organizer ("If none of the open times work, reply to this email").
+      if (await sendEmail({ to: p.email, ...message, eventId, ...(conf.teacher.email ? { replyTo: conf.teacher.email } : {}) })) {
+        sent++;
+        any = true;
+      } else failed.push(`${p.name} (${p.email})`);
     }
+    if (any) await admin.from("conference_bookings").update({ reschedule_requested_at: new Date().toISOString() }).eq("id", b.id);
   }
-  return sent
-    ? ` We emailed ${out.length === 1 ? "the 1 person" : `the ${out.length} people`} outside your new hours a link to pick a new time.`
-    : " We couldn't email the people outside your new hours, so please let them know.";
+  return `${sent ? ` We emailed ${sent === 1 ? "1 person" : `${sent} people`} a link to pick a new time.` : ""}${
+    failed.length ? ` We couldn't email ${failed.join(", ")}, so please let them know.` : ""
+  }`;
 }
 
 /** The email shown when every time is booked (optional; empty shows none). */

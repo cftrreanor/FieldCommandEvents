@@ -23,7 +23,11 @@ export function useAutosaveForm(on: boolean, what = "A change") {
     timer.current = null;
     const f = form.current;
     if (!f) return;
-    const bad = [...f.elements].find((el): el is HTMLInputElement => el instanceof HTMLInputElement && !el.checkValidity());
+    // Any box the browser would refuse (text areas and menus too, or the form would quietly not send).
+    const bad = [...f.elements].find(
+      (el): el is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement =>
+        (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) && !el.checkValidity(),
+    );
     if (bad) {
       // The box's name only (a Field's label also holds its hint).
       const label = bad.labels?.[0];

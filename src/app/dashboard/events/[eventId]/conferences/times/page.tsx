@@ -14,7 +14,8 @@ export default async function MeetingTimesStep({ params }: PageProps<"/dashboard
   const { eventId } = await params;
   const s = await loadMeetingSetup(eventId);
   // Once published, people may have booked: changes wait for Save, on Meeting setup.
-  if (s.published) redirect(`${s.base}?tab=times`);
+  // Published, or unpublished with people still booked: changes wait for Save, on Meeting setup.
+  if (s.published || s.booked > 0) redirect(`${s.base}?tab=times`);
   return (
     <StepPage
       eventId={eventId}

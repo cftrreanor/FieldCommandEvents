@@ -83,7 +83,8 @@ export default async function BookConferencePage({ params, searchParams }: Param
   return (
     <>
       <EventHeaderBar slug={slug} />
-      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:py-12">
+      {/* Once booked, the event's hours step aside so the person's own time leads (decisions 2026-11-08). */}
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:py-12 [&:has([data-booked])_[data-event-summary]]:hidden">
         <header>
           <p className="text-sm font-medium text-muted">{words.child ? "Parent-teacher conference" : "Book a meeting"}</p>
           <h1 className="mt-1 text-4xl font-medium tracking-tight sm:text-5xl">{event.name}</h1>
@@ -92,7 +93,7 @@ export default async function BookConferencePage({ params, searchParams }: Param
             with {teacher.name}
             {group && group !== teacher.name ? <span className="text-muted"> · {group}</span> : null}
           </p>
-          <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 border-t border-border pt-4">
+          <dl data-event-summary className="mt-5 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 border-t border-border pt-4">
             {summary.map(([term, value]) => (
               <div key={term} className="contents">
                 <dt className="text-sm font-semibold text-muted sm:text-base">{term}</dt>

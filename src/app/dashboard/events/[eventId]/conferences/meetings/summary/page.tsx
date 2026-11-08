@@ -71,9 +71,11 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
   const unmarked = bookings.length - met - noShows;
   // Printed before the day (no meeting has started): a sheet to work from, with how they're meeting, a
   // number, their note, and a blank box to tick, instead of "Not marked" on every row (decisions 2026-11-07).
-  // Per day, not across the whole list: with weekly hours, one past meeting doesn't change the sheet for the rest.
-  const today = utcToZonedDate(new Date().toISOString(), tz);
-  const beforeDay = bookings.length > 0 && bookings.every((b) => utcToZonedDate(b.starts_at, tz) > today);
+  // A sheet to work from while any meeting is still to come (the day itself included): how, a number,
+  // and the note. Each row then shows a box to tick if it's still to come, or how it went.
+  const nowIso = new Date().toISOString();
+  const beforeDay = bookings.some((b) => b.starts_at > nowIso);
+  const upcoming = (b: { starts_at: string }) => b.starts_at > nowIso;
   const HOW = { in_person: "In person", video: "Video", phone: "Phone call" } as const;
 
   return (
@@ -93,7 +95,7 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
       </p>
       <p className="mt-2 text-sm">
         <span className="font-semibold">{bookings.length}</span> {bookings.length === 1 ? "meeting" : "meetings"}
-        {outcomesReady && !beforeDay && (
+        {outcomesReady && bookings.some((b) => !upcoming(b)) && (
           <>
             {" "}
             · <span className="font-semibold">{met}</span> met · <span className="font-semibold">{noShows}</span>{" "}
@@ -163,8 +165,8 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
                   </>
                 )}
                 {outcomesReady && (
-                  <td data-label="Met" className={`${beforeDay ? "max-sm:hidden" : "max-sm:block"} whitespace-nowrap py-2 max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell`}>
-                    {beforeDay ? (
+                  <td data-label="Met" className={`${upcoming(b) ? "max-sm:hidden" : "max-sm:block"} whitespace-nowrap py-2 max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] max-sm:empty:hidden print:table-cell`}>
+                    {upcoming(b) ? (
                       // A box to tick on paper; on screen it would look like a button.
                       <span aria-label="Not yet" className="hidden size-5 rounded-sm border-2 border-foreground align-middle print:inline-block" />
                     ) : b.outcome ? (

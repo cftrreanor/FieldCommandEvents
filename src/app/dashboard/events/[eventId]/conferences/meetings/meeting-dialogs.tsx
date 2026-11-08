@@ -110,7 +110,8 @@ export function RescheduleButton({
     <DialogButton
       label="Reschedule"
       title={`Reschedule the meeting with ${who}`}
-      className="inline-flex min-h-11 items-center text-sm font-medium text-brand underline hover:text-brand-hover"
+      // On phones, outlined buttons with room between them (text links were hard to tap).
+      className="inline-flex min-h-11 items-center text-sm font-medium text-brand underline hover:text-brand-hover max-sm:rounded-md max-sm:border max-sm:border-field-border max-sm:px-3 max-sm:no-underline"
     >
       {(close) => (
         <ActionForm action={action} resetOnSuccess={false} onSuccess={close} className="mt-4 space-y-4">
@@ -189,7 +190,7 @@ export function CancelMeetingButton({ who, them, action }: { who: string; them: 
       label="Cancel meeting"
       title={`Cancel the meeting with ${who}?`}
       // Quieter than Reschedule in both modes (dark mode's muted text is white, lesson L6).
-      className="inline-flex min-h-11 items-center text-sm font-medium text-foreground/70 underline hover:text-danger"
+      className="inline-flex min-h-11 items-center text-sm font-medium text-foreground/70 underline hover:text-danger max-sm:rounded-md max-sm:border max-sm:border-danger/60 max-sm:px-3 max-sm:text-danger max-sm:no-underline"
     >
       {(close) => (
         <ActionForm action={action} resetOnSuccess={false} onSuccess={close} className="mt-4 space-y-4">

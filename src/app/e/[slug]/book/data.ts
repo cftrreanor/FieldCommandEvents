@@ -66,15 +66,16 @@ export async function loadBooking(token: string) {
  * Each family, and the teacher, gets an updated calendar invite. Returns how
  * many meetings moved and whether every email went.
  */
-export async function emailMovedMeetings(eventId: string) {
+export async function emailMovedMeetings(eventId: string, except: string[] = []) {
   const conf = await loadConference({ id: eventId });
   if (!conf) return { moved: 0, allSent: true };
   const admin = createAdminClient();
   const { data } = await withCallPhone((columns) =>
     admin.from("conference_bookings").select(`${columns}, access_token`).eq("event_id", eventId).order("starts_at"),
   );
+  // Not those being emailed a link to pick a new time instead (one email each).
   const bookings = ((data ?? []) as unknown as (Booking & { access_token: string })[]).filter(
-    (b) => utcToZonedDate(b.starts_at, conf.event.timezone) === conf.event.starts_on,
+    (b) => utcToZonedDate(b.starts_at, conf.event.timezone) === conf.event.starts_on && !except.includes(b.id),
   );
   const origin = await getOrigin();
   let allSent = true;

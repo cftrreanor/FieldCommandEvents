@@ -145,10 +145,13 @@ export default async function MeetingsPage({ params }: PageProps<"/dashboard/eve
     }));
   // Upcoming meetings the hours no longer cover (the hours changed after they booked): listed first,
   // to move or cancel (decisions 2026-11-08, finding 2).
+  // Who's already been emailed a link to pick a new time (before its update: nobody).
+  const { data: asked } = await supabase.from("conference_bookings").select("id, reschedule_requested_at").eq("event_id", eventId).not("reschedule_requested_at", "is", null);
+  const askedIds = new Set(((asked ?? []) as { id: string }[]).map((r) => r.id));
   const outside = bookingsOutside(
     bookings
       .filter((b) => b.starts_at >= nowIso)
-      .map((b) => ({ who: b.child_name || b.parents[0]?.name || "Someone", date: utcToZonedDate(b.starts_at, tz), time: utcToZonedTime(b.starts_at, tz) })),
+      .map((b) => ({ who: b.id, date: utcToZonedDate(b.starts_at, tz), time: utcToZonedTime(b.starts_at, tz) })),
     {
       schedule: settings.schedule,
       day: event.starts_on,
@@ -198,12 +201,16 @@ export default async function MeetingsPage({ params }: PageProps<"/dashboard/eve
                 {outside.length === 1 ? "1 meeting is" : `${outside.length} meetings are`} outside your hours now
               </p>
               <ul className="mt-1 list-disc pl-5">
-                {outside.map((o) => (
-                  <li key={`${o.date}-${o.time}-${o.who}`}>
-                    {o.who}, {weekly ? `${formatDate(o.date, { year: undefined })} at ` : ""}
-                    {displayTime(o.time)}
-                  </li>
-                ))}
+                {outside.map((o) => {
+                  const b = bookings.find((x) => x.id === o.who)!;
+                  return (
+                    <li key={o.who}>
+                      {b.child_name || b.parents[0]?.name || "Someone"}, {weekly ? `${formatDate(o.date, { year: undefined })} at ` : ""}
+                      {displayTime(o.time)}
+                      <span className="text-muted"> · {askedIds.has(o.who) ? "emailed a link to pick a new time" : "not emailed"}</span>
+                    </li>
+                  );
+                })}
               </ul>
               <p className="mt-1">They&apos;re still booked. Reschedule or cancel each one below, so no one comes when you&apos;re not there.</p>
             </div>

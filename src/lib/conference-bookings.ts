@@ -480,10 +480,10 @@ export function pickNewTimeEmail(b: Booking, event: BookingEvent, s: ConferenceS
   return {
     subject: `Please pick a new time for your ${word} with ${teacher.name}`,
     ...emailLayout({
-      heading: `${teacher.name} changed their hours`,
+      heading: "Please pick a new time",
       paragraphs: [
-        `Hi ${first}, ${teacher.name} changed the hours for ${event.name}, and your ${word} (${when}) is now outside them.`,
-        "It's still booked for now. Please pick a new time, or cancel if none of them work for you.",
+        `Hi ${first}, ${teacher.name} changed the hours for ${event.name}. Your ${word} (${when}) is now outside those hours.`,
+        `Your ${word} stays booked until you pick a new time or cancel. If none of the open times work, reply to this email.`,
       ],
       button: { label: "Pick a new time", url: link },
       footer: `Sent by ${brand.name} for ${teacher.name}.`,

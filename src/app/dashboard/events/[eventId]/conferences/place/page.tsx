@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Where you'll meet" };
 export default async function MeetingPlaceStep({ params }: PageProps<"/dashboard/events/[eventId]/conferences/place">) {
   const { eventId } = await params;
   const s = await loadMeetingSetup(eventId);
-  if (s.published) redirect(`${s.base}?tab=place`);
+  if (s.published || s.booked > 0) redirect(`${s.base}?tab=place`);
   return (
     <StepPage
       eventId={eventId}

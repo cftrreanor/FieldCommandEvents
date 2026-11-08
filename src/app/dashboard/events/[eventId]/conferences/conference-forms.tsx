@@ -62,7 +62,7 @@ function useEditing(id: string) {
 /** The Publish / Unpublish button, or, while a tab has unsaved changes, a note to save them first. */
 export function PublishWhenSaved({ children }: { children: ReactNode }) {
   const { editing } = use(Editing);
-  return editing.length ? <p className="text-sm text-muted">Save or undo your changes first.</p> : <>{children}</>;
+  return editing.length ? <p className="text-sm text-muted">To unpublish, save or undo your changes first.</p> : <>{children}</>;
 }
 
 /**
@@ -96,7 +96,7 @@ function SaveCancel({
       ref={bar}
       className="sticky bottom-[var(--day-bar,0px)] z-10 -mx-4 -mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-b-lg border-t-2 border-border bg-surface px-4 py-3 shadow-[0_-6px_16px_rgb(0_0_0/0.10)] sm:-mx-6 sm:-mb-6 sm:px-6"
     >
-      <p className="flex min-w-0 flex-1 items-center gap-2 text-sm" aria-live="polite">
+      <p className={`flex min-w-0 items-center gap-2 text-sm ${problem ? "basis-full sm:basis-auto sm:flex-1" : "flex-1"}`} aria-live="polite">
         {editing || !saved ? (
           <span aria-hidden className="size-2.5 shrink-0 rounded-full bg-[#f5b301] ring-1 ring-warning/50" />
         ) : (
@@ -273,11 +273,33 @@ function TimesForm({
   const weeklyHours = groups.flatMap((g) => (g.start && g.end && g.end > g.start ? g.days.map((day) => ({ day, start: g.start, end: g.end })) : []));
   const perWeek = weeklyMeetingCount(weeklyHours, lengths);
   // Booked meetings these times would leave out: named before saving, and saving needs a tick.
+  // Only the meetings this change leaves out: ones already outside (an earlier change, a day off) aren't counted again.
+  const key = (b: BookedTime) => `${b.date} ${b.time} ${b.who}`;
+  const alreadyOut = new Set(
+    bookingsOutside(bookedTimes, {
+      schedule: initial.schedule,
+      day: date,
+      from: start,
+      to: end,
+      weekly: initial.weekly_hours,
+      firstDay: date,
+      lastDay: endDate,
+      lengths: initial,
+      closed: initial.closed_dates,
+      movesWithDay: true,
+    }).map(key),
+  );
   const outside = editing
-    ? bookingsOutside(bookedTimes, { schedule, day, from, to, weekly: weeklyHours, firstDay, lastDay, lengths, closed: initial.closed_dates, movesWithDay: true })
+    ? bookingsOutside(bookedTimes, { schedule, day, from, to, weekly: weeklyHours, firstDay, lastDay, lengths, closed: initial.closed_dates, movesWithDay: true }).filter(
+        (b) => !alreadyOut.has(key(b)),
+      )
     : [];
   // One day: how many times stay open for them to move to.
   const openLeft = !weekly && outside.length ? Math.max(0, starts.length - (bookedTimes.length - outside.length)) : null;
+  // Too few open times for everyone: start on "I'll contact them myself", and say why.
+  const short = openLeft !== null && openLeft < outside.length;
+  const [choice, setChoice] = useState<"email" | "self" | null>(null);
+  const picked = choice ?? (short ? "self" : "email");
   const changeGroup = (key: number, patch: Partial<GroupDraft>) => setGroups((gs) => gs.map((g) => (g.key === key ? { ...g, ...patch } : g)));
   const change = (key: number, patch: Partial<BreakDraft>) => setBreaks((bs) => bs.map((b) => (b.key === key ? { ...b, ...patch } : b)));
 
@@ -333,7 +355,7 @@ function TimesForm({
                   }
                   setEditing(true);
                 }}
-                className="mt-1 h-4 w-4 shrink-0 accent-[var(--brand)]"
+                className="team-radio mt-1"
               />
               <span>
                 <span className="flex flex-wrap items-center gap-2 font-semibold">
@@ -512,7 +534,7 @@ function TimesForm({
 
       <div className={`grid gap-4 sm:grid-cols-2 ${basics && extras ? "" : "sm:max-w-md sm:grid-cols-1"}`}>
         {basics && (
-        <Field label="Each meeting">
+        <Field label="Meeting length">
           <Select name="meetingMinutes" value={meeting} onChange={(e) => setMeeting(Number(e.target.value))}>
             {MEETING_LENGTHS.map((m) => (
               <option key={m} value={m}>
@@ -636,33 +658,43 @@ function TimesForm({
         )}
       </div>
 
+      {part === "basics" && (
+        <p className="text-sm text-muted">Need a break, or time between meetings? Add it in More options, the next step after Where you&apos;ll meet.</p>
+      )}
       {outside.length > 0 && (
-        <div id="times-outside" tabIndex={-1} className="rounded-lg border border-warning/40 bg-warning-soft p-4 text-sm leading-6 outline-none" role="status">
+        <div id="times-outside" tabIndex={-1} className="rounded-lg border border-warning/40 bg-warning-soft p-4 text-sm leading-6 outline-none">
           <p className="font-semibold">
             {outside.length === 1 ? "1 booked meeting doesn't" : `${outside.length} booked meetings don't`} fit these times:
           </p>
           <ul className="mt-1 list-disc pl-5">
             {outside.map((b) => (
-              <li key={`${b.date}-${b.time}-${b.who}`}>
+              <li key={key(b)}>
                 {b.who}, {weekly ? `${formatDate(b.date, { year: undefined })} at ` : ""}
                 {displayTime(b.time)}
               </li>
             ))}
           </ul>
-          <p className="mt-1">
-            They stay booked, and no one is emailed unless you choose to. After saving, Your meetings lists them first, to move or cancel.
-            {openLeft !== null && openLeft < outside.length && (
-              <> {openLeft === 0 ? "No open times are left to move them to, so they may need to be canceled." : `Only ${openLeft} open ${openLeft === 1 ? "time is" : "times are"} left to move them to.`}</>
-            )}
+          <fieldset className="mt-3">
+            <legend className="font-semibold">What should happen to {outside.length === 1 ? "this meeting" : `these ${outside.length} meetings`}?</legend>
+            {(
+              [
+                { value: "email", label: `Keep ${outside.length === 1 ? "it" : "them"} booked, and email ${outside.length === 1 ? "them" : "each"} a link to pick a new time` },
+                { value: "self", label: `Keep ${outside.length === 1 ? "it" : "them"} booked. I'll contact ${outside.length === 1 ? "them" : "each one"} myself` },
+              ] as const
+            ).map((o) => (
+              <label key={o.value} className="mt-2 flex min-h-11 items-start gap-3">
+                <input type="radio" name="outsideChoice" value={o.value} checked={picked === o.value} onChange={() => setChoice(o.value)} className="team-radio mt-1" />
+                <span>{o.label}</span>
+              </label>
+            ))}
+          </fieldset>
+          <p className="mt-2">
+            {short
+              ? openLeft === 0
+                ? "No open times are left to move them to, so a link to pick a new time wouldn't help yet. Add hours first, or contact them yourself."
+                : `Only ${openLeft} open ${openLeft === 1 ? "time is" : "times are"} left for ${outside.length} people, so the first to answer would get ${openLeft === 1 ? "it" : "them"}.`
+              : "Either way, they stay booked, and Your meetings lists them first after saving."}
           </p>
-          <label className="mt-2 flex gap-3">
-            <input type="checkbox" name="emailOutside" defaultChecked className="mt-1 h-4 w-4 shrink-0 accent-[var(--brand)]" />
-            <span>Email {outside.length === 1 ? "them" : `all ${outside.length}`} a link to pick a new time</span>
-          </label>
-          <label className="mt-2 flex gap-3">
-            <input type="checkbox" name="confirmOutside" required className="mt-1 h-4 w-4 shrink-0 accent-[var(--brand)]" />
-            <span className="font-medium">Save these times, and keep {outside.length === 1 ? "this meeting" : "these meetings"} booked for now</span>
-          </label>
         </div>
       )}
       {autosave ? (
@@ -671,10 +703,10 @@ function TimesForm({
         <SaveCancel
           editing={editing}
           onCancel={onCancel}
-          label="Save meeting times"
+          // Save says what will happen (decisions 2026-11-08, light check).
+          label={outside.length ? (picked === "email" ? `Save and email ${outside.length === 1 ? "them" : `all ${outside.length}`}` : `Save, keep ${outside.length} booked`) : "Save meeting times"}
           saved={Boolean(initial.times_saved_at)}
-          // The reason Save can't go ahead yet, in the bar itself, with a way to it (decisions 2026-11-08).
-          problem={outside.length ? { text: `${outside.length} booked ${outside.length === 1 ? "meeting doesn't" : "meetings don't"} fit`, target: "times-outside" } : null}
+          problem={outside.length ? { text: `${outside.length} don't fit`, target: "times-outside" } : null}
         />
       )}
     </ActionForm>
@@ -881,6 +913,8 @@ function PlaceForm({
       quiet={Boolean(autosave)}
       noToast={Boolean(autosave)}
     >
+      {/* The setup step saves what's there; the step says what's still missing (decisions 2026-11-08). */}
+      {autosave && <input type="hidden" name="partial" value="1" />}
       <fieldset>
         <legend className="text-sm font-semibold">How will you meet?</legend>
         <p className="mt-1 text-sm text-muted">Choose all that work for you. With more than one, each {w.family} picks when they book.</p>
@@ -911,7 +945,7 @@ function PlaceForm({
         <fieldset className="grid gap-4">
           <legend className="mb-1 text-sm font-semibold">{meeting ? "Where you meet" : "Your school"}</legend>
           <p className="-mt-2 text-sm text-muted">Shown on your public page and in {meeting ? "people's" : "families'"} calendar invites.</p>
-          <VenuePicker searchEnabled={venueSearchEnabled} initial={venue} timezone={timezone} kind={meeting ? "Place" : "School"} example={meeting ? "e.g. Main Street Office" : "e.g. Cedar Ridge Elementary"} />
+          <VenuePicker required={!autosave} searchEnabled={venueSearchEnabled} initial={venue} timezone={timezone} kind={meeting ? "Place" : "School"} example={meeting ? "e.g. Main Street Office" : "e.g. Cedar Ridge Elementary"} />
         </fieldset>
       )}
 
@@ -926,7 +960,7 @@ function PlaceForm({
         >
           <Textarea
             name="room"
-            required
+            required={!autosave}
             rows={2}
             maxLength={200}
             defaultValue={initial.room ?? lastRoom ?? ""}
@@ -942,7 +976,6 @@ function PlaceForm({
             <>
               <Field label="Meeting link" hint={`Only ${w.families} who book get it, in their confirmation and reminder. It's never on your public page.`}>
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  {autosave && <input type="hidden" name="partial" value="1" />}
                   <Input
                     name="videoLink"
                     type="url"
@@ -1192,7 +1225,14 @@ export function MeetingContactForm({ action, initial, autosave = false }: { acti
       <Field label="Contact email (optional)" hint="Shown on your booking page only when every time is booked, so people can ask about another time. Hidden once your meetings are over.">
         <Input name="contactEmail" type="email" maxLength={200} defaultValue={initial ?? ""} autoComplete="email" />
       </Field>
-      {autosave ? <AutosaveStatus status={auto.status} retry={auto.retry} /> : <SubmitButton pendingText="Saving…">Save contact email</SubmitButton>}
+      {autosave ? (
+        <AutosaveStatus status={auto.status} retry={auto.retry} />
+      ) : (
+        // Secondary: the page's main save is the bar under Meeting times.
+        <SubmitButton variant="secondary" pendingText="Saving…">
+          Save contact email
+        </SubmitButton>
+      )}
     </ActionForm>
   );
 }

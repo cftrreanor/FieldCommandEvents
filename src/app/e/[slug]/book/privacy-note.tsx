@@ -31,7 +31,14 @@ export function PrivacyNote({
             <li>Other families only see which times are still open. They never see who booked, or when.</li>
           </>
         )}
-        <li>Nothing about your booking appears on the public page.</li>
+        {/* Who, first (the child-name version says it above). */}
+        {!askChild && (
+          <li>
+            Only <strong>{teacher}</strong>
+            {shared ? ", their helpers, and the people they've chosen to notify" : " and their helpers"} see your name, contact details, and note.
+          </li>
+        )}
+        <li>Nothing about your booking appears on the booking page for others to see.</li>
         {/* Exactly what's deleted, and when (decisions 2026-11-08): emails people already have stay in their inboxes. */}
         <li>
           {askChild ? "Your child's name, your" : "Your"} names, contact details, and note are deleted from {brand.name} 30 days after{" "}

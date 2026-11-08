@@ -3950,11 +3950,24 @@ begin
   exception when insufficient_privilege then ok := true;
   end;
   assert ok, 'other kinds of event still need a plan to publish';
+  -- The contact email shown when every time is booked (20270124000000): the host sets it; it must look like one.
+  update public.conference_settings set contact_email = 'dana@example.com' where event_id = '10000000-0000-0000-0000-0000000000c1';
+  assert (select contact_email from public.conference_settings where event_id = '10000000-0000-0000-0000-0000000000c1') = 'dana@example.com',
+         'the host sets a contact email';
+  ok := false;
+  begin
+    update public.conference_settings set contact_email = 'not an email' where event_id = '10000000-0000-0000-0000-0000000000c1';
+  exception when check_violation then ok := true;
+  end;
+  assert ok, 'a contact email has to look like one';
 end $$;
 set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000003","email":"lead@example.com"}';
 do $$
 declare ok boolean := false;
 begin
+  update public.conference_settings set contact_email = 'lead@evil.example' where event_id = '10000000-0000-0000-0000-0000000000c1';
+  assert (select contact_email from public.conference_settings where event_id = '10000000-0000-0000-0000-0000000000c1') = 'dana@example.com',
+         'the team can''t change the contact email';
   assert (select video_link from public.conference_settings where event_id = '10000000-0000-0000-0000-0000000000c1') = 'https://zoom.us/j/123',
          'the conference''s team can read its settings';
   update public.conference_settings set video_link = 'https://evil.example' where event_id = '10000000-0000-0000-0000-0000000000c1';

@@ -27,7 +27,10 @@ export function VenuePicker({
   timezone,
   kind = "Venue",
   example = "e.g. Panther Stadium",
+  required = true,
 }: {
+  /** Off in a step that saves itself: the rest saves while the address is still to come. */
+  required?: boolean;
   searchEnabled: boolean;
   initial?: VenueValue;
   /** The event's time zone: suggestions favor that part of the country. */
@@ -61,7 +64,7 @@ export function VenuePicker({
           <Input name="venueName" defaultValue={initial?.name ?? ""} placeholder={example} />
         </Field>
         <Field label={`${kind} address`}>
-          <Input name="venueAddress" defaultValue={initial?.address ?? ""} required autoComplete="street-address" />
+          <Input name="venueAddress" defaultValue={initial?.address ?? ""} required={required} autoComplete="street-address" />
         </Field>
         {searchEnabled && (
           <button
@@ -104,6 +107,7 @@ export function VenuePicker({
 
   return (
     <VenueSearch
+      required={required}
       kind={kind}
       timezone={timezone}
       onSelect={(p) => {
@@ -125,7 +129,9 @@ function VenueSearch({
   onSelect,
   onUnavailable,
   onManual,
+  required = true,
 }: {
+  required?: boolean;
   kind: string;
   timezone?: string;
   onSelect: (place: Place) => void;
@@ -203,7 +209,7 @@ function VenueSearch({
           <Input
             role="combobox"
             // A place is needed: picking one (or typing the address by hand) fills in the real fields.
-            required
+            required={required}
             aria-expanded={showList}
             aria-controls={listId}
             aria-autocomplete="list"
