@@ -200,9 +200,11 @@ export async function createEvent(_prev: ActionState, formData: FormData): Promi
   // volunteer event's step 2 is its jobs, and a band contest's is registration (team, emails, and maps
   // wait in Event settings). Other events go on to the rest of their guided setup (Event settings, a
   // step at a time).
+  // Straight to the step itself, not Meeting setup (which would only redirect there, flashing the
+  // older setup bar on the way: QA issue 350).
   redirect(
     hasConferences(eventType as string)
-      ? `/dashboard/events/${data.id}/conferences`
+      ? `/dashboard/events/${data.id}/conferences/times`
       : eventType === "volunteer"
         ? `/dashboard/events/${data.id}/volunteering`
         : eventType === "band_contest"
