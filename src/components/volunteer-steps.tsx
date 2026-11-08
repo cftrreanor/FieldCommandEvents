@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { usePendingCounts } from "@/components/pending-edits";
 import { SETUP_STEPS as STEPS, type SetupStepFacts, type StepsKind } from "@/lib/setup-steps";
 
@@ -28,7 +28,9 @@ export function SetupSteps({
   const unsaved = pending.failed + pending.incomplete + pending.unadded > 0;
   const base = `/dashboard/events/${eventId}`;
   const steps = STEPS[kind];
-  const here = preview ? 0 : steps.findIndex((s) => pathname === `${base}${s.path}`);
+  // Event settings (Details with ?section=) is a settings page, not the Details step: it has its own list.
+  const settings = useSearchParams().has("section");
+  const here = preview ? 0 : settings ? -1 : steps.findIndex((s) => pathname === `${base}${s.path}`);
   if (here < 0) return null;
   const last = steps.length - 1;
   const done = steps.map((s, i) =>

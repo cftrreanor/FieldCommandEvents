@@ -13,8 +13,8 @@ export const SETUP_STEPS = {
   // A band contest: what directors need to register, volunteers if it has them (never blocks), then publishing opens registration.
   band: [
     { key: "details", label: "Details", path: "/edit", optional: false },
-    { key: "registration", label: "Registration", path: "/bands", optional: false },
-    { key: "volunteers", label: "Volunteers", path: "/volunteering", optional: true },
+    { key: "registration", label: "Band registration", path: "/bands", optional: false },
+    { key: "volunteers", label: "Volunteer Setup", path: "/volunteering", optional: true },
     { key: "publish", label: "Publish registration", path: "", optional: false },
   ],
   // Meetings and parent-teacher conferences: the basics are enough to publish; the extras (every

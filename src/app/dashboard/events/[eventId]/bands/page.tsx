@@ -279,7 +279,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
             </ActionButton>
           </div>
         )}
-        <div className="mt-6">{registrationForm({ href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Volunteers" })}</div>
+        <div className="mt-6">{registrationForm({ href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Volunteer Setup" })}</div>
       </div>
     );
   }

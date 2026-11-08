@@ -91,7 +91,10 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const section: Section = asked && SECTIONS.includes(asked) ? asked : "details";
   // The guided setup, step by step (conferences and meetings have their own setup page instead).
   // Volunteer events and band contests set up in three steps (shown by the layout), not the guided Event settings.
-  const stepOnly = hasConferences(event.event_type) && event.status !== "published";
+  // The Details step of an event set up in steps (opened from the step bar, no section asked for): the step bar is
+  // the one menu there. "Event settings" (?section=…) always shows every section, with its own list.
+  const stepOnly =
+    (hasConferences(event.event_type) || event.event_type === "volunteer" || event.event_type === "band_contest") && event.status !== "published" && !sectionParam;
   const guided = setupParam === "1" && !hasConferences(event.event_type) && event.event_type !== "volunteer" && event.event_type !== "band_contest";
   const at = SETUP_STEPS.findIndex((s) => s.id === section);
   const prevStep = guided && at > 0 ? setupHref(eventId, SETUP_STEPS[at - 1].id) : undefined;
@@ -294,7 +297,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
           <Link href={`/dashboard/events/${eventId}`} className="text-sm text-muted hover:text-foreground">
             ← Back to {event.name}
           </Link>
-          <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">{!published && (event.event_type === "volunteer" || event.event_type === "band_contest" || hasConferences(event.event_type)) ? "Event details" : "Event settings"}</h1>
+          <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">{stepOnly ? "Event details" : "Event settings"}</h1>
           <SavedBy eventId={eventId} area={["details", "files"]} className="mt-2" />
           <p className="mt-1 text-sm text-muted">Boxes marked * are required.</p>
         </>
@@ -342,11 +345,11 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                   stickySave={!guided}
                   autosave={!guided && !published}
                   next={
-                    !published && (event.event_type === "volunteer" || event.event_type === "band_contest" || hasConferences(event.event_type))
+                    stepOnly
                       ? event.event_type === "volunteer"
                         ? { href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Jobs and shifts" }
                         : event.event_type === "band_contest"
-                          ? { href: `/dashboard/events/${eventId}/bands`, label: "Next up: Registration" }
+                          ? { href: `/dashboard/events/${eventId}/bands`, label: "Next up: Band registration" }
                           : { href: `/dashboard/events/${eventId}/conferences/times`, label: "Next up: Meeting times" }
                       : undefined
                   }
@@ -504,7 +507,11 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                   <ActionButton
                     action={setEventPublished.bind(null, eventId, false)}
                     variant="stop"
-                    confirmMessage={`Unpublish? The public pages will be hidden and volunteer sign-up will close. ${afterUnpublish}`}
+                    confirmMessage={
+                      hasConferences(event.event_type)
+                        ? `Unpublish? Your booking page will be hidden. Meetings already booked stay booked, and no one is emailed. ${afterUnpublish}`
+                        : `Unpublish? The public pages will be hidden and volunteer sign-up will close. ${afterUnpublish}`
+                    }
                   >
                     Unpublish event
                   </ActionButton>

@@ -62,7 +62,7 @@ function useEditing(id: string) {
 /** The Publish / Unpublish button, or, while a tab has unsaved changes, a note to save them first. */
 export function PublishWhenSaved({ children }: { children: ReactNode }) {
   const { editing } = use(Editing);
-  return editing.length ? <p className="text-sm text-muted">To unpublish, save or undo your changes first.</p> : <>{children}</>;
+  return editing.length ? <p className="text-sm text-muted">To publish, save or undo your changes first.</p> : <>{children}</>;
 }
 
 /**

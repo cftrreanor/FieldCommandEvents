@@ -95,6 +95,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   const groupsHere = hasEnsembles(event.event_type);
   const roomsHere = hasRooms(event.event_type);
   const conferenceHere = hasConferences(event.event_type);
+  // Set up in steps (the step bar along the top is the one tracker until it's published): no second checklist beside it.
+  const steppedSetup = conferenceHere || event.event_type === "volunteer" || event.event_type === "band_contest";
   const booking = bookingWords(event.event_type);
   const words = groupWords(event.event_type);
 
@@ -598,8 +600,6 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
                 <p className="font-medium">
                   {conference.schedule === "weekly"
                     ? `Every week · ${published ? `${conferenceBooked} booked` : weeklySummary(conference.weekly_hours)}`
-                    : published
-                    ? `${conferenceBooked} of ${meetingStarts(utcToZonedTime(event.window_start, tz), utcToZonedTime(event.window_end, tz), conference).length} times booked`
                     : meetingSummary(
                         meetingStarts(utcToZonedTime(event.window_start, tz), utcToZonedTime(event.window_end, tz), conference),
                         conference.meeting_minutes,
@@ -639,6 +639,36 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
               })()}
             </div>
           </div>
+          {/* Once it's live: how full it is, the same way the volunteer card shows its spots (owner, 2026-11-08). */}
+          {published && conference?.times_saved_at && conference.schedule !== "weekly" && (() => {
+            const total = meetingStarts(utcToZonedTime(event.window_start, tz), utcToZonedTime(event.window_end, tz), conference).length;
+            const pct = total ? Math.round((conferenceBooked / total) * 100) : 0;
+            return (
+              <div className="mt-4 space-y-4 border-t border-border pt-4">
+                <div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="text-sm font-semibold">
+                      {conferenceBooked} of {total} times booked
+                    </p>
+                    <p className="text-sm tabular-nums text-muted">{pct}%</p>
+                  </div>
+                  <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-background" role="progressbar" aria-label="Meeting times booked" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+                    <div className={`h-full rounded-full ${pct >= 100 ? "bg-success" : "bg-brand"}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                  </div>
+                </div>
+                <dl className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg bg-background px-3 py-2">
+                    <dt className="text-xs text-muted">Meetings booked</dt>
+                    <dd className="text-xl font-semibold tabular-nums">{conferenceBooked}</dd>
+                  </div>
+                  <div className="rounded-lg bg-background px-3 py-2">
+                    <dt className="text-xs text-muted">Open times</dt>
+                    <dd className="text-xl font-semibold tabular-nums">{Math.max(total - conferenceBooked, 0)}</dd>
+                  </div>
+                </dl>
+              </div>
+            );
+          })()}
         </Card>
       </PageSection>
     ) : null
@@ -1011,13 +1041,13 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
 
   return (
     <div
-      className={dayActions || (checklist && !(conferenceHere && !published)) ? "lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-8" : undefined}
+      className={dayActions || (checklist && !(steppedSetup && !published)) ? "lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-8" : undefined}
     >
       {justPublished && !contestLive && <SuccessToast message={`Published. Your ${conferenceHere ? "booking" : "event"} page is live; the links to share are at the top.`} />}
       {justPublished && <ScrollTo id="share" />}
       {demoEnded && <SuccessToast message="You're back on your own account. The demo people and sample data are gone." />}
       {/* Meetings set up in steps: the step bar is the one tracker, so no second checklist beside it (decisions 2026-11-08). */}
-      {dayActions ? <DayRail day={dayActions} /> : checklist && !(conferenceHere && !published) && <SetupGuide checklist={checklist} />}
+      {dayActions ? <DayRail day={dayActions} /> : checklist && !(steppedSetup && !published) && <SetupGuide checklist={checklist} />}
       <div className="min-w-0">
         <Link href="/dashboard" className="text-sm text-muted hover:text-foreground">
           ← My events
@@ -1053,7 +1083,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
             )}
           </div>
           {access.isHost && (
-            <Link href={`/dashboard/events/${eventId}/edit`} className={`${BTN_OUTLINE} shrink-0 self-start`}>
+            <Link href={`/dashboard/events/${eventId}/edit?section=details`} className={`${BTN_OUTLINE} shrink-0 self-start`}>
               Event settings
             </Link>
           )}
@@ -1169,9 +1199,9 @@ function PublishPanel({
   const meetingsHere = hasConferences(facts.eventType);
   const meetingTodo = meetingsHere
     ? [
-        facts.conferenceTimesMissing && { label: facts.conferenceTimesMissing, href: `/dashboard/events/${facts.eventId}/conferences/times` },
-        facts.conferencePlaceMissing && { label: facts.conferencePlaceMissing.replace(/\.$/, ""), href: `/dashboard/events/${facts.eventId}/conferences/place` },
-      ].filter((x): x is { label: string; href: string } => Boolean(x))
+        facts.conferenceTimesMissing && { step: "times", label: facts.conferenceTimesMissing.replace(/\.$/, ""), href: `/dashboard/events/${facts.eventId}/conferences/times` },
+        facts.conferencePlaceMissing && { step: "place", label: facts.conferencePlaceMissing.replace(/\.$/, ""), href: `/dashboard/events/${facts.eventId}/conferences/place` },
+      ].filter((x): x is { step: string; label: string; href: string } => Boolean(x))
     : [];
   const blocked = needsJob || Boolean(bandMissing) || meetingTodo.length > 0;
   const effects = publishEffects(facts).filter((line) => !(jobsHere && line.startsWith("Volunteer sign-up")));
@@ -1200,18 +1230,13 @@ function PublishPanel({
         </div>
       )}
       {meetingTodo.length > 0 && (
-        // What's left, in step order, each with the way there.
+        // The one thing stopping them, first, with one button to it: the same box as volunteer events and band contests.
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
-          <p className="font-semibold">Publishing needs your hours and where you&apos;ll meet</p>
-          <ul className="mt-1">
-            {meetingTodo.map((t) => (
-              <li key={t.href}>
-                <Link href={t.href} className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
-                  {t.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <p className="font-semibold">{meetingTodo[0].label.replace(/^./, (c) => c.toUpperCase())} before you publish</p>
+          <p className="mt-1">Publishing needs your hours and where you&apos;ll meet.</p>
+          <Link href={meetingTodo[0].href} className={`${BTN} mt-3`}>
+            {meetingTodo[0].step === "times" ? "Go to meeting times" : "Go to where you'll meet"}
+          </Link>
         </div>
       )}
       {!needsJob && empty.length > 0 && (

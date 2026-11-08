@@ -266,7 +266,8 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
         ← Back to {event.name}
       </Link>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">{jobsHere ? "Volunteer jobs" : "Volunteer Setup"}</h1>
+        <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">{/* The step's own name, as in the step bar and the event page's button (light check, 2026-11-08). */}
+          {jobsHere ? "Jobs and shifts" : "Volunteer Setup"}</h1>
         {/* A volunteer event's "+ Add a job" sits by the title, so it's never scrolled out of sight with the tabs. */}
         {jobsHere && stations.length > 0 && (
           <Link
