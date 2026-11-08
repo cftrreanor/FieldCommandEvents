@@ -145,7 +145,7 @@ export function EventForm({
           hint={
             conference
               ? `The time zone where you'll meet. Every time ${meeting ? "people" : "families"} see, in emails, and in calendar invites uses this zone, whatever someone's phone is set to.`
-              : "Where the event happens. Every time on volunteer pages, emails, and calendar invites uses this zone, whatever someone's phone is set to."
+              : "Where the event happens. Every time on your event pages, in emails, and in calendar invites uses this zone, whatever someone's phone is set to."
           }
           className="sm:col-span-2"
         >

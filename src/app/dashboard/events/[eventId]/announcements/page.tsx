@@ -13,7 +13,7 @@ import { EndButton } from "./end-button";
 import { PostForm } from "./post-form";
 import { SavedBy } from "@/components/saved-by";
 
-export const metadata: Metadata = { title: "Broadcast Messages" };
+export const metadata: Metadata = { title: "Broadcast messages" };
 
 type Row = { id: string; body: string; priority: "routine" | "schedule" | "emergency"; audiences: string[]; created_at: string; ends_at: string | null };
 
@@ -66,7 +66,7 @@ export default async function AnnouncementsPage({ params }: PageProps<"/dashboar
         <Link href={`/dashboard/events/${eventId}`} className="text-sm text-muted hover:text-foreground">
           ← Back to {event.name}
         </Link>
-        <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">Broadcast Messages</h1>
+        <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">Broadcast messages</h1>
         <SavedBy eventId={eventId} area="announcements" className="mt-2" />
         <p className="mt-1 text-muted">
           Post a quick message, like {hasBands(event.event_type) ? "a band switch" : "a room change"} or a delay, and it shows at the top of the pages of the people it&apos;s for, as soon as

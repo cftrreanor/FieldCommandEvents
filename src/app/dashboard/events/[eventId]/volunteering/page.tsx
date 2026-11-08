@@ -31,7 +31,7 @@ import { LineIcon } from "@/components/line-icon";
 export async function generateMetadata({ params }: PageProps<"/dashboard/events/[eventId]/volunteering">): Promise<Metadata> {
   const { eventId } = await params;
   const { data } = await (await createClient()).from("events").select("event_type").eq("id", eventId).maybeSingle();
-  return { title: usesJobs(data?.event_type) ? "Volunteer jobs" : "Volunteer Setup" };
+  return { title: usesJobs(data?.event_type) ? "Jobs and shifts" : "Volunteer Setup" };
 }
 
 type HostRow = { user_id: string; role: "owner" | "admin"; profiles: { full_name: string; email: string } | null };
@@ -262,11 +262,15 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
   return (
     // data-required-marks: a small asterisk on each box that has to be filled in (globals.css).
     <div data-required-marks>
-      <Link href={`/dashboard/events/${eventId}`} className="text-sm text-muted hover:text-foreground">
-        ← Back to {event.name}
-      </Link>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">{jobsHere ? "Volunteer jobs" : "Volunteer Setup"}</h1>
+      {/* While it's a setup step, no "Back to" link: it would jump ahead to Publish. The step bar is the way around. */}
+      {!(jobsHere && !published) && (
+        <Link href={`/dashboard/events/${eventId}`} className="mb-3 inline-block text-sm text-muted hover:text-foreground">
+          ← Back to {event.name}
+        </Link>
+      )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">{/* The step's own name, as in the step bar and the event page's button (light check, 2026-11-08). */}
+          {jobsHere ? "Jobs and shifts" : "Volunteer Setup"}</h1>
         {/* A volunteer event's "+ Add a job" sits by the title, so it's never scrolled out of sight with the tabs. */}
         {jobsHere && stations.length > 0 && (
           <Link
@@ -509,7 +513,7 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                           next: published
                             ? { href: `/dashboard/events/${eventId}`, label: "Back to the event" }
                             : bandsHere
-                              ? { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish registration" }
+                              ? { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish" }
                               : { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish your event" },
                         },
                       }
@@ -585,18 +589,23 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                 </h3>
                 <p className="mt-1 mb-4 text-sm text-muted">
                   {jobsHere
-                    ? "Name it and choose shifts or things to bring. You add them next."
+                    ? "Choose shifts or things to bring, then name the job. You add the times or items next."
                     : "Name it and choose its type. You'll add its details, Coordinators, and time slots or items next."}
                 </p>
                 <NewStationForm action={createStation.bind(null, eventId)} openTab job={jobsHere} />
-                {bandsHere && !published && stations.length === 0 && (
-                  // Volunteers are optional before publishing: the way on without any.
-                  <p className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border pt-3 text-sm">
-                    <span className="text-muted">No volunteer jobs yet? Add them any time before contest day.</span>
-                    <Link href={`/dashboard/events/${eventId}#publish`} className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
-                      Next up: Publish registration →
+                {jobsHere && !published && stations.length === 0 && (
+                  // The same pinned bar as the other setup steps: optional for a band contest; a volunteer event needs a job first.
+                  <div className="sticky bottom-[var(--day-bar,0px)] z-10 -mx-4 -mb-4 mt-6 flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 rounded-b-lg border-t-2 border-border bg-surface px-4 py-3 shadow-[0_-6px_16px_rgb(0_0_0/0.10)] sm:-mx-6 sm:-mb-6 sm:px-6">
+                    <p className="hidden min-w-0 flex-1 text-sm text-muted sm:block">
+                      {bandsHere ? "Optional. Add jobs any time before contest day." : "Publishing needs at least one job."}
+                    </p>
+                    <Link
+                      href={`/dashboard/events/${eventId}#publish`}
+                      className="ml-auto inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:bg-background"
+                    >
+                      {bandsHere ? "Next up: Publish →" : "See what publishing needs →"}
                     </Link>
-                  </p>
+                  </div>
                 )}
               </Card>
             )}

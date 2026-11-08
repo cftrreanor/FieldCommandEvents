@@ -97,7 +97,7 @@ export function CheckInOrderList({ stops }: { stops: StopRow[] }) {
         ))}
       </ol>
       <p className="mt-2 text-sm" aria-live="polite">
-        {pending ? <span className="text-muted">Saving…</span> : said ? <span className="font-medium"><span aria-hidden className="text-success">✓ </span>{said}. Saved</span> : <span className="text-muted">Changes save automatically</span>}
+        {pending ? <span className="text-muted">Saving…</span> : said ? <span className="font-medium"><span aria-hidden className="text-success">✓ </span>{said}. Saved</span> : <span className="text-muted">Saves as you go</span>}
       </p>
       {error && (
         <p role="alert" className="text-sm font-medium text-danger">

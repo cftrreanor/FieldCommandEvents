@@ -9,8 +9,8 @@ export const SETUP_STEPS: SetupStep[] = [
   { id: "details", label: "Event details" },
   { id: "team", label: "Team setup" },
   { id: "emails", label: "Email settings" },
-  { id: "files", label: "Maps & documents", optional: true },
-  { id: "more", label: "Publishing & more", optional: true },
+  { id: "files", label: "Maps and documents", optional: true },
+  { id: "more", label: "Publishing and more", optional: true },
 ];
 
 /** The setup page for a step (the first one is the new-event form, then Event settings with ?setup=1). */

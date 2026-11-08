@@ -62,7 +62,7 @@ function useEditing(id: string) {
 /** The Publish / Unpublish button, or, while a tab has unsaved changes, a note to save them first. */
 export function PublishWhenSaved({ children }: { children: ReactNode }) {
   const { editing } = use(Editing);
-  return editing.length ? <p className="text-sm text-muted">To unpublish, save or undo your changes first.</p> : <>{children}</>;
+  return editing.length ? <p className="text-sm text-muted">To publish, save or undo your changes first.</p> : <>{children}</>;
 }
 
 /**
@@ -104,7 +104,9 @@ function SaveCancel({
             ✓
           </span>
         )}
-        <span className="font-semibold">{problem ? problem.text : editing ? "Unsaved changes" : saved ? "All changes saved" : "Not saved yet"}</span>
+        <span className="shrink-0 font-semibold">{problem ? problem.text : editing ? "Not saved yet" : saved ? "All changes saved" : "Not saved yet"}</span>
+        {/* Why this page has a Save button when the setup steps save themselves, said only once there's a change (light check, 2026-11-08). */}
+        {!problem && editing && <span className="text-muted">· People who booked see no change until you save</span>}
         {problem && (
           <button
             type="button"
@@ -124,7 +126,8 @@ function SaveCancel({
           Undo changes
         </Button>
       )}
-      <SubmitButton disabled={disabled || (saved && !editing)}>{label}</SubmitButton>
+      {/* Shown once there's something to save, never as a grey button beside "All changes saved". */}
+      {(editing || !saved) && <SubmitButton disabled={disabled}>{label}</SubmitButton>}
     </div>
   );
 }

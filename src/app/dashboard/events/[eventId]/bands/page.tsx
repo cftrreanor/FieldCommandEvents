@@ -29,7 +29,12 @@ import { SetupTabs } from "../../_components/setup-tabs";
 import { ReopenRegistration } from "./reopen-registration";
 import { RegistrationSettings } from "./registration-settings";
 
-export const metadata: Metadata = { title: "Registration" };
+export async function generateMetadata({ params }: PageProps<"/dashboard/events/[eventId]/bands">): Promise<Metadata> {
+  const { eventId } = await params;
+  const { data } = await (await createClient()).from("events").select("event_type").eq("id", eventId).maybeSingle();
+  // The page's own heading: "Band registration", or a group event's word for its groups.
+  return { title: `${groupWords(data?.event_type).One} registration` };
+}
 // Sending a long list of invitations finishes after the page answers; give it time.
 export const maxDuration = 300;
 
@@ -220,10 +225,8 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
     const copyNote = copiedFrom && !copyFailed ? await copySummary(supabase, eventId, copiedFrom, event) : null;
     return (
       <div data-required-marks>
-        <Link href={`/dashboard/events/${eventId}`} className="text-sm text-muted hover:text-foreground">
-          ← Back to {event.name}
-        </Link>
-        <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">Band registration</h1>
+        {/* No "Back to" link while setting up: it would jump ahead to Publish. The step bar is the way around. */}
+        <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">Band registration</h1>
         <p className="mt-2 max-w-2xl text-muted">
           What directors pick and read when they register. You can invite directors and share the link once you publish.
         </p>
@@ -252,7 +255,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
                   {copyNote.shiftsOutside === 1 ? "1 shift falls" : `${copyNote.shiftsOutside} shifts fall`} outside the new contest&apos;s hours. Check{" "}
                   {copyNote.shiftsOutside === 1 ? "it" : "them"} on the{" "}
                   <Link href={`/dashboard/events/${eventId}/volunteering`} className="font-semibold text-brand underline underline-offset-4">
-                    Volunteers step
+                    Jobs and shifts step
                   </Link>
                   .
                 </p>
@@ -279,7 +282,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
             </ActionButton>
           </div>
         )}
-        <div className="mt-6">{registrationForm({ href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Volunteers" })}</div>
+        <div className="mt-6">{registrationForm({ href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Jobs and shifts" })}</div>
       </div>
     );
   }
@@ -592,7 +595,7 @@ async function copySummary(
   ) as string[];
   if (!check.length) check.push("the settings below");
   const list = check.length > 2 ? `${check.slice(0, -1).join(", ")}, and ${check.at(-1)}` : check.join(" and ");
-  return { jobs: counts ? `, and its ${counts} ${jobs + stops === 1 ? "is" : "are"} on the Volunteers step` : "", dates, shiftsOutside, check: list };
+  return { jobs: counts ? `, and its ${counts} ${jobs + stops === 1 ? "is" : "are"} on the Jobs and shifts step` : "", dates, shiftsOutside, check: list };
 }
 
 /** Picked the wrong contest: delete this one (nothing published, no bands) and pick again. */

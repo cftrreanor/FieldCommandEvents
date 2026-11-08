@@ -374,7 +374,7 @@ export default async function BandContestPage({ params, searchParams }: PageProp
           )}
           {files.length > 0 && (
             <div className="mt-4">
-              <h3 className="text-sm font-semibold">Maps &amp; documents</h3>
+              <h3 className="text-sm font-semibold">Maps and documents</h3>
               <FileLinks files={files} className="mt-2" />
             </div>
           )}

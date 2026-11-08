@@ -11,4 +11,6 @@ Review: docs/design-reviews/2026-11-08-meetings-start.md
 | — | "Changes save automatically" with nothing saved | 2 | Take the advice | "Not saved yet. Add your day and hours", with a lighter Next button until the hours are saved |
 | — | Phone step bars hide what needs work | 2 | Take the advice | Amber bars, and "2 steps need work: …" in words |
 | — | "Next:" on My events not a link | 2 | Take the advice | |
-| — | Step counts differ; Meeting setup card wording; step 1 button style | 2 | Later | The publish card no longer gives its own count |
+| — | Step counts differ | 2 | Take the advice (owner, follow-up) | The checklist has the step bar's two steps (Set your meeting times, Choose where you'll meet); My events counts the steps left *before* publishing, not Publish itself |
+| — | Meeting setup card wording | 2 | Take the advice (owner, follow-up) | "Day and hours not set yet"; one button named for the step it opens ("Add your hours", "Choose where you'll meet") |
+| — | Step 1 button style | 2 | Keep as is | The shared "not ready yet" style until a name is typed |

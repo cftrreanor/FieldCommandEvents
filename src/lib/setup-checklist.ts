@@ -103,7 +103,7 @@ export type SetupChecklist = {
 };
 
 // Same order as the sections on the event page: what people sign up for, the schedule, volunteers, the day, team, maps.
-const BEFORE_ORDER = ["details", "registration", "director-info", "booths", "conference", "parents-close", "rooms", "shifts", "team", "files"];
+const BEFORE_ORDER = ["details", "registration", "director-info", "booths", "conference-times", "conference-place", "parents-close", "rooms", "shifts", "team", "files"];
 
 /**
  * A volunteer event's jobs: done once a job has a shift or a thing to bring
@@ -128,8 +128,8 @@ function jobsStep(f: SetupFacts, base: string): SetupStep {
 /** What a band contest still needs before directors can register ("Add a deadline"), or null. */
 export function bandRegistrationMissing(f: Pick<SetupFacts, "registrationDeadline" | "classifications" | "registrationDeadlinePast" | "published">) {
   const cls = (f.classifications ?? 0) > 0;
-  if (f.registrationDeadlinePast && !f.published) return cls ? "Pick a new deadline: it has passed" : "Pick a new deadline and add a classification";
-  if (!f.registrationDeadline && !cls) return "Add a deadline and a classification";
+  if (f.registrationDeadlinePast && !f.published) return cls ? "Pick a new deadline: it has passed" : "Add a classification and pick a new deadline";
+  if (!f.registrationDeadline && !cls) return "Add a classification and a deadline";
   if (!f.registrationDeadline) return "Add a deadline";
   if (!cls) return "Add a classification";
   return null;
@@ -193,15 +193,26 @@ export function setupChecklist(f: SetupFacts): SetupChecklist {
     });
   }
   if (hasConferences(f.eventType)) {
-    before.push({
-      id: "conference",
-      label: "Set meeting times and where you'll meet",
-      hint: f.conferenceMissing ?? "Your meetings, and your room or video link.",
-      href: `${base}/conferences`,
-      done: !f.conferenceMissing,
-      required: true,
-      partial: f.conferenceTimesSaved && f.conferenceMissing ? { fraction: 0.5, note: "Meeting times saved" } : undefined,
-    });
+    // The same two required steps as the step bar along the top (Meeting times, Where you'll meet), so every
+    // page counts what's left the same way (light check, 2026-11-08).
+    before.push(
+      {
+        id: "conference-times",
+        label: "Set your meeting times",
+        hint: f.conferenceTimesMissing ?? "The day or weekly hours, and how long each meeting is.",
+        href: `${base}/conferences/times`,
+        done: !f.conferenceTimesMissing,
+        required: true,
+      },
+      {
+        id: "conference-place",
+        label: "Choose where you'll meet",
+        hint: f.conferencePlaceMissing ?? "In person, video, or phone calls.",
+        href: `${base}/conferences/place`,
+        done: !f.conferencePlaceMissing,
+        required: true,
+      },
+    );
   }
   if (hasParents(f.eventType)) {
     before.push({
@@ -257,7 +268,7 @@ export function setupChecklist(f: SetupFacts): SetupChecklist {
   const publish: SetupStep = {
     id: "publish",
     // A band contest's publishing is what opens registration.
-    label: bandContest ? "Publish registration" : "Publish your event",
+    label: "Publish your event",
     hint: bandContest
       ? f.registrationOpensOn
         ? `Puts your contest page online. Directors can register from ${formatDate(f.registrationOpensOn, { year: undefined })}.`
@@ -411,6 +422,8 @@ export function publishEffects(f: SetupFacts): string[] {
   if (isMeeting(f.eventType)) {
     return [
       ...lines,
+      // What opens, as the band contest list says (light check, 2026-11-08).
+      "Booking opens, and people can pick a time.",
       "Nobody is emailed or notified. People only find out when you share your link.",
       "You can keep editing everything, and unpublish at any time.",
     ];
@@ -418,6 +431,7 @@ export function publishEffects(f: SetupFacts): string[] {
   if (hasConferences(f.eventType)) {
     return [
       ...lines,
+      "Booking opens, and families can pick a time.",
       "Nobody is emailed or notified. Families only find out when you share your link.",
       "You can keep editing everything, and unpublish at any time.",
     ];

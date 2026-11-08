@@ -351,6 +351,13 @@ form label:has(:is(input, select, textarea)[data-why="fix"]:invalid)::after {
   animation: setup-draw 0.3s ease-out 0.5s both;
 }
 
+/* Any save bar pinned to the bottom of a form (they all sit at bottom-[var(--day-bar,0px)]): keyboard focus
+   and jumps stop above it, at every width, so the box being typed in is never under it (WCAG 2.4.11,
+   light check, 2026-11-08). */
+html:has(.sticky[class*="bottom-[var(--day-bar"]) {
+  scroll-padding-bottom: 7rem;
+}
+
 /* Phones and tablets: the setup bar is pinned along the bottom, so keyboard focus and links to a
    spot on the page stop above it instead of behind it. */
 @media (max-width: 1023.98px) {
@@ -393,6 +400,16 @@ form label:has(:is(input, select, textarea)[data-why="fix"]:invalid)::after {
   border-radius: 9999px;
   background: var(--surface);
 }
+/* Dark mode: the browser's own checkboxes and radio buttons draw a gray filled box with a faint edge, so
+   empty ones read as half-checked. Give them the light look (an empty white box with a clear edge, brand
+   color when checked), which stands out on the dark cards (light check, 2026-11-08). */
+@media (prefers-color-scheme: dark) {
+  input[type="checkbox"]:not(.team-radio),
+  input[type="radio"]:not(.team-radio) {
+    color-scheme: light;
+  }
+}
+
 /* On a warning box the usual gray ring is faint (in dark mode most of all): ring it in the warning color. */
 .team-radio.on-warning {
   border-color: var(--warning);

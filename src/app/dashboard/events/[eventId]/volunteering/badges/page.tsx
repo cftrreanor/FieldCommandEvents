@@ -94,7 +94,7 @@ export default async function BadgesPage({ params, searchParams }: PageProps<"/d
 
       <div className="print:hidden">
         <Link href={`/dashboard/events/${eventId}/volunteering`} className="text-sm text-muted hover:text-foreground">
-          ← Back to {usesJobs(event.event_type) ? "Volunteer jobs" : "Volunteer Setup"}
+          ← Back to {usesJobs(event.event_type) ? "Jobs and shifts" : "Volunteer Setup"}
         </Link>
         <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">Volunteer badges</h1>
         <p className="mt-2 max-w-2xl text-muted">
@@ -160,7 +160,7 @@ export default async function BadgesPage({ params, searchParams }: PageProps<"/d
                 ))}
               </Select>
               <span className="mt-1 block text-xs font-normal text-muted">
-                {maps.length ? "From this event's Maps & documents." : "Upload a map in Maps & documents in Event settings to print it on the back."}
+                {maps.length ? "From this event's Maps and documents." : "Upload a map in Maps and documents in Event settings to print it on the back."}
               </span>
             </label>
             <div className="flex items-end sm:col-span-2">
@@ -170,14 +170,14 @@ export default async function BadgesPage({ params, searchParams }: PageProps<"/d
             </div>
           </form>
 
-          {/* Uploads all live in Maps & documents on Edit details: the logo and the maps. */}
+          {/* Uploads all live in Maps and documents on Edit details: the logo and the maps. */}
           {access.isHost && (
             <p className="border-t border-border pt-5 text-sm text-muted">
               {logo ? "Your logo is on the badges." : "Badges show the event name at the top until you add your logo."}{" "}
               <Link href={`/dashboard/events/${eventId}/edit?section=details#logo`} className="font-medium text-brand underline">
                 {logo ? "Change the logo or add maps" : "Add your logo or maps"}
               </Link>{" "}
-              in Maps &amp; documents.
+              in Maps and documents.
             </p>
           )}
 

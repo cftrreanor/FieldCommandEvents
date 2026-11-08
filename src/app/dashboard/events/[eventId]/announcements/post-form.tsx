@@ -113,7 +113,7 @@ export function PostForm({
         </label>
       )}
       <SubmitButton variant={priority === "emergency" ? "warn" : "primary"} pendingText="Sending…">
-        {priority === "emergency" ? "Broadcast Emergency" : "Broadcast Message"}
+        {priority === "emergency" ? "Broadcast emergency" : "Broadcast message"}
       </SubmitButton>
     </ActionForm>
   );

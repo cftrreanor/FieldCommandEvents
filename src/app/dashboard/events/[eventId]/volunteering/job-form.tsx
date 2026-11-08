@@ -284,7 +284,7 @@ function InSlot({ id, children }: { id: string; children: ReactNode }) {
 }
 
 const SAVE_WORDS: Record<SaveState, string> = {
-  idle: "Changes save automatically",
+  idle: "Saves as you go",
   waiting: "Saving…",
   saving: "Saving…",
   saved: "Saved",

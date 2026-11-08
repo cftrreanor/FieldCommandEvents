@@ -13,7 +13,7 @@ import { loadAccountPlan } from "@/lib/plan";
 import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime, zoneName } from "@/lib/time";
-import { publishAndOpen, setEventPublished } from "../../../actions";
+import { publishAndOpen } from "../../../actions";
 import { ActionButton, CopyLinkButton } from "../forms";
 import { copyAsWeekly, saveDaysOff, saveMeetingContact, saveMeetingPlace, saveMeetingTimes } from "./actions";
 import { conferenceBookedCount } from "@/lib/conference-access";
@@ -184,26 +184,7 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
             </details>
           </div>
           {/* Apart from the everyday buttons, and saying what happens to the people already booked (decisions 2026-11-07). */}
-          {published && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-              <p className="text-sm text-muted">
-                Unpublishing hides your booking page.{" "}
-                {booked > 0
-                  ? `The ${booked} ${booked === 1 ? "meeting" : "meetings"} already booked stay booked, and no one is emailed.`
-                  : "No one has booked yet."}
-              </p>
-              <PublishWhenSaved>
-                <ActionButton
-                  action={setEventPublished.bind(null, eventId, false)}
-                  variant="stop"
-                  pendingText="Unpublishing…"
-                  confirmMessage={`Unpublish your ${meeting ? "meetings" : "conference"}? Your booking page will be hidden.${booked > 0 ? ` The ${booked} ${booked === 1 ? "meeting" : "meetings"} already booked stay booked, and no one is emailed.` : ""} You can publish again anytime.`}
-                >
-                  Unpublish
-                </ActionButton>
-              </PublishWhenSaved>
-            </div>
-          )}
+          {/* Unpublishing lives in Event settings, as for volunteer events and band contests (owner, 2026-11-08). */}
         </Card>
 
         <div className="mt-10">

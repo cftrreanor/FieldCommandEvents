@@ -95,6 +95,10 @@ a word for two things on one screen.
 - **Again in:** Meetings as built ("Your meetings" was also "See your meetings", "Meetings list",
   and "Meetings page"; "Manage meetings" opened setup, 7 of 8). **Sharper rule:** a page has one name,
   used on every button and link that opens it; a button's words name the page it opens.
+- **Again in:** setup alignment (the volunteer area was "Volunteer Setup" in the step bar and "Jobs and
+  shifts" on the card; "Publish" vs "Publish registration"; a card, its button, and a page all called
+  "Meeting setup", 7 of 8). **Sharper rule:** across kinds of event, the same step has the same name, and a
+  section on the event page is named like the step it opens.
 - **Again in:** Meetings final check ("confirmation email" and "calendar invite" for the same email on
   one page, so people expect two; 2 of 3). One email, one name, with what's in it listed once.
 
@@ -232,6 +236,8 @@ bar (status left, Next up right), or they all use a Save button.
 - **Again in:** Meetings final check (Meeting setup's bar said "All changes saved" over a contact email
   card with its own Save button, 2 of 3). **Sharper rule:** this holds within one page too: a card on a
   self-saving page saves itself.
+- **Again in:** setup alignment (live Meeting setup said "All changes saved · … until you save", 4 of 5).
+  A page that saves by button says why only once there's something to save, and never shows a grey Save.
 
 ## L20. Reorder arrows stay put and say what they moved
 Up and down arrows sit in two fixed columns (an unusable one keeps its space), look like buttons,
@@ -293,3 +299,9 @@ step 1 "Now" and the rest "Not yet", so filling it in never feels like the whole
 - **Seen in:** meetings start (owner: "I don't want people to think that they are only filling out that
   screen"; step 1 had its own header, 3 of 3).
 
+## L24. One tracker, and "Back" goes back
+While something is being set up, the step bar is the only progress tracker: no checklist panel beside it,
+and a settings menu is a plain menu (no done circles, no "Optional" under items). A "Back" link never jumps
+forward: during setup the step bar is the way around, so step pages don't carry "Back to [event]".
+- **Seen in:** setup alignment (Event setup checklist beside the step bar; Event settings' circles read as a
+  second checklist and hid the open section on phones, 6 of 8; "Back to [event]" on step 1 opened step 3).

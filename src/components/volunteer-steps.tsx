@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { usePendingCounts } from "@/components/pending-edits";
 import { SETUP_STEPS as STEPS, type SetupStepFacts, type StepsKind } from "@/lib/setup-steps";
 
@@ -28,7 +28,11 @@ export function SetupSteps({
   const unsaved = pending.failed + pending.incomplete + pending.unadded > 0;
   const base = `/dashboard/events/${eventId}`;
   const steps = STEPS[kind];
-  const here = preview ? 0 : steps.findIndex((s) => pathname === `${base}${s.path}`);
+  // Event settings (Details with ?section=) is a settings page, not the Details step: it has its own list.
+  const query = useSearchParams();
+  // The same rule as the page: any section asked for, by ?section= or an old ?step= link.
+  const settings = query.has("section") || query.has("step");
+  const here = preview ? 0 : settings ? -1 : steps.findIndex((s) => pathname === `${base}${s.path}`);
   if (here < 0) return null;
   const last = steps.length - 1;
   const done = steps.map((s, i) =>
@@ -53,10 +57,13 @@ export function SetupSteps({
                   : now && unsaved
                     ? "Now · not saved"
                     : needs
-                      ? stepNote(s.key, i)
+                      ? // "Now" first under the step you're on, then what it needs.
+                        now
+                        ? `Now · ${lowerFirst(stepNote(s.key, i) ?? "")}`
+                        : stepNote(s.key, i)
                       : now
                         ? done[i] && i < last
-                          ? "Now · ready"
+                          ? "Now · all set"
                           : optionalNote
                             ? `Now · ${optionalNote.charAt(0).toLowerCase()}${optionalNote.slice(1)}`
                             : "Now"
@@ -88,17 +95,25 @@ export function SetupSteps({
   );
   return (
     <nav aria-label="Event setup" className="mb-6 print:hidden">
-      <p className="text-sm">
-        <span className="font-semibold">
-          Step {here + 1} of {steps.length}:
-        </span>{" "}
-        {steps[here].label}
-        {steps[here].optional && <span className="text-muted"> (optional)</span>}
-        {here === 1 && facts.count && <span className="text-muted"> · {facts.count}</span>}
-        <span className="sr-only">
-          . {doneCount} of {steps.length} done.
-        </span>
-      </p>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+        <p className="text-sm">
+          <span className="font-semibold">
+            Step {here + 1} of {steps.length}:
+          </span>{" "}
+          {steps[here].label}
+          {steps[here].optional && <span className="text-muted"> (optional)</span>}
+          {here === 1 && facts.count && <span className="text-muted"> · {facts.count}</span>}
+          <span className="sr-only">
+            . {doneCount} of {steps.length} done.
+          </span>
+        </p>
+        {/* Team, emails, and maps are in Event settings: in reach from every step (the Publish step has its own button). */}
+        {!preview && here < last && (
+          <Link href={`${base}/edit?section=details`} className="inline-flex min-h-11 items-center text-sm font-medium text-brand underline underline-offset-4">
+            Event settings
+          </Link>
+        )}
+      </div>
       {/* Phones: one row of strips, then every step in a list you can open (the two-column grid read wrongly). */}
       <ol aria-hidden className="mt-2 flex gap-1 sm:hidden">
         {steps.map((s, i) => (
@@ -108,10 +123,20 @@ export function SetupSteps({
           />
         ))}
       </ol>
-      {needsWork.length > 0 && (
+      {/* Phones: the step you're on first ("Now · add a job"), then any other step that needs something. */}
+      {needsWork.includes(steps[here]) && (
         <p className="mt-2 text-sm font-medium text-warning sm:hidden">
+          <span aria-hidden>◆ </span>Now · {lowerFirst(stepNote(steps[here].key, here) ?? "")}
+        </p>
+      )}
+      {needsWork.some((s) => s !== steps[here]) && (
+        <p className="mt-1 text-sm font-medium text-warning sm:hidden">
           <span aria-hidden>◆ </span>
-          {needsWork.length === 1 ? "1 step needs work" : `${needsWork.length} steps need work`}: {needsWork.map((s) => s.label).join(", ")}
+          {needsWork.includes(steps[here]) ? "Also needs work" : needsWork.length === 1 ? "1 step needs work" : `${needsWork.length} steps need work`}:{" "}
+          {needsWork
+            .filter((s) => s !== steps[here])
+            .map((s) => s.label)
+            .join(", ")}
         </p>
       )}
       <details className="group sm:hidden">
@@ -126,4 +151,9 @@ export function SetupSteps({
       {stepList(`mt-2 hidden gap-x-3 gap-y-1 sm:grid ${steps.length === 5 ? "sm:grid-cols-5" : steps.length === 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`)}
     </nav>
   );
+}
+
+/** "Add a job" → "add a job"; a note that starts with a name ("BBQ crew needs a shift") keeps its capitals. */
+function lowerFirst(text: string) {
+  return /^(Add|Choose|Pick|Tick)\b/.test(text) ? text.charAt(0).toLowerCase() + text.slice(1) : text;
 }
