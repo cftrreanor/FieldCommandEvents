@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 import { conferenceBookedCount, isConferenceTeacher } from "@/lib/conference-access";
 import { NotTheTeacher } from "../not-teacher";
 import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime, zoneName } from "@/lib/time";
+import { formatPhone } from "@/lib/phone";
 import { PrintButton } from "./print-button";
 
 export const metadata: Metadata = { title: "Meeting summary" };
@@ -33,7 +34,7 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
   if (!hasConferences(event.event_type)) redirect(`/dashboard/events/${eventId}`);
   if (!(await isConferenceTeacher(supabase, eventId))) return <NotTheTeacher eventId={eventId} booked={await conferenceBookedCount(supabase, eventId)} meeting={isMeeting(event.event_type)} />;
 
-  const columns = "id, starts_at, child_name, parents";
+  const columns = "id, starts_at, child_name, parents, meeting_mode, note";
   const load = (extra: string) =>
     supabase
       .from("conference_bookings")
@@ -48,7 +49,7 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
   const outcomesReady = !isSchemaError(withOutcomes.error);
   const { data, error } = outcomesReady ? withOutcomes : await load("");
   if (error) missing();
-  const bookings = (data ?? []) as unknown as (Pick<Booking, "id" | "starts_at" | "child_name" | "parents"> & {
+  const bookings = (data ?? []) as unknown as (Pick<Booking, "id" | "starts_at" | "child_name" | "parents" | "meeting_mode" | "note"> & {
     outcome?: keyof typeof OUTCOME_LABEL | null;
   })[];
 
@@ -65,6 +66,11 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
   const met = bookings.filter((b) => b.outcome === "met").length;
   const noShows = bookings.filter((b) => b.outcome === "no_show").length;
   const unmarked = bookings.length - met - noShows;
+  // Printed before the day (no meeting has started): a sheet to work from, with how they're meeting, a
+  // number, their note, and a blank box to tick, instead of "Not marked" on every row (decisions 2026-11-07).
+  const now = new Date().toISOString();
+  const beforeDay = bookings.every((b) => b.starts_at > now);
+  const HOW = { in_person: "In person", video: "Video", phone: "Phone call" } as const;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -83,7 +89,7 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
       </p>
       <p className="mt-2 text-sm">
         <span className="font-semibold">{bookings.length}</span> {bookings.length === 1 ? "meeting" : "meetings"}
-        {outcomesReady && (
+        {outcomesReady && !beforeDay && (
           <>
             {" "}
             · <span className="font-semibold">{met}</span> met · <span className="font-semibold">{noShows}</span>{" "}
@@ -115,6 +121,19 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
               <th scope="col" className="py-2 pr-3 font-semibold">
                 {students ? "Parents" : "Who"}
               </th>
+              {beforeDay && (
+                <>
+                  <th scope="col" className="py-2 pr-3 font-semibold">
+                    How
+                  </th>
+                  <th scope="col" className="py-2 pr-3 font-semibold">
+                    Phone
+                  </th>
+                  <th scope="col" className="py-2 pr-3 font-semibold">
+                    Note
+                  </th>
+                </>
+              )}
               {outcomesReady && (
                 <th scope="col" className="py-2 font-semibold">
                   Met
@@ -128,7 +147,24 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
                 <td className="whitespace-nowrap py-2 pr-3 tabular-nums">{time(b.starts_at)}</td>
                 {students && <td className="py-2 pr-3 font-medium">{b.child_name}</td>}
                 <td className="py-2 pr-3">{b.parents.map((p) => p.name).join(", ")}</td>
-                {outcomesReady && <td className="whitespace-nowrap py-2">{b.outcome ? OUTCOME_LABEL[b.outcome] : "Not marked"}</td>}
+                {beforeDay && (
+                  <>
+                    <td className="whitespace-nowrap py-2 pr-3">{HOW[b.meeting_mode] ?? ""}</td>
+                    <td className="whitespace-nowrap py-2 pr-3 tabular-nums">{formatPhone(b.parents.find((p) => p.phone)?.phone ?? null)}</td>
+                    <td className="py-2 pr-3">{b.note}</td>
+                  </>
+                )}
+                {outcomesReady && (
+                  <td className="whitespace-nowrap py-2">
+                    {beforeDay ? (
+                      <span aria-label="Not yet" className="inline-block size-5 rounded-sm border-2 border-foreground align-middle" />
+                    ) : b.outcome ? (
+                      OUTCOME_LABEL[b.outcome]
+                    ) : (
+                      "Not marked"
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

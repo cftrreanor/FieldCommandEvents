@@ -69,6 +69,8 @@ export type SetupFacts = {
   parentClosesAt: boolean;
   /** Conferences: what's still needed before publishing (null when ready). */
   conferenceMissing?: string | null;
+  conferenceTimesMissing?: string | null;
+  conferencePlaceMissing?: string | null;
   /**
    * Why the account's plan won't let it publish (20261223000000_packages.sql), and for
    * "one at a time", the event already published. Null when the plan allows it.

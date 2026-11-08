@@ -25,7 +25,7 @@ export function PrivacyNote({
           <>
             <li>
               Only <strong>{teacher}</strong>
-              {shared ? ", their co-hosts, and the people they've chosen to notify" : " and their co-hosts"} see your child&apos;s name, your names and contact details, and your note.
+              {shared ? ", the people helping run this, and the people they've chosen to notify" : " and the people helping run this"} see your child&apos;s name, your names and contact details, and your note.
             </li>
             <li>Other families only see which times are still open. They never see who booked, or when.</li>
           </>

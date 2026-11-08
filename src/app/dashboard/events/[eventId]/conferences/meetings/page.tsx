@@ -38,7 +38,7 @@ export default async function MeetingsPage({ params }: PageProps<"/dashboard/eve
   if (!event) missing();
   if (!hasConferences(event.event_type)) redirect(`/dashboard/events/${eventId}`);
   const meeting = isMeeting(event.event_type);
-  const setupName = meeting ? "Meeting Setup" : "Conference Setup";
+  const setupName = meeting ? "Meeting setup" : "Conference setup";
   if (!(await isConferenceTeacher(supabase, eventId))) return <NotTheTeacher eventId={eventId} booked={await conferenceBookedCount(supabase, eventId)} meeting={isMeeting(event.event_type)} />;
 
   const loadBookings = (extra: string) =>

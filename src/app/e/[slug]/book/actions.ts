@@ -61,7 +61,7 @@ function readForm(formData: FormData, askChild: boolean): { values: BookingValue
   }
   if (values.note.length > 500) return { values, error: "Please keep your note under 500 characters." };
   if (values.callPhone && !normalizePhone(values.callPhone)) {
-    return { values, error: "Please enter a 10-digit phone number for your teacher to call." };
+    return { values, error: "Please enter the 10-digit phone number to call you on." };
   }
   return { values };
 }
@@ -145,7 +145,7 @@ export async function changeBooking(token: string, _prev: ActionState, formData:
   const mode = String(formData.get("mode") ?? "");
   const callPhone = String(formData.get("callPhone") ?? "").trim();
   if (!startsAt || Number.isNaN(Date.parse(startsAt))) return { error: "Pick a time." };
-  if (callPhone && !normalizePhone(callPhone)) return { error: "Please enter a 10-digit phone number for your teacher to call." };
+  if (callPhone && !normalizePhone(callPhone)) return { error: "Please enter the 10-digit phone number to call you on." };
   const admin = createAdminClient();
   const { data: eventId, error } = await admin.rpc("change_conference_booking", {
     p_token: token,

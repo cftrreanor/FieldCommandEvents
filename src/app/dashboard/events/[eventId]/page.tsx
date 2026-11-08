@@ -616,14 +616,15 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
             <div className="flex flex-wrap gap-2">
               {conferenceReady && (
                 <Link href={`/dashboard/events/${eventId}/conferences/meetings`} className={dayFirst ? BTN : BTN_OUTLINE}>
-                  See your meetings
+                  Your meetings
                 </Link>
               )}
               <Link
-                href={`/dashboard/events/${eventId}/conferences`}
+                href={`/dashboard/events/${eventId}/conferences${published ? "" : "/times"}`}
                 className={!conferenceReady && notReady(conference, event.venue_address, event.event_type) ? BTN : BTN_OUTLINE}
               >
-                {notReady(conference, event.venue_address, event.event_type) ? `Set up ${booking.event}` : `Manage ${booking.event}`}
+                {/* One name per page (decisions 2026-11-07): this opens setup, not the list. */}
+                {notReady(conference, event.venue_address, event.event_type) ? `Set up ${booking.event}` : event.event_type === "meeting" ? "Meeting setup" : "Conference setup"}
               </Link>
             </div>
           </div>
@@ -982,7 +983,10 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           ? // A band contest too: the publish card leads, naming what registration still needs, or with the button.
             // Then the setup order: registration, volunteers (optional), and the schedule, which comes after publishing.
             ["publish", "attention", "signups", "volunteers", "schedule", "day", "files"]
-          : ["next", "attention", "signups", "schedule", "volunteers", "publish", "day", "files"];
+          : hasConferences(event.event_type)
+            ? // Meetings and conferences set up in steps too, so publishing leads the page (decisions 2026-11-07).
+              ["publish", "attention", "signups", "schedule", "volunteers", "day", "files"]
+            : ["next", "attention", "signups", "schedule", "volunteers", "publish", "day", "files"];
   const labels: Record<string, string> = {
     day: dayTitle,
     signups: signupsLabel,

@@ -109,6 +109,7 @@ export default async function BookConferencePage({ params, searchParams }: Param
                 askChild={askChild}
                 calendar={weekly}
                 meeting={!words.child}
+                contact={times.length ? null : teacher.email}
               />
               <div className="mt-6">
                 <PrivacyNote teacher={teacher.name} weekly={weekly || !words.child} askChild={askChild} shared={teacher.shared} />

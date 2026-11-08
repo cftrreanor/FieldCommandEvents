@@ -3,6 +3,7 @@
 import { createContext, use, useEffect, useRef, useState, type ReactNode } from "react";
 import { linkFrom, passcodeFrom } from "@/lib/meeting-link";
 import { ActionForm } from "@/components/action-form";
+import { AutosaveBar, useAutosaveForm } from "@/components/autosave";
 import { NumberInput } from "@/components/number-input";
 import { SubmitButton } from "@/components/submit-button";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
@@ -29,6 +30,8 @@ import {
   type ConferenceSettings,
   type Mode,
   type Schedule,
+  bookingsOutside,
+  type BookedTime,
 } from "@/lib/conferences";
 import { displayTime, formatDuration } from "@/lib/schedule";
 import { formatDate } from "@/lib/time";
@@ -59,7 +62,7 @@ function useEditing(id: string) {
 /** The Publish / Unpublish button, or, while a tab has unsaved changes, a note to save them first. */
 export function PublishWhenSaved({ children }: { children: ReactNode }) {
   const { editing } = use(Editing);
-  return editing.length ? <p className="text-sm text-muted">Save or cancel your changes first, then publish.</p> : <>{children}</>;
+  return editing.length ? <p className="text-sm text-muted">Save or cancel your changes first.</p> : <>{children}</>;
 }
 
 /**
@@ -141,6 +144,18 @@ type TimesProps = {
   planName: string | null;
   /** Meetings: "people" where conferences say "families". */
   meeting?: boolean;
+  /**
+   * In the setup steps, the form is split: the basics (the day and hours, how long each meeting is)
+   * on Meeting times, the extras (every week, time between meetings, breaks) on More options.
+   * Fields from the other part ride along unchanged, so each saves the whole thing.
+   */
+  part?: "basics" | "extras";
+  /** Save a moment after each change (the setup steps, before anyone has booked), with this step next. */
+  autosave?: { next?: { href: string; label: string } };
+  /** "Make a weekly copy", when booked meetings keep this to one day. */
+  copyAction?: () => Promise<void>;
+  /** Booked meetings, to name any that new times would leave out before saving. */
+  bookedTimes?: BookedTime[];
 };
 
 /** Step 1: one day or weekly hours, how long each meeting is, a gap between them, and breaks, with the meetings they make. */
@@ -178,10 +193,35 @@ function TimesForm({
   planName,
   meeting: forMeetings,
   editing,
-  setEditing,
+  setEditing: setEditingNow,
   onCancel,
+  part,
+  autosave,
+  copyAction,
+  bookedTimes = [],
 }: TimesProps & { editing: boolean; setEditing: (on: boolean) => void; onCancel: () => void }) {
   const w = whoBooks(forMeetings);
+  const basics = part !== "extras";
+  const extras = part !== "basics";
+  const auto = useAutosaveForm(Boolean(autosave), "A change to your meeting times");
+  // Buttons (days, Add a break, Remove) change things without a form event: count them as a change too.
+  const anchor = useRef<HTMLSpanElement>(null);
+  const setEditing = (on: boolean) => {
+    if (!autosave) return setEditingNow(on);
+    if (on) setTimeout(() => {
+      const f = anchor.current?.closest("form");
+      if (f) auto.edited(f);
+    }, 0);
+  };
+  // A new event's step starts with suggested hours: save them right away, so what's on screen is what's saved.
+  const savedOnce = Boolean(initial.times_saved_at);
+  useEffect(() => {
+    if (!autosave || savedOnce || part === "extras") return;
+    const f = anchor.current?.closest("form");
+    if (f) auto.edited(f);
+    // Once, when the step first opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [schedule, setSchedule] = useState<Schedule>(initial.schedule);
   const weekly = schedule === "weekly";
   const [meeting, setMeeting] = useState(initial.meeting_minutes);
@@ -204,12 +244,16 @@ function TimesForm({
   const [to, setTo] = useState(end);
   const [firstDay, setFirstDay] = useState(date);
   const [lastDay, setLastDay] = useState(initial.schedule === "weekly" ? endDate : "");
-  // Coming back from weekly hours to one day: pick the day.
-  const askDay = changingHours || (!weekly && initial.schedule === "weekly");
+  // Coming back from weekly hours to one day: pick the day. In the setup steps the day is always open.
+  const askDay = autosave ? basics || initial.schedule === "weekly" : changingHours || (!weekly && initial.schedule === "weekly");
   const lengths = { meeting_minutes: meeting, gap_minutes: gap, breaks: breaks.map((b) => ({ start: b.start, minutes: Number(b.minutes) || 0, label: b.label })) };
   const starts = meetingStarts(from, to, lengths);
   const weeklyHours = groups.flatMap((g) => (g.start && g.end && g.end > g.start ? g.days.map((day) => ({ day, start: g.start, end: g.end })) : []));
   const perWeek = weeklyMeetingCount(weeklyHours, lengths);
+  // Booked meetings these times would leave out: named before saving, and saving needs a tick.
+  const outside = editing
+    ? bookingsOutside(bookedTimes, { schedule, day, from, to, weekly: weeklyHours, firstDay, lastDay, lengths })
+    : [];
   const changeGroup = (key: number, patch: Partial<GroupDraft>) => setGroups((gs) => gs.map((g) => (g.key === key ? { ...g, ...patch } : g)));
   const change = (key: number, patch: Partial<BreakDraft>) => setBreaks((bs) => bs.map((b) => (b.key === key ? { ...b, ...patch } : b)));
 
@@ -218,14 +262,20 @@ function TimesForm({
       action={action}
       resetOnSuccess={false}
       className="space-y-5"
-      onEdit={() => setEditing(true)}
+      onEdit={autosave ? auto.edited : () => setEditing(true)}
+      onError={autosave ? auto.failed : undefined}
+      quiet={Boolean(autosave)}
       // No days start picked, so each set of weekly hours needs at least one tapped.
       validate={() => (schedule === "weekly" && groups.some((g) => !g.days.length) ? { error: "Tap at least one day for each set of hours." } : null)}
       onSuccess={() => {
-        setEditing(false);
+        if (autosave) auto.saved();
+        else setEditing(false);
         setChangingHours(false);
       }}
     >
+      <span ref={anchor} hidden />
+      {!extras && <input type="hidden" name="schedule" value={schedule} />}
+      {extras && (
       <fieldset>
         <legend className="text-sm font-semibold">When can {w.families} meet with you?</legend>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -235,7 +285,7 @@ function TimesForm({
             return (
             <label
               key={o.value}
-              className={`flex gap-3 rounded-lg border p-3 ${locked ? "cursor-not-allowed opacity-60" : "cursor-pointer"} ${schedule === o.value ? "border-brand bg-brand-soft" : "border-field-border"}`}
+              className={`flex gap-3 rounded-lg border p-3 ${locked ? "cursor-not-allowed border-dashed border-field-border" : "cursor-pointer"} ${schedule === o.value ? "border-brand bg-brand-soft" : locked ? "" : "border-field-border"}`}
             >
               <input
                 type="radio"
@@ -255,8 +305,26 @@ function TimesForm({
                   {/* Meetings always need a plan, so weekly hours aren't an extra for them. */}
                   {o.value === "weekly" && !forMeetings && <span className="rounded-full bg-brand px-2 py-0.5 text-xs font-semibold text-brand-foreground">Premium</span>}
                 </span>
-                <span className="block text-sm text-muted">
-                  {locked ? `${w.Families} have booked. Cancel their meetings on your Meetings page to switch.` : forMeetings && o.value === "one_day" ? "A single day of meetings." : o.hint}
+                <span className={`block text-sm ${locked ? "text-foreground" : "text-muted"}`}>
+                  {locked ? (
+                    // Never "cancel everyone to switch": say why, and offer a way to get more times (decisions 2026-11-07, finding 3).
+                    <>
+                      {booked === 1 ? `1 ${w.family} has` : `${booked} ${w.families} have`} booked, so this stays{" "}
+                      {initial.schedule === "weekly" ? "weekly" : "one day"}.{" "}
+                      {copyAction && o.value === "weekly" && (
+                        <>
+                          Need more times?{" "}
+                          <button type="submit" formAction={copyAction} formNoValidate className="inline-flex min-h-11 items-center font-medium text-brand underline underline-offset-4">
+                            Make a weekly copy
+                          </button>
+                        </>
+                      )}
+                    </>
+                  ) : forMeetings && o.value === "one_day" ? (
+                    "A single day of meetings."
+                  ) : (
+                    o.hint
+                  )}
                 </span>
               </span>
             </label>
@@ -264,8 +332,9 @@ function TimesForm({
           })}
         </div>
       </fieldset>
+      )}
 
-      {weekly && !weeklyIncluded && (
+      {extras && weekly && !weeklyIncluded && (
         <p className="rounded-md border border-border bg-brand-soft px-3 py-2 text-sm leading-6">
           <strong>Your {planName ? `${planName} ` : ""}plan doesn&apos;t include weekly hours.</strong> You can set them up now. To publish them, write to us at{" "}
           <a href={`mailto:${brand.supportEmail}`} className="font-medium text-brand underline underline-offset-4">
@@ -275,7 +344,28 @@ function TimesForm({
         </p>
       )}
 
-      {weekly ? (
+      {weekly && !extras ? (
+        // Meeting times, with weekly hours: they're set in More options; say what they are.
+        <p className="rounded-md bg-background px-3 py-2 text-sm">
+          <span className="font-medium">
+            Every week{weeklyHours.length ? `: ${sortWeekly(weeklyHours).map((h) => `${WEEKDAYS[h.day]}s ${displayTime(h.start)} – ${displayTime(h.end)}`).join("; ")}` : ""}
+          </span>{" "}
+          <span className="text-muted">Your weekly days and hours are in More options.</span>
+          {groups.flatMap((g) =>
+            g.days.map((day) => (
+              <span key={`${g.key}-${day}`} hidden>
+                <input type="hidden" name="weeklyDay" value={day} />
+                <input type="hidden" name="weeklyStart" value={g.start} />
+                <input type="hidden" name="weeklyEnd" value={g.end} />
+              </span>
+            )),
+          )}
+          <input type="hidden" name="weeklyFrom" value={firstDay} />
+          <input type="hidden" name="weeklyTo" value={lastDay} />
+          <input type="hidden" name="minNotice" value={initial.min_notice_hours} />
+          <input type="hidden" name="maxAhead" value={initial.max_days_ahead} />
+        </p>
+      ) : weekly ? (
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="First day">
@@ -383,9 +473,9 @@ function TimesForm({
             </Field>
           </div>
         </div>
-      ) : askDay ? (
+      ) : !basics && initial.schedule !== "weekly" ? null : askDay ? (
         <div className="grid gap-4 rounded-lg border border-border p-3 sm:grid-cols-3">
-          <Field label="Conference day">
+          <Field label={forMeetings ? "Day" : "Conference day"}>
             <Input type="date" name="conferenceDay" required value={day} onChange={(e) => setDay(e.target.value)} />
           </Field>
           <Field label="First meeting starts">
@@ -419,7 +509,18 @@ function TimesForm({
         </p>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      {!basics && <input type="hidden" name="meetingMinutes" value={meeting} />}
+      {!extras && <input type="hidden" name="gapMinutes" value={gap} />}
+      {!extras &&
+        breaks.map((b) => (
+          <span key={b.key} hidden>
+            <input type="hidden" name="breakStart" value={b.start} />
+            <input type="hidden" name="breakMinutes" value={b.minutes} />
+            <input type="hidden" name="breakLabel" value={b.label} />
+          </span>
+        ))}
+      <div className={`grid gap-4 sm:grid-cols-2 ${basics && extras ? "" : "sm:max-w-md sm:grid-cols-1"}`}>
+        {basics && (
         <Field label="Each meeting">
           <Select name="meetingMinutes" value={meeting} onChange={(e) => setMeeting(Number(e.target.value))}>
             {MEETING_LENGTHS.map((m) => (
@@ -429,6 +530,8 @@ function TimesForm({
             ))}
           </Select>
         </Field>
+        )}
+        {extras && (
         <Field label="Time between meetings" hint={`A moment to write notes or let the next ${w.family} in.`}>
           <Select name="gapMinutes" value={gap} onChange={(e) => setGap(Number(e.target.value))}>
             {GAP_LENGTHS.map((m) => (
@@ -438,12 +541,18 @@ function TimesForm({
             ))}
           </Select>
         </Field>
+        )}
       </div>
 
+      {extras && (
       <div>
         <p className="text-sm font-semibold">Breaks</p>
         <p className="text-sm text-muted">
-          {weekly ? "A time you're never free, on every day you meet. No meetings are booked during them." : "Dinner, or a few minutes to catch up. No meetings are booked during them."}
+          {weekly
+            ? "A time you're never free, on every day you meet. No meetings are booked during them."
+            : forMeetings
+              ? "Lunch, or a few minutes to catch up. No meetings are booked during them."
+              : "Dinner, or a few minutes to catch up. No meetings are booked during them."}
         </p>
         {breaks.length > 0 && (
           <ul className="mt-3 space-y-3">
@@ -487,6 +596,7 @@ function TimesForm({
           </Button>
         )}
       </div>
+      )}
 
       <div className="rounded-lg border border-border bg-background p-4">
         {weekly ? (
@@ -533,13 +643,37 @@ function TimesForm({
         )}
       </div>
 
-      <SaveCancel editing={editing} onCancel={onCancel} label="Save meeting times" saved={Boolean(initial.times_saved_at)} />
+      {outside.length > 0 && (
+        <div className="rounded-lg border border-warning/40 bg-warning-soft p-4 text-sm leading-6" role="status">
+          <p className="font-semibold">
+            {outside.length === 1 ? "1 booked meeting doesn't" : `${outside.length} booked meetings don't`} fit these times:
+          </p>
+          <ul className="mt-1 list-disc pl-5">
+            {outside.map((b) => (
+              <li key={`${b.date}-${b.time}-${b.who}`}>
+                {b.who}, {weekly ? `${formatDate(b.date, { year: undefined })} at ` : ""}
+                {displayTime(b.time)}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1">They stay booked. After saving, reschedule or cancel them on Your meetings, so no one turns up at a time you&apos;re not there.</p>
+          <label className="mt-2 flex gap-3">
+            <input type="checkbox" name="confirmOutside" required className="mt-1 h-4 w-4 shrink-0 accent-[var(--brand)]" />
+            <span className="font-medium">Save anyway. I&apos;ll reschedule or cancel {outside.length === 1 ? "it" : "them"}</span>
+          </label>
+        </div>
+      )}
+      {autosave ? (
+        <AutosaveBar status={auto.status} retry={auto.retry} next={autosave.next} />
+      ) : (
+        <SaveCancel editing={editing} onCancel={onCancel} label="Save meeting times" saved={Boolean(initial.times_saved_at)} />
+      )}
     </ActionForm>
   );
 }
 
 /** Days off, with weekly hours: holidays, field trips, or a break like winter break. Saved on their own tab. */
-export function DaysOffForm({ action, closedDates, meeting }: { action: Action; closedDates: string[]; meeting?: boolean }) {
+export function DaysOffForm({ action, closedDates, meeting, autosave }: { action: Action; closedDates: string[]; meeting?: boolean; autosave?: boolean }) {
   const [version, setVersion] = useState(0);
   const [editing, setEditing] = useEditing("daysoff");
   return (
@@ -548,6 +682,7 @@ export function DaysOffForm({ action, closedDates, meeting }: { action: Action; 
       action={action}
       closedDates={closedDates}
       meeting={meeting}
+      autosave={autosave}
       editing={editing}
       setEditing={setEditing}
       onCancel={() => {
@@ -562,24 +697,44 @@ function DaysOffFields({
   action,
   closedDates,
   meeting,
+  autosave,
   editing,
-  setEditing,
+  setEditing: setEditingNow,
   onCancel,
 }: {
   action: Action;
   closedDates: string[];
   meeting?: boolean;
+  autosave?: boolean;
   editing: boolean;
   setEditing: (on: boolean) => void;
   onCancel: () => void;
 }) {
   const w = whoBooks(meeting);
+  const auto = useAutosaveForm(Boolean(autosave), "A change to your days off");
+  const anchor = useRef<HTMLSpanElement>(null);
+  const setEditing = (on: boolean) => {
+    if (!autosave) return setEditingNow(on);
+    if (on) setTimeout(() => {
+      const f = anchor.current?.closest("form");
+      if (f) auto.edited(f);
+    }, 0);
+  };
   // Days off as runs of dates (a single day, or a break like Dec 21 – Jan 4).
   const [daysOff, setDaysOff] = useState<DaysOffDraft[]>(() => dateRuns(closedDates).map((r, i) => ({ key: i, ...r })));
   const [nextKey, setNextKey] = useState(100);
   const offDates = [...new Set(daysOff.flatMap((d) => datesBetween(d.from, d.to)))];
   return (
-    <ActionForm action={action} resetOnSuccess={false} className="space-y-4" onEdit={() => setEditing(true)} onSuccess={() => setEditing(false)}>
+    <ActionForm
+      action={action}
+      resetOnSuccess={false}
+      className="space-y-4"
+      onEdit={autosave ? auto.edited : () => setEditing(true)}
+      onSuccess={autosave ? auto.saved : () => setEditing(false)}
+      onError={autosave ? auto.failed : undefined}
+      quiet={Boolean(autosave)}
+    >
+      <span ref={anchor} hidden />
       {daysOff.length > 0 ? (
         <ul className="space-y-3">
           {daysOff.map((d) => (
@@ -632,7 +787,11 @@ function DaysOffFields({
       >
         + Add a day off
       </Button>
-      <SaveCancel editing={editing} onCancel={onCancel} label="Save days off" />
+      {autosave ? (
+        <AutosaveStatus status={auto.status} retry={auto.retry} />
+      ) : (
+        <SaveCancel editing={editing} onCancel={onCancel} label="Save days off" />
+      )}
     </ActionForm>
   );
 }
@@ -652,6 +811,10 @@ type PlaceProps = {
   lastRoom?: string | null;
   /** Everything this needs is saved (nothing left to fill in before publishing). */
   saved?: boolean;
+  /** The setup step: in person and video only (phone calls are in More options). */
+  part?: "basics";
+  /** Save a moment after each change, with this step next. */
+  autosave?: { next?: { href: string; label: string } };
 };
 
 /** Step 2: in person, video (one meeting with a waiting room for the whole time), or the family's choice. */
@@ -685,12 +848,16 @@ function PlaceForm({
   onCancel,
   lastRoom,
   saved,
+  part,
+  autosave,
 }: PlaceProps & { editing: boolean; setEditing: (on: boolean) => void; onCancel: () => void }) {
   const w = whoBooks(meeting);
+  const auto = useAutosaveForm(Boolean(autosave), "A change to where you'll meet");
   const [modes, setModes] = useState<Mode[]>(modesOf(initial));
   const [link, setLink] = useState(initial.video_link ?? "");
   const [passcode, setPasscode] = useState(initial.video_passcode ?? "");
-  const [ownLink, setOwnLink] = useState(initial.own_link);
+  // Ways to meet on this form (the setup step leaves phone calls to More options; they ride along).
+  const shown = MODES.filter((m) => part !== "basics" || m.value !== "phone");
   const inPerson = modes.includes("in_person");
   const video = modes.includes("video");
   const toggle = (m: Mode) => setModes((now) => (now.includes(m) ? now.filter((x) => x !== m) : [...now, m]));
@@ -701,14 +868,17 @@ function PlaceForm({
       action={action}
       resetOnSuccess={false}
       className="space-y-5"
-      onEdit={() => setEditing(true)}
-      onSuccess={() => setEditing(false)}
+      onEdit={autosave ? auto.edited : () => setEditing(true)}
+      onSuccess={autosave ? auto.saved : () => setEditing(false)}
+      onError={autosave ? auto.failed : undefined}
+      quiet={Boolean(autosave)}
     >
+      {part === "basics" && modes.includes("phone") && <input type="hidden" name="modes" value="phone" />}
       <fieldset>
         <legend className="text-sm font-semibold">How will you meet?</legend>
         <p className="mt-1 text-sm text-muted">Choose all that work for you. With more than one, each {w.family} picks when they book.</p>
-        <div className="mt-2 grid gap-2 sm:grid-cols-3">
-          {MODES.map((m) => (
+        <div className={`mt-2 grid gap-2 ${shown.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+          {shown.map((m) => (
             <label
               key={m.value}
               className={`flex cursor-pointer gap-3 rounded-lg border p-3 ${modes.includes(m.value) ? "border-brand bg-brand-soft" : "border-field-border"}`}
@@ -761,40 +931,7 @@ function PlaceForm({
       {video && (
         <div className="space-y-4">
           <WaitingRoomGuide hours={hours} meeting={meeting} />
-          <fieldset>
-            <legend className="text-sm font-semibold">How do {w.families} get the link?</legend>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              {[
-                { own: false, label: "Paste it here", hint: `We send it to each ${w.family} in their confirmation and reminder.` },
-                { own: true, label: "I'll add it to each invite", hint: "You add a video link to each meeting's calendar invite yourself." },
-              ].map((o) => (
-                <label
-                  key={o.label}
-                  className={`flex cursor-pointer gap-3 rounded-lg border p-3 ${ownLink === o.own ? "border-brand bg-brand-soft" : "border-field-border"}`}
-                >
-                  <input
-                    type="radio"
-                    name="linkSource"
-                    value={o.own ? "own" : "here"}
-                    checked={ownLink === o.own}
-                    onChange={() => setOwnLink(o.own)}
-                    className="mt-1 h-4 w-4 shrink-0 accent-[var(--brand)]"
-                  />
-                  <span>
-                    <span className="block font-semibold">{o.label}</span>
-                    <span className="block text-sm text-muted">{o.hint}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          {ownLink ? (
-            <p className="rounded-md bg-background px-3 py-2 text-sm">
-              <strong>You&apos;ll need to add a video link to the calendar invite for each meeting.</strong> We won&apos;t
-              send {w.families} a link; they&apos;re told it will come in your invite before their meeting. Each {w.family}&apos;s
-              email is on your list once they book.
-            </p>
-          ) : (
+          {/* One pasted link for everyone: a link added to each invite never reached people, since the invite comes from us (decisions 2026-11-07, finding 1). */}
             <>
               <Field label="Meeting link" hint={`Only ${w.families} who book get it, in their confirmation and reminder. It's never on your public page.`}>
                 <div className="flex flex-col gap-2 sm:flex-row">
@@ -874,7 +1011,6 @@ function PlaceForm({
                 </span>
               </label>
             </>
-          )}
         </div>
       )}
 
@@ -884,7 +1020,7 @@ function PlaceForm({
         </p>
       )}
 
-      {modes.includes("phone") && (
+      {part !== "basics" && modes.includes("phone") && (
         <div className="rounded-lg border border-border bg-brand-soft p-4 text-sm leading-6">
           <p className="font-semibold">You call each {w.family}</p>
           <p className="mt-1">
@@ -898,7 +1034,11 @@ function PlaceForm({
         </div>
       )}
 
-      <SaveCancel editing={editing} onCancel={onCancel} label="Save" disabled={!modes.length} saved={saved} />
+      {autosave ? (
+        <AutosaveBar status={auto.status} retry={auto.retry} next={autosave.next} />
+      ) : (
+        <SaveCancel editing={editing} onCancel={onCancel} label="Save" disabled={!modes.length} saved={saved} />
+      )}
     </ActionForm>
   );
 }
@@ -922,7 +1062,7 @@ function WaitingRoomGuide({ hours, meeting }: { hours: string; meeting?: boolean
             Sign in with your <strong>{w.school}</strong> Zoom account. Free personal accounts end every meeting after 40
             minutes, and {w.families} in the waiting room count toward that time.
           </li>
-          <li>Schedule a meeting from your first conference to your last.</li>
+          <li>Schedule a meeting from your first {meeting ? "meeting" : "conference"} to your last.</li>
           <li>
             Under Security, tick <strong>Waiting Room</strong>. Leave &ldquo;Allow participants to join before
             host&rdquo; off.
@@ -948,5 +1088,61 @@ function WaitingRoomGuide({ hours, meeting }: { hours: string; meeting?: boolean
         </ol>
       </details>
     </div>
+  );
+}
+
+/**
+ * More options: phone calls, on or off. Saves itself; people give the number to call when they
+ * book, so nothing else is needed.
+ */
+export function MeetingPhoneForm({ action, on, meeting }: { action: Action; on: boolean; meeting?: boolean }) {
+  const w = whoBooks(meeting);
+  const auto = useAutosaveForm(true, "A change to phone calls");
+  const [checked, setChecked] = useState(on);
+  return (
+    <ActionForm action={action} resetOnSuccess={false} className="space-y-3" onEdit={auto.edited} onSuccess={auto.saved} onError={auto.failed} quiet>
+      <label className={`flex cursor-pointer gap-3 rounded-lg border p-3 ${checked ? "border-brand bg-brand-soft" : "border-field-border"}`}>
+        <input type="checkbox" name="phone" checked={checked} onChange={(e) => setChecked(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[var(--brand)]" />
+        <span>
+          <span className="block font-semibold">Phone calls</span>
+          <span className="block text-sm text-muted">You call each {w.family} at the number they give. Your number isn&apos;t shared.</span>
+        </span>
+      </label>
+      {checked && (
+        <p className="text-sm leading-6">
+          Calling from your own phone? In the US, dial <strong>*67</strong> before the number to hide yours. Some {w.families} don&apos;t answer
+          hidden numbers, so a {w.school} phone or calling app works best.
+        </p>
+      )}
+      <AutosaveStatus status={auto.status} retry={auto.retry} />
+    </ActionForm>
+  );
+}
+
+/** A small status line for a card that saves itself, inside a page whose bar is elsewhere. */
+function AutosaveStatus({ status, retry }: { status: ReturnType<typeof useAutosaveForm>["status"]; retry: () => void }) {
+  return (
+    <p className="min-h-6 text-sm" role="status">
+      {status.kind === "failed" ? (
+        <span className="font-semibold text-danger">
+          <span aria-hidden>▲ </span>Not saved. {status.error}{" "}
+          {status.retry && (
+            <button type="button" onClick={retry} className="underline underline-offset-4">
+              Retry
+            </button>
+          )}
+        </span>
+      ) : status.kind === "incomplete" ? (
+        <span className="font-medium text-warning">
+          <span aria-hidden>◆ </span>Not saved yet. Fill in “{status.what}”.
+        </span>
+      ) : status.kind === "saving" || status.kind === "waiting" ? (
+        <span className="text-muted">Saving…</span>
+      ) : status.kind === "saved" ? (
+        <span className="font-medium">
+          <span aria-hidden className="text-success">✓ </span>Saved
+        </span>
+      ) : null}
+    </p>
   );
 }

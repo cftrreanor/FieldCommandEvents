@@ -182,7 +182,7 @@ export const SYSTEM_EMAILS: SystemEmail[] = [
     starting: {
       subject: "New {{kind}} booked: {{when}}",
       heading: "A family booked a {{kind}}",
-      body: "{{who}} booked a {{kind}} with you ({{event_name}}). A calendar invite is attached, so it's on your calendar.\n\nAfter the meeting, mark it Met or No-show on your Meetings page, so your records are complete.",
+      body: "{{who}} booked a {{kind}} with you ({{event_name}}). Open the attached calendar invite to add it to your calendar.\n\nAfter the meeting, mark it Met or No-show on your Meetings page, so your records are complete.",
       button_label: "Open your Meetings page",
     },
     locked: ["Then: when, where, and who's coming"],
@@ -250,7 +250,7 @@ export const SYSTEM_EMAILS: SystemEmail[] = [
       body: "Hi {{first_name}}, you're booked to meet {{teacher}} {{about_child}} ({{event_name}}).",
       button_label: "Change or cancel",
     },
-    locked: ["A calendar invite is attached, so it's on your calendar with the details.", bookingRows],
+    locked: ["Open the attached calendar invite to add it to your calendar, with the details.", bookingRows],
   },
   {
     key: "family_booking_changed",
@@ -266,7 +266,7 @@ export const SYSTEM_EMAILS: SystemEmail[] = [
       body: "Hi {{first_name}}, you're booked to meet {{teacher}} {{about_child}} ({{event_name}}).",
       button_label: "Change or cancel",
     },
-    locked: ["A calendar invite is attached, so it's on your calendar with the details.", bookingRows],
+    locked: ["Open the attached calendar invite to add it to your calendar, with the details.", bookingRows],
   },
   {
     key: "family_booking_reminder",

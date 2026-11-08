@@ -1,9 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { linkFrom, passcodeFrom } from "@/lib/meeting-link";
 import { friendlyDbError, type ActionState } from "@/lib/action-state";
 import { requireUser } from "@/lib/auth";
+import { isMeeting } from "@/lib/event-types";
+import { formatPhone } from "@/lib/phone";
 import {
   AHEAD_DAYS,
   GAP_LENGTHS,
@@ -16,6 +19,7 @@ import {
   type ConferenceBreak,
   type Mode,
   type WeeklyRange,
+  bookingsOutside,
 } from "@/lib/conferences";
 import { isSchemaError } from "@/lib/schema-check";
 import { conferenceBookedCount } from "@/lib/conference-access";
@@ -25,7 +29,8 @@ import { bookingEmail, bookingLink, emailTeacher, meetingWhen, withCallPhone, ty
 import { getOrigin } from "@/lib/data";
 import { pause, sendEmail } from "@/lib/email";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
-import { zonedToUtc } from "@/lib/time";
+import { utcToZonedDate, utcToZonedTime, zonedToUtc } from "@/lib/time";
+import { displayTime } from "@/lib/schedule";
 
 const TIME = /^\d{2}:\d{2}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -89,6 +94,12 @@ export async function saveMeetingTimes(eventId: string, _prev: ActionState, form
     };
   }
   if (current.legacy && weekly) return { error: "Weekly hours need a database update first. Please write to us." };
+  // Booked meetings the new times leave out: they stay booked, but saving needs the organizer's tick
+  // (the page names them first; decisions 2026-11-07, finding 2).
+  if (booked > 0 && formData.get("confirmOutside") !== "on") {
+    const left = await bookingsLeftOut(supabase, eventId, event.timezone, formData, weekly, { meeting_minutes: meeting, gap_minutes: gap, breaks });
+    if (left) return { error: left };
+  }
   const common = {
     meeting_minutes: meeting,
     gap_minutes: gap,
@@ -338,9 +349,14 @@ export async function cancelMeeting(eventId: string, bookingId: string, _prev?: 
     revalidatePath(`/e/${conf.event.slug}/book`);
   }
   refresh(eventId);
+  // The booking is gone once canceled, so if the email didn't go out, the message keeps how to reach them (decisions 2026-11-07).
+  const who = conf && isMeeting(conf.event.event_type) ? "them" : "the family";
+  const contacts = ((booking as unknown as Booking | null)?.parents ?? []).map((p) => `${p.name} (${[p.email, formatPhone(p.phone ?? null)].filter(Boolean).join(", ")})`);
   return {
     ok: true,
-    message: emailed ? "Canceled. We emailed the family, and the time is open again." : "Canceled, and the time is open again. We couldn't email the family, so please let them know.",
+    message: emailed
+      ? `Canceled. We emailed ${who}, and the time is open again.`
+      : `Canceled, and the time is open again. We couldn't email ${who}, so please let them know: ${contacts.join("; ") || "their details weren't found"}.`,
   };
 }
 
@@ -411,4 +427,108 @@ export async function setMeetingOutcome(eventId: string, bookingId: string, outc
   if (error) return { error: friendlyDbError(error) };
   revalidatePath(`/dashboard/events/${eventId}/conferences/meetings`);
   return { ok: true };
+}
+
+/** More options: phone calls on or off. The other ways to meet stay as they are. */
+export async function saveMeetingPhone(eventId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireUser();
+  const supabase = await createClient();
+  const { settings, saved } = await loadConferenceSettings(supabase, eventId);
+  const now: Mode[] = (saved ? (settings.meeting_modes ?? []) : []).filter((m) => m !== "phone");
+  const modes = MODES.map((m) => m.value).filter((m) => now.includes(m) || (m === "phone" && formData.get("phone") === "on"));
+  if (!modes.length) return { error: "Choose at least one way to meet. Add in person or video on Where you'll meet first." };
+  const error = await saveSettings(eventId, { meeting_modes: modes });
+  if (error) return { error: friendlyDbError(error) };
+  refresh(eventId);
+  return { ok: true, message: "Saved." };
+}
+
+/** "2 booked meetings don't fit these times…", when the new times leave any out, or null. */
+async function bookingsLeftOut(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  eventId: string,
+  tz: string,
+  formData: FormData,
+  weekly: boolean,
+  lengths: { meeting_minutes: number; gap_minutes: number; breaks: ConferenceBreak[] },
+) {
+  const [{ data }, { data: ev }] = await Promise.all([
+    supabase.from("conference_bookings").select("starts_at, child_name, parents").eq("event_id", eventId),
+    supabase.from("events").select("starts_on, window_start, window_end").eq("id", eventId).maybeSingle(),
+  ]);
+  const booked = ((data ?? []) as { starts_at: string; child_name: string | null; parents: { name: string }[] }[]).map((b) => ({
+    who: b.child_name || b.parents[0]?.name || "Someone",
+    date: utcToZonedDate(b.starts_at, tz),
+    time: utcToZonedTime(b.starts_at, tz),
+  }));
+  const days = formData.getAll("weeklyDay").map(Number);
+  const froms = formData.getAll("weeklyStart").map(String);
+  const tos = formData.getAll("weeklyEnd").map(String);
+  const out = bookingsOutside(booked, {
+    schedule: weekly ? "weekly" : "one_day",
+    day: String(formData.get("conferenceDay") ?? ev?.starts_on ?? ""),
+    from: String(formData.get("startTime") ?? (ev ? utcToZonedTime(ev.window_start, tz) : "")),
+    to: String(formData.get("endTime") ?? (ev ? utcToZonedTime(ev.window_end, tz) : "")),
+    weekly: days.map((d, i) => ({ day: d, start: froms[i], end: tos[i] })),
+    firstDay: String(formData.get("weeklyFrom") ?? ""),
+    lastDay: String(formData.get("weeklyTo") ?? ""),
+    lengths,
+  });
+  if (!out.length) return null;
+  return `${out.length === 1 ? "1 booked meeting doesn't" : `${out.length} booked meetings don't`} fit these times: ${out.map((b) => `${b.who} at ${displayTime(b.time)}`).join(", ")}. Tick "Save anyway" to keep them booked and save, then reschedule or cancel them on Your meetings.`;
+}
+
+/**
+ * Booked meetings keep an event to one day, so "Need more times? Make a weekly copy" makes a new
+ * draft with the same setup (length, breaks, where you'll meet) set to every week, without the
+ * bookings, and opens More options to pick the days and hours (decisions 2026-11-07, finding 3).
+ */
+export async function copyAsWeekly(eventId: string): Promise<void> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const [{ data: ev }, { settings }] = await Promise.all([
+    supabase
+      .from("events")
+      .select("organization_id, event_type, name, slug, timezone, starts_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng")
+      .eq("id", eventId)
+      .maybeSingle(),
+    loadConferenceSettings(supabase, eventId),
+  ]);
+  if (!ev) redirect(`/dashboard/events/${eventId}`);
+  const { data: copy, error } = await supabase
+    .from("events")
+    .insert({
+      organization_id: ev.organization_id,
+      event_type: ev.event_type,
+      name: `${ev.name} (every week)`.slice(0, 120),
+      slug: `${ev.slug}-weekly-${Math.random().toString(36).slice(2, 6)}`,
+      timezone: ev.timezone,
+      starts_on: ev.starts_on,
+      ends_on: ev.starts_on,
+      window_start: ev.window_start,
+      window_end: ev.window_end,
+      venue_name: ev.venue_name,
+      venue_address: ev.venue_address ?? "",
+      venue_place_id: ev.venue_place_id,
+      venue_lat: ev.venue_lat,
+      venue_lng: ev.venue_lng,
+      created_by: user.id,
+    })
+    .select("id")
+    .single();
+  if (error || !copy) redirect(`/dashboard/events/${eventId}/conferences?tab=times&copy=failed`);
+  await saveSettings(copy.id, {
+    meeting_minutes: settings.meeting_minutes,
+    gap_minutes: settings.gap_minutes,
+    breaks: settings.breaks,
+    meeting_modes: settings.meeting_modes ?? null,
+    room: settings.room,
+    video_link: settings.video_link,
+    video_passcode: settings.video_passcode ?? null,
+    waiting_room_confirmed: settings.waiting_room_confirmed,
+    schedule: "weekly",
+    weekly_hours: [],
+  });
+  revalidatePath("/dashboard");
+  redirect(`/dashboard/events/${copy.id}/conferences/options`);
 }

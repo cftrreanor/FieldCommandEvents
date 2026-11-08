@@ -50,9 +50,9 @@ export type Teacher = {
   shared?: boolean;
 };
 
-/** Who sees a family's details: "Ms. Ruiz and their co-hosts", plus anyone else they notify. */
+/** Who sees a family's details: "Ms. Ruiz and the people helping run this", plus anyone else they notify (no in-app role names on public pages). */
 export const whoSees = (teacher: Pick<Teacher, "name" | "shared">) =>
-  teacher.shared ? `${teacher.name}, their co-hosts, and the people they've chosen to notify` : `${teacher.name} and their co-hosts`;
+  teacher.shared ? `${teacher.name}, the people helping run this, and the people they've chosen to notify` : `${teacher.name} and the people helping run this`;
 
 export const BOOKING_COLUMNS = "id, starts_at, child_name, parents, meeting_mode, note, calendar_sequence";
 
@@ -264,14 +264,15 @@ export async function bookingEmail(
                 ? "An updated calendar invite is attached, so your calendar shows the new day."
                 : kind === "rescheduled"
                   ? "An updated calendar invite is attached, so your calendar shows the new time."
-                  : "A calendar invite is attached, so it's on your calendar with the details.",
+                  : "Open the attached calendar invite to add it to your calendar, with the details.",
             ]
           : []),
       ],
       rows: [
         ...noteRow,
         { title: "When", detail: when, strong: true },
-        { title: place.title, detail: place.lines.join(" ") },
+        // Each on its own line, so an address never runs into the next sentence (decisions 2026-11-07).
+        { title: place.title, detail: place.lines.join("\n") },
         ...(place.passcode ? [{ title: "Passcode", detail: place.passcode, strong: true }] : []),
         ...(b.parents.length > 1 ? [{ title: b.meeting_mode === "phone" ? "On the call" : "Coming", detail: b.parents.map((p) => p.name).join(", ") }] : []),
         { title: b.child_name ? "Your child's privacy" : "Your privacy", detail: privacyLine(teacher, s.schedule === "weekly" || word === "meeting", Boolean(b.child_name)) },
@@ -408,7 +409,7 @@ export function teacherBookingEmail(
             : b.child_name ? `A family changed their ${word}` : `A ${word} was changed`),
       paragraphs: custom?.paragraphs ?? [
         kind === "booked"
-          ? `${family} booked a ${word} with you (${event.name}). A calendar invite is attached, so it's on your calendar.`
+          ? `${family} booked a ${word} with you (${event.name}). Open the attached calendar invite to add it to your calendar.`
           : kind === "rescheduled"
             ? `${who} moved the ${word} with ${family} to a new time. We emailed ${them}, and your calendar invite is updated.`
             : byTeacher

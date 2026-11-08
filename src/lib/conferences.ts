@@ -227,3 +227,32 @@ export function notReady(s: ConferenceSettings | null, venueAddress: string | nu
   return placeMissing(s, venueAddress, eventType);
 }
 
+
+/** A booked meeting, in the event's time zone: who, the day ("2026-11-14"), and the start ("09:15"). */
+export type BookedTime = { who: string; date: string; time: string };
+
+/**
+ * The booked meetings that no longer fit new times: on another day, outside the hours, in a break,
+ * or no longer on a meeting start (a new length or gap). They stay booked; the organizer is told
+ * who, before saving (decisions 2026-11-07, finding 2).
+ */
+export function bookingsOutside(
+  booked: BookedTime[],
+  t: {
+    schedule: Schedule;
+    day: string;
+    from: string;
+    to: string;
+    weekly: WeeklyRange[];
+    firstDay: string;
+    lastDay: string;
+    lengths: Pick<ConferenceSettings, "meeting_minutes" | "gap_minutes" | "breaks">;
+  },
+): BookedTime[] {
+  return booked.filter((b) => {
+    if (t.schedule === "one_day") return b.date !== t.day || !meetingStarts(t.from, t.to, t.lengths).includes(b.time);
+    if (b.date < t.firstDay || (t.lastDay && b.date > t.lastDay)) return true;
+    const weekday = new Date(`${b.date}T12:00:00Z`).getUTCDay();
+    return !t.weekly.some((h) => h.day === weekday && meetingStarts(h.start, h.end, t.lengths).includes(b.time));
+  });
+}

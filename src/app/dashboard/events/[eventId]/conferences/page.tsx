@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import QRCode from "qrcode";
 import { Badge, Card } from "@/components/ui";
-import { meetingStarts, meetingSummary, modesLabel, modesOf, notReady, placeMissing, weeklyMeetingCount, weeklySummary } from "@/lib/conferences";
+import { type BookedTime, meetingStarts, meetingSummary, modesLabel, modesOf, notReady, placeMissing, weeklyMeetingCount, weeklySummary } from "@/lib/conferences";
 import { loadConferenceSettings } from "@/lib/conference-settings";
 import { getEventAccess, getOrigin } from "@/lib/data";
 import { isPlacesConfigured } from "@/lib/places";
@@ -12,14 +12,15 @@ import { displayTime } from "@/lib/schedule";
 import { loadAccountPlan } from "@/lib/plan";
 import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate, formatDateRange, utcToZonedTime, zoneName } from "@/lib/time";
+import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime, zoneName } from "@/lib/time";
 import { publishAndOpen, setEventPublished } from "../../../actions";
 import { ActionButton, CopyLinkButton } from "../forms";
-import { saveDaysOff, saveMeetingPlace, saveMeetingTimes } from "./actions";
+import { copyAsWeekly, saveDaysOff, saveMeetingPlace, saveMeetingTimes } from "./actions";
 import { conferenceBookedCount } from "@/lib/conference-access";
 import { ConferenceSetup, DaysOffForm, MeetingPlaceForm, MeetingTimesForm, PublishWhenSaved } from "./conference-forms";
 import { SetupTabs } from "../../_components/setup-tabs";
 import { SavedBy } from "@/components/saved-by";
+import { lastRoom } from "./load";
 
 export const metadata: Metadata = { title: "Setup" };
 
@@ -57,6 +58,17 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
   const perWeek = weeklyMeetingCount(settings.weekly_hours, settings);
   const timesDone = Boolean(saved?.times_saved_at);
   const published = event.status === "published";
+  // Before publishing, setup is a series of steps that save themselves (decisions 2026-11-07): go to the one still to do.
+  if (!published) {
+    const stepBase = `/dashboard/events/${eventId}/conferences`;
+    redirect(
+      !timesDone || (weekly && !settings.weekly_hours.length)
+        ? `${stepBase}/times`
+        : placeMissing(saved, event.venue_address, event.event_type)
+          ? `${stepBase}/place`
+          : `/dashboard/events/${eventId}#publish`,
+    );
+  }
   const [booked, plan, { data: planReason }] = await Promise.all([
     conferenceBookedCount(supabase, eventId),
     loadAccountPlan(supabase, event.organization_id),
@@ -90,7 +102,7 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
       <Link href={`/dashboard/events/${eventId}`} className="text-sm text-muted hover:text-foreground">
         ← Back to {event.name}
       </Link>
-      <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">{meeting ? "Meeting Setup" : "Conference Setup"}</h1>
+      <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">{meeting ? "Meeting setup" : "Conference setup"}</h1>
       <SavedBy eventId={eventId} area="conference" className="mt-2" />
       <p className="mt-2 text-muted">
         {weekly
@@ -118,27 +130,15 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
                 Preview page
               </a>
               <Link href={`${base}/meetings`} className={smallButton}>
-                Meetings list
+                Your meetings
               </Link>
-              <PublishWhenSaved>
-                {published ? (
-                  <ActionButton
-                    action={setEventPublished.bind(null, eventId, false)}
-                    variant="stop"
-                    className="px-3! text-xs!"
-                    pendingText="Unpublishing…"
-                    confirmMessage={`Unpublish your ${meeting ? "meetings" : "conference"}? Your public page will be hidden. You can publish again anytime.`}
-                  >
-                    Unpublish
+              {!published && !blocked && (
+                <PublishWhenSaved>
+                  <ActionButton action={publishAndOpen.bind(null, eventId)} variant="go" className="px-3! text-xs!" pendingText="Publishing…">
+                    Publish
                   </ActionButton>
-                ) : (
-                  !blocked && (
-                    <ActionButton action={publishAndOpen.bind(null, eventId)} variant="go" className="px-3! text-xs!" pendingText="Publishing…">
-                      Publish
-                    </ActionButton>
-                  )
-                )}
-              </PublishWhenSaved>
+                </PublishWhenSaved>
+              )}
             </div>
             {!published && blocked && (
               <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm">
@@ -171,6 +171,27 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
               </div>
             </details>
           </div>
+          {/* Apart from the everyday buttons, and saying what happens to the people already booked (decisions 2026-11-07). */}
+          {published && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+              <p className="text-sm text-muted">
+                Unpublishing hides your booking page.{" "}
+                {booked > 0
+                  ? `The ${booked} ${booked === 1 ? "meeting" : "meetings"} already booked stay booked, and no one is emailed.`
+                  : "No one has booked yet."}
+              </p>
+              <PublishWhenSaved>
+                <ActionButton
+                  action={setEventPublished.bind(null, eventId, false)}
+                  variant="stop"
+                  pendingText="Unpublishing…"
+                  confirmMessage={`Unpublish your ${meeting ? "meetings" : "conference"}? Your booking page will be hidden.${booked > 0 ? ` The ${booked} ${booked === 1 ? "meeting" : "meetings"} already booked stay booked, and no one is emailed.` : ""} You can publish again anytime.`}
+                >
+                  Unpublish
+                </ActionButton>
+              </PublishWhenSaved>
+            </div>
+          )}
         </Card>
 
         <div className="mt-10">
@@ -216,6 +237,8 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
                   One day or the same times every week, how long each meeting is, and any breaks. Your hours are cut into meetings {who} can book.
                 </p>
                 <MeetingTimesForm
+                  bookedTimes={await bookedTimes(supabase, eventId, tz)}
+                  copyAction={copyAsWeekly.bind(null, eventId)}
                   action={saveMeetingTimes.bind(null, eventId)}
                   initial={settings}
                   date={event.starts_on}
@@ -270,22 +293,12 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
   );
 }
 
-/** The room and directions from the account's most recent other conference or meeting, if any. */
-async function lastRoom(supabase: Awaited<ReturnType<typeof createClient>>, orgId: string, eventId: string) {
-  const { data: others } = await supabase
-    .from("events")
-    .select("id")
-    .eq("organization_id", orgId)
-    .in("event_type", ["conference", "meeting"])
-    .neq("id", eventId);
-  if (!others?.length) return null;
-  const { data } = await supabase
-    .from("conference_settings")
-    .select("room")
-    .in("event_id", others.map((e) => e.id))
-    .not("room", "is", null)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return data?.room ?? null;
+/** Each booked meeting's person, day, and start, in the event's time zone (to name any new times leave out). */
+async function bookedTimes(supabase: Awaited<ReturnType<typeof createClient>>, eventId: string, tz: string): Promise<BookedTime[]> {
+  const { data } = await supabase.from("conference_bookings").select("starts_at, child_name, parents").eq("event_id", eventId).order("starts_at");
+  return ((data ?? []) as { starts_at: string; child_name: string | null; parents: { name: string }[] }[]).map((b) => ({
+    who: b.child_name || b.parents[0]?.name || "Someone",
+    date: utcToZonedDate(b.starts_at, tz),
+    time: utcToZonedTime(b.starts_at, tz),
+  }));
 }

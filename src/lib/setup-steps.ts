@@ -17,6 +17,15 @@ export const SETUP_STEPS = {
     { key: "volunteers", label: "Volunteers", path: "/volunteering", optional: true },
     { key: "publish", label: "Publish registration", path: "", optional: false },
   ],
+  // Meetings and parent-teacher conferences: the basics are enough to publish; the extras (every
+  // week, phone calls, breaks, time between meetings) wait in an optional step (decisions 2026-11-07).
+  meeting: [
+    { key: "details", label: "Details", path: "/edit", optional: false },
+    { key: "times", label: "Meeting times", path: "/conferences/times", optional: false },
+    { key: "place", label: "Where you'll meet", path: "/conferences/place", optional: false },
+    { key: "options", label: "More options", path: "/conferences/options", optional: true },
+    { key: "publish", label: "Publish", path: "", optional: false },
+  ],
 } as const;
 export type StepsKind = keyof typeof SETUP_STEPS;
 
@@ -24,6 +33,7 @@ export type StepsKind = keyof typeof SETUP_STEPS;
 export const STEP_PATHS: Record<StepsKind, string[]> = {
   volunteer: SETUP_STEPS.volunteer.map((s) => s.path),
   band: SETUP_STEPS.band.map((s) => s.path),
+  meeting: SETUP_STEPS.meeting.map((s) => s.path),
 };
 
 export type SetupStepFacts = {
@@ -37,5 +47,8 @@ export type SetupStepFacts = {
   middleNote: string | null;
   /** Shown beside the middle step's name ("3 jobs"). */
   count: string | null;
+  /** Steps with more than one middle step (meetings): each step's own done and note, by key. */
+  done?: Partial<Record<string, boolean>>;
+  notes?: Partial<Record<string, string | null>>;
 };
 

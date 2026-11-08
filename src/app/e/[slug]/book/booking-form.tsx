@@ -12,7 +12,7 @@ import { DayCalendar, longDay } from "./day-calendar";
 /** How a family can meet, as they see it. */
 export const FAMILY_MODES: { value: Mode; label: string; hint: string }[] = [
   { value: "in_person", label: "In person", hint: "Come to the classroom." },
-  { value: "video", label: "Video", hint: "Join online." },
+  { value: "video", label: "Video", hint: "The link to join is in your confirmation email." },
   { value: "phone", label: "Phone call", hint: "Your child's teacher calls you." },
 ];
 
@@ -39,6 +39,7 @@ export function BookingForm({
   askChild = true,
   calendar = false,
   meeting = false,
+  contact = null,
 }: {
   action: (prev: BookingState, formData: FormData) => Promise<BookingState>;
   times: OpenTime[];
@@ -58,6 +59,8 @@ export function BookingForm({
   calendar?: boolean;
   /** Meetings: "meeting" where conferences say "conference", and no school wording. */
   meeting?: boolean;
+  /** Who to write to when every time is booked (shown only then). */
+  contact?: string | null;
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState(action, {});
@@ -134,6 +137,19 @@ export function BookingForm({
         <h2 className="text-2xl font-semibold">You&apos;re booked</h2>
         <p className="text-lg font-medium">{b.when}</p>
         <p>{b.child ? `Conference for ${b.child}.` : `${meeting ? "Meeting" : "Conference"} with ${teacher}.`}</p>
+        {/* How and where, so no one has to open the email to find out (decisions 2026-11-07). */}
+        {mode && (
+          <p>
+            <span className="font-semibold">{FAMILY_MODES.find((x) => x.value === mode)?.label}:</span>{" "}
+            {mode === "in_person"
+              ? place
+                ? `come to ${place}.`
+                : "the place is in your confirmation email."
+              : mode === "video"
+                ? "the link to join is in your confirmation email."
+                : `${teacher} calls you at the number you gave.`}
+          </p>
+        )}
         <p className="text-sm text-muted">
           {b.emailSent
             ? `We emailed a calendar invite to ${b.emails.join(" and ")}, with the details and a link to change or cancel. We'll remind you the day before.`
@@ -150,7 +166,20 @@ export function BookingForm({
     return (
       <Card>
         <p className="font-medium">Every time is booked.</p>
-        <p className="mt-1 text-sm text-muted">{meeting ? `Please contact ${teacher} to find another time.` : <>Please contact your child&apos;s teacher to find another time.</>}</p>
+        <p className="mt-1 text-sm text-muted">
+          {meeting ? `To find another time, write to ${teacher}` : <>To find another time, write to your child&apos;s teacher</>}
+          {contact ? (
+            <>
+              {" at "}
+              <a href={`mailto:${contact}`} className="font-medium text-brand underline underline-offset-4 [overflow-wrap:anywhere]">
+                {contact}
+              </a>
+              .
+            </>
+          ) : (
+            "."
+          )}
+        </p>
       </Card>
     );
   }
@@ -340,7 +369,7 @@ export function BookingForm({
         <Field
           label="Anything you'd like to talk about? (optional)"
           // Without the child's name, the note isn't about a student, so no medical caution.
-          hint={`Only ${teacher}${shared ? ", their co-hosts, and the people they've chosen to notify" : " and their co-hosts"} see this.${askChild ? " Please leave out health or medical details; share those with the school directly." : ""}`}
+          hint={`Only ${teacher}${shared ? ", the people helping run this, and the people they've chosen to notify" : " and the people helping run this"} see this.${askChild ? " Please leave out health or medical details; share those with the school directly." : ""}`}
         >
           <Textarea name="note" rows={3} maxLength={500} defaultValue={state.values?.note} />
         </Field>

@@ -20,7 +20,11 @@ export function SetupSteps({ eventId, kind, facts }: { eventId: string; kind: St
   const here = steps.findIndex((s) => pathname === `${base}${s.path}`);
   if (here < 0) return null;
   const last = steps.length - 1;
-  const done = steps.map((s, i) => (i === 0 ? true : i === last ? false : s.key === "volunteers" ? Boolean(facts.volunteersDone) : facts.middleDone));
+  const done = steps.map((s, i) =>
+    i === 0 ? true : i === last ? false : (facts.done?.[s.key] ?? (s.key === "volunteers" ? Boolean(facts.volunteersDone) : facts.middleDone)),
+  );
+  // What a required step still needs ("Add your hours"), from its own note or the middle step's.
+  const stepNote = (key: string, i: number) => (facts.notes && key in facts.notes ? (facts.notes[key] ?? null) : i === 1 ? facts.middleNote : null);
   const doneCount = done.filter(Boolean).length;
   return (
     <nav aria-label="Event setup" className="mb-6 print:hidden">
@@ -35,12 +39,12 @@ export function SetupSteps({ eventId, kind, facts }: { eventId: string; kind: St
           . {doneCount} of {steps.length} done.
         </span>
       </p>
-      <ol className={`mt-2 grid gap-x-3 gap-y-1 ${steps.length === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
+      <ol className={`mt-2 grid gap-x-3 gap-y-1 ${steps.length === 5 ? "grid-cols-2 sm:grid-cols-5" : steps.length === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
         {steps.map((s, i) => {
           const now = i === here;
           // A required middle step that still needs something: amber, saying what. An optional one stays neutral.
-          const needs = i === 1 && !done[i] && Boolean(facts.middleNote);
-          const optionalNote = s.optional && !done[i] ? (facts.volunteersNote ?? "Optional") : null;
+          const needs = !s.optional && i > 0 && i < last && !done[i] && Boolean(stepNote(s.key, i));
+          const optionalNote = s.optional && !done[i] ? ((s.key === "volunteers" ? facts.volunteersNote : facts.notes?.[s.key]) ?? "Optional") : null;
           // The step you're on says "Now", "Now · ready" once it has everything it needs, or "Now · not saved".
           const note =
             done[i] && !now
@@ -48,7 +52,7 @@ export function SetupSteps({ eventId, kind, facts }: { eventId: string; kind: St
               : now && unsaved
                 ? "Now · not saved"
                 : needs
-                  ? facts.middleNote
+                  ? stepNote(s.key, i)
                   : now
                     ? done[i] && i < last
                       ? "Now · ready"

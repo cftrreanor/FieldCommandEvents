@@ -5,6 +5,7 @@ import { loadSetupFacts } from "@/lib/setup-facts";
 import { bandRegistrationMissing, emptyJobsNote, setupChecklist, type SetupFacts } from "@/lib/setup-checklist";
 import { SetupSteps } from "@/components/volunteer-steps";
 import { STEP_PATHS, type SetupStepFacts, type StepsKind } from "@/lib/setup-steps";
+import { hasConferences } from "@/lib/event-types";
 
 /**
  * Every page of an event. On the day itself, the team's jobs of the day are a
@@ -18,8 +19,16 @@ export default async function EventLayout({ children, params }: LayoutProps<"/da
   // A volunteer event or band contest being set up: Details, its middle step (Jobs and shifts, or
   // Registration), and Publish as three steps along the top of those pages.
   const kind: StepsKind | null =
-    facts && !facts.published ? (facts.eventType === "volunteer" ? "volunteer" : facts.eventType === "band_contest" ? "band" : null) : null;
-  const steps = facts && kind ? (kind === "volunteer" ? volunteerSteps(facts) : bandSteps(facts)) : null;
+    facts && !facts.published
+      ? facts.eventType === "volunteer"
+        ? "volunteer"
+        : facts.eventType === "band_contest"
+          ? "band"
+          : hasConferences(facts.eventType)
+            ? "meeting"
+            : null
+      : null;
+  const steps = facts && kind ? (kind === "volunteer" ? volunteerSteps(facts) : kind === "band" ? bandSteps(facts) : meetingSteps(facts)) : null;
   return (
     <>
       {day && <DayBar day={day} />}
@@ -52,5 +61,18 @@ function bandSteps(f: SetupFacts): SetupStepFacts {
     // Optional: done once there's a job volunteers can see, and every job has something to sign up for.
     volunteersDone: (f.readyJobs ?? 0) > 0 && empty.length === 0,
     volunteersNote: empty.length ? `Optional · ${emptyJobsNote(empty)}` : "Optional",
+  };
+}
+
+/** Meetings and conferences: Meeting times and Where you'll meet each say what they still need; More options never blocks. */
+function meetingSteps(f: SetupFacts): SetupStepFacts {
+  const times = f.conferenceTimesMissing ?? null;
+  const place = f.conferencePlaceMissing ?? null;
+  return {
+    middleDone: !times,
+    middleNote: times,
+    count: null,
+    done: { times: !times, place: !place, options: false },
+    notes: { times, place: place?.replace(/\.$/, "") ?? null, options: "Optional" },
   };
 }
