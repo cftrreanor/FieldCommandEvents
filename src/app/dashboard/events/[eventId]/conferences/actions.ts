@@ -25,11 +25,11 @@ import { isSchemaError } from "@/lib/schema-check";
 import { conferenceBookedCount } from "@/lib/conference-access";
 import { loadConferenceSettings } from "@/lib/conference-settings";
 import { emailMovedMeetings, loadConference } from "@/app/e/[slug]/book/data";
-import { bookingEmail, bookingLink, emailTeacher, meetingWhen, withCallPhone, type Booking, type OrganizerNote } from "@/lib/conference-bookings";
+import { BOOKING_COLUMNS, bookingEmail, bookingLink, emailTeacher, meetingWhen, pickNewTimeEmail, withCallPhone, type Booking, type OrganizerNote } from "@/lib/conference-bookings";
 import { getOrigin } from "@/lib/data";
 import { pause, sendEmail } from "@/lib/email";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
-import { utcToZonedDate, utcToZonedTime, zonedToUtc } from "@/lib/time";
+import { formatDate, utcToZonedDate, utcToZonedTime, zonedToUtc } from "@/lib/time";
 import { displayTime } from "@/lib/schedule";
 
 const TIME = /^\d{2}:\d{2}$/;
@@ -53,143 +53,163 @@ async function saveSettings(eventId: string, values: Record<string, unknown>) {
   return error;
 }
 
-/** Step 1: one day or weekly hours, meeting length, the gap between meetings and any breaks. */
+/**
+ * Meeting times: one day or weekly hours, meeting length, the gap between meetings, breaks, and the
+ * booking window. The setup steps send only their own part ("basics": the day or weekly hours and
+ * the length; "extras": the gap, breaks, and booking window), and the rest comes from what's saved,
+ * so two steps (or two people) never overwrite each other with stale values (decisions 2026-11-08).
+ */
 export async function saveMeetingTimes(eventId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
   await requireUser();
-  const meeting = Number(formData.get("meetingMinutes"));
-  const gap = Number(formData.get("gapMinutes") ?? 0);
-  if (!(MEETING_LENGTHS as readonly number[]).includes(meeting)) return { error: "Pick how long each meeting is." };
-  if (!(GAP_LENGTHS as readonly number[]).includes(gap)) return { error: "Pick the time between meetings." };
-
-  const starts = formData.getAll("breakStart").map(String);
-  const minutes = formData.getAll("breakMinutes").map(String);
-  const labels = formData.getAll("breakLabel").map(String);
-  const breaks: ConferenceBreak[] = [];
-  for (let i = 0; i < starts.length; i++) {
-    if (!starts[i] && !minutes[i]) continue;
-    const m = Number(minutes[i]);
-    if (!TIME.test(starts[i]) || !Number.isInteger(m) || m < 5 || m > 240) {
-      return { error: "Give each break a start time and a length of 5 to 240 minutes, or remove it." };
-    }
-    breaks.push({ start: starts[i], minutes: m, label: labels[i]?.trim().slice(0, 60) || "Break" });
-  }
-  if (breaks.length > 8) return { error: "Add up to 8 breaks." };
-
+  const part = formData.get("part");
+  const ownsBasics = part !== "extras";
+  const ownsExtras = part !== "basics";
   const supabase = await createClient();
   const [{ data: event }, current, booked] = await Promise.all([
-    supabase.from("events").select("timezone, starts_on").eq("id", eventId).maybeSingle(),
+    supabase.from("events").select("timezone, starts_on, ends_on, window_start, window_end, event_type").eq("id", eventId).maybeSingle(),
     loadConferenceSettings(supabase, eventId),
     conferenceBookedCount(supabase, eventId),
   ]);
-  if (!event) return { error: "Only the conference's host can change it." };
-  const weekly = formData.get("schedule") === "weekly";
-  const was = current.settings.schedule;
-  // Families' meetings are kept as booked: switching between a day and weekly hours waits until they're canceled.
+  if (!event) return { error: "Only the event's hosts can change it." };
+  const s = current.settings;
+  const who = isMeeting(event.event_type) ? "People" : "Families";
+
+  const meeting = ownsBasics ? Number(formData.get("meetingMinutes")) : s.meeting_minutes;
+  const gap = ownsExtras ? Number(formData.get("gapMinutes") ?? 0) : s.gap_minutes;
+  if (!(MEETING_LENGTHS as readonly number[]).includes(meeting)) return { error: "Pick how long each meeting is." };
+  if (!(GAP_LENGTHS as readonly number[]).includes(gap)) return { error: "Pick the time between meetings." };
+  let breaks: ConferenceBreak[] = s.breaks;
+  if (ownsExtras) {
+    const starts = formData.getAll("breakStart").map(String);
+    const minutes = formData.getAll("breakMinutes").map(String);
+    const labels = formData.getAll("breakLabel").map(String);
+    breaks = [];
+    for (let i = 0; i < starts.length; i++) {
+      if (!starts[i] && !minutes[i]) continue;
+      const m = Number(minutes[i]);
+      if (!TIME.test(starts[i]) || !Number.isInteger(m) || m < 5 || m > 240) {
+        return { error: "Give each break a start time and a length of 5 to 240 minutes, or remove it." };
+      }
+      breaks.push({ start: starts[i], minutes: m, label: labels[i]?.trim().slice(0, 60) || "Break" });
+    }
+    if (breaks.length > 8) return { error: "Add up to 8 breaks." };
+    breaks = breaks.sort((a, b) => a.start.localeCompare(b.start));
+  }
+  const lengths = { meeting_minutes: meeting, gap_minutes: gap, breaks };
+
+  const weekly = ownsBasics ? formData.get("schedule") === "weekly" : s.schedule === "weekly";
+  const was = s.schedule;
+  // Booked meetings are kept as booked: switching between a day and weekly hours waits until they're canceled.
   if (booked > 0 && (weekly ? "weekly" : "one_day") !== was) {
     return {
       error:
         was === "weekly"
-          ? "Families have booked weekly meetings. Cancel them on your Meetings page first, or make a new conference for one day."
-          : "Families have booked your conference day. Cancel those meetings on your Meetings page first, or make a new conference for weekly hours.",
+          ? `${who} have booked weekly meetings. Cancel them on Your meetings first, or make a new event for one day.`
+          : `${who} have booked your day. Make a weekly copy for weekly hours instead.`,
     };
   }
   if (current.legacy && weekly) return { error: "Weekly hours need a database update first. Please write to us." };
-  // Booked meetings the new times leave out: they stay booked, but saving needs the organizer's tick
-  // (the page names them first; decisions 2026-11-07, finding 2).
-  if (booked > 0 && formData.get("confirmOutside") !== "on") {
-    const left = await bookingsLeftOut(supabase, eventId, event.timezone, formData, weekly, { meeting_minutes: meeting, gap_minutes: gap, breaks });
-    if (left) return { error: left };
-  }
-  const common = {
-    meeting_minutes: meeting,
-    gap_minutes: gap,
-    breaks: breaks.sort((a, b) => a.start.localeCompare(b.start)),
-    times_saved_at: new Date().toISOString(),
-  };
+  const common = { ...lengths, times_saved_at: ownsBasics ? new Date().toISOString() : s.times_saved_at };
+  const tz = event.timezone;
+  const confirmed = formData.get("confirmOutside") === "on";
 
   if (weekly) {
-    const days = formData.getAll("weeklyDay").map(String);
-    const froms = formData.getAll("weeklyStart").map(String);
-    const tos = formData.getAll("weeklyEnd").map(String);
-    const hours: WeeklyRange[] = [];
-    for (let i = 0; i < days.length; i++) {
-      const d = Number(days[i]);
-      if (!Number.isInteger(d) || d < 0 || d > 6 || !TIME.test(froms[i] ?? "") || !TIME.test(tos[i] ?? "")) {
-        return { error: "Give each block of weekly hours a day, a start, and an end." };
+    let hours: WeeklyRange[] = s.weekly_hours;
+    let from = event.starts_on;
+    let to = event.ends_on;
+    if (ownsBasics) {
+      const days = formData.getAll("weeklyDay").map(String);
+      const froms = formData.getAll("weeklyStart").map(String);
+      const tos = formData.getAll("weeklyEnd").map(String);
+      hours = [];
+      for (let i = 0; i < days.length; i++) {
+        const d = Number(days[i]);
+        if (!Number.isInteger(d) || d < 0 || d > 6 || !TIME.test(froms[i] ?? "") || !TIME.test(tos[i] ?? "")) {
+          return { error: "Give each block of weekly hours a day, a start, and an end." };
+        }
+        if (tos[i] <= froms[i]) return { error: `Your ${WEEKDAYS[d]} hours have to end after they start.` };
+        hours.push({ day: d, start: froms[i], end: tos[i] });
       }
-      if (tos[i] <= froms[i]) return { error: `Your ${WEEKDAYS[d]} hours have to end after they start.` };
-      hours.push({ day: d, start: froms[i], end: tos[i] });
+      if (!hours.length) return { error: "Pick at least one day you meet." };
+      if (hours.length > 21) return { error: "Add up to 21 blocks of weekly hours." };
+      from = String(formData.get("weeklyFrom") ?? "");
+      to = String(formData.get("weeklyTo") ?? "");
+      if (!DATE.test(from) || !DATE.test(to)) return { error: "Pick your first and last day." };
+      if (to < from) return { error: "Your last day has to be on or after your first day." };
+      if (Date.parse(to) - Date.parse(from) > 366 * 86_400_000) return { error: "Weekly hours can run for up to a year. Pick an earlier last day." };
     }
-    if (!hours.length) return { error: "Add your weekly hours." };
-    if (hours.length > 21) return { error: "Add up to 21 blocks of weekly hours." };
-    const from = String(formData.get("weeklyFrom") ?? "");
-    const to = String(formData.get("weeklyTo") ?? "");
-    if (!DATE.test(from) || !DATE.test(to)) return { error: "Pick your first and last day." };
-    if (to < from) return { error: "Your last day has to be on or after your first day." };
-    if (Date.parse(to) - Date.parse(from) > 366 * 86_400_000) return { error: "Weekly hours can run for up to a year. Pick an earlier last day." };
-    const notice = Number(formData.get("minNotice"));
-    const ahead = Number(formData.get("maxAhead"));
-    if (!(NOTICE_HOURS as readonly number[]).includes(notice)) return { error: "Pick how much notice families give." };
-    if (!(AHEAD_DAYS as readonly number[]).includes(ahead)) return { error: "Pick how far ahead families can book." };
-
+    const notice = ownsExtras ? Number(formData.get("minNotice") ?? s.min_notice_hours) : s.min_notice_hours;
+    const ahead = ownsExtras ? Number(formData.get("maxAhead") ?? s.max_days_ahead) : s.max_days_ahead;
+    if (!(NOTICE_HOURS as readonly number[]).includes(notice)) return { error: "Pick how much notice people give." };
+    if (!(AHEAD_DAYS as readonly number[]).includes(ahead)) return { error: "Pick how far ahead people can book." };
+    if (booked > 0 && !confirmed && hours.length) {
+      const left = await bookingsLeftOut(supabase, eventId, tz, { schedule: "weekly", day: from, from: "", to: "", weekly: hours, firstDay: from, lastDay: to, closed: s.closed_dates, lengths });
+      if (left) return { error: left };
+    }
     // Settings first (weekly hours may run more than one day), then the event's days.
-    const error = await saveSettings(eventId, {
-      ...common,
-      schedule: "weekly",
-      weekly_hours: sortWeekly(hours),
-      min_notice_hours: notice,
-      max_days_ahead: ahead,
-    });
+    const error = await saveSettings(eventId, { ...common, schedule: "weekly", weekly_hours: sortWeekly(hours), min_notice_hours: notice, max_days_ahead: ahead });
     if (error) return { error: friendlyDbError(error) };
-    const opens = hours.map((h) => h.start).sort()[0];
-    const closes = hours.map((h) => h.end).sort().at(-1)!;
-    const { error: daysError } = await supabase.rpc("reschedule_event", {
-      p_event_id: eventId,
-      p_starts_on: from,
-      p_ends_on: to,
-      p_window_start: zonedToUtc(from, opens, event.timezone).toISOString(),
-      p_window_end: zonedToUtc(to, closes, event.timezone).toISOString(),
-      p_timezone: event.timezone,
-    });
-    if (daysError) return { error: friendlyDbError(daysError) };
+    if (ownsBasics && hours.length) {
+      const opens = hours.map((h) => h.start).sort()[0];
+      const closes = hours.map((h) => h.end).sort().at(-1)!;
+      const { error: daysError } = await supabase.rpc("reschedule_event", {
+        p_event_id: eventId,
+        p_starts_on: from,
+        p_ends_on: to,
+        p_window_start: zonedToUtc(from, opens, tz).toISOString(),
+        p_window_end: zonedToUtc(to, closes, tz).toISOString(),
+        p_timezone: tz,
+      });
+      if (daysError) return { error: friendlyDbError(daysError) };
+    }
     refresh(eventId);
-    return { ok: true, message: "Meeting times saved." };
+    const told = await emailLeftOut(eventId, tz, formData, { schedule: "weekly", day: from, from: "", to: "", weekly: hours, firstDay: from, lastDay: to, closed: s.closed_dates, lengths });
+    // Some meetings were left out: Your meetings lists them first.
+    return { ok: true, message: `Meeting times saved.${told}`, goTo: confirmed ? `/dashboard/events/${eventId}/conferences/meetings` : undefined };
   }
 
-  // Changed the day or hours here: move the event too (as Edit details does).
-  // Booked meetings move with the day, and each family is emailed.
-  let moved: Awaited<ReturnType<typeof emailMovedMeetings>> | null = null;
-  const day = formData.get("conferenceDay");
-  if (day === null && was === "weekly") return { error: "Pick your conference day." };
-  if (day !== null) {
-    const date = String(day);
-    const from = String(formData.get("startTime") ?? "");
-    const to = String(formData.get("endTime") ?? "");
-    if (!DATE.test(date)) return { error: "Pick the conference day." };
+  // One day. Changed the day or hours here: the event moves too, and booked meetings move with the day
+  // (each person is emailed).
+  const dayField = ownsBasics ? formData.get("conferenceDay") : null;
+  if (dayField === null && was === "weekly" && ownsBasics) return { error: "Pick your day." };
+  const date = dayField !== null ? String(dayField) : event.starts_on;
+  const from = dayField !== null ? String(formData.get("startTime") ?? "") : utcToZonedTime(event.window_start, tz);
+  const to = dayField !== null ? String(formData.get("endTime") ?? "") : utcToZonedTime(event.window_end, tz);
+  if (dayField !== null) {
+    if (!DATE.test(date)) return { error: "Pick the day." };
     if (!TIME.test(from) || !TIME.test(to)) return { error: "Pick when your first meeting starts and your last one ends." };
     if (to <= from) return { error: "Your last meeting has to end after the first one starts." };
+  }
+  if (booked > 0 && !confirmed) {
+    // Booked meetings move with the day, so only their time of day has to fit.
+    const left = await bookingsLeftOut(supabase, eventId, tz, { schedule: "one_day", day: date, from, to, weekly: [], firstDay: date, lastDay: date, closed: [], lengths, movesWithDay: true });
+    if (left) return { error: left };
+  }
+  let moved: Awaited<ReturnType<typeof emailMovedMeetings>> | null = null;
+  if (dayField !== null) {
     const { error } = await supabase.rpc("reschedule_event", {
       p_event_id: eventId,
       p_starts_on: date,
       p_ends_on: date,
-      p_window_start: zonedToUtc(date, from, event.timezone).toISOString(),
-      p_window_end: zonedToUtc(date, to, event.timezone).toISOString(),
-      p_timezone: event.timezone,
+      p_window_start: zonedToUtc(date, from, tz).toISOString(),
+      p_window_end: zonedToUtc(date, to, tz).toISOString(),
+      p_timezone: tz,
     });
     if (error) return { error: friendlyDbError(error) };
     if (date !== event.starts_on && was === "one_day") moved = await emailMovedMeetings(eventId);
   }
-
   const error = await saveSettings(eventId, current.legacy ? common : { ...common, schedule: "one_day" });
   if (error) return { error: friendlyDbError(error) };
   refresh(eventId);
+  const told = await emailLeftOut(eventId, tz, formData, { schedule: "one_day", day: date, from, to, weekly: [], firstDay: date, lastDay: date, closed: [], lengths, movesWithDay: true });
+  if (confirmed && !moved?.moved) return { ok: true, message: `Meeting times saved.${told}`, goTo: `/dashboard/events/${eventId}/conferences/meetings` };
   if (moved?.moved) {
     const n = moved.moved === 1 ? "Your booked meeting" : `Your ${moved.moved} booked meetings`;
     return {
       ok: true,
       message: moved.allSent
-        ? `Meeting times saved. ${n} moved to the new day at the same time, and we emailed each family an updated calendar invite.`
-        : `Meeting times saved. ${n} moved to the new day at the same time. We couldn't email every family, so please check your Meetings page and let them know.`,
+        ? `Meeting times saved. ${n} moved to the new day at the same time, and we emailed each person an updated calendar invite.`
+        : `Meeting times saved. ${n} moved to the new day at the same time. We couldn't email everyone, so please check Your meetings and let them know.`,
     };
   }
   return { ok: true, message: "Meeting times saved." };
@@ -208,6 +228,25 @@ export async function saveDaysOff(eventId: string, _prev: ActionState, formData:
   const error = await saveSettings(eventId, { closed_dates: closed });
   if (error) return { error: friendlyDbError(error) };
   refresh(eventId);
+  // Booked meetings on a new day off stay booked: say who, so they can be moved (decisions 2026-11-08).
+  const { data: ev } = await supabase.from("events").select("timezone").eq("id", eventId).maybeSingle();
+  const { data: rows } = await supabase
+    .from("conference_bookings")
+    .select("starts_at, child_name, parents")
+    .eq("event_id", eventId)
+    .gte("starts_at", new Date().toISOString());
+  const tz = ev?.timezone ?? "America/Chicago";
+  const onDaysOff = ((rows ?? []) as { starts_at: string; child_name: string | null; parents: { name: string }[] }[]).filter((b) =>
+    closed.includes(utcToZonedDate(b.starts_at, tz)),
+  );
+  if (onDaysOff.length) {
+    return {
+      ok: true,
+      message: `Days off saved. ${onDaysOff.length === 1 ? "1 booked meeting is" : `${onDaysOff.length} booked meetings are`} on a day off: ${onDaysOff
+        .map((b) => `${b.child_name || b.parents[0]?.name || "Someone"}, ${formatDate(utcToZonedDate(b.starts_at, tz), { year: undefined })}`)
+        .join("; ")}. They're still booked: reschedule or cancel them on Your meetings.`,
+    };
+  }
   return { ok: true, message: "Days off saved." };
 }
 
@@ -233,7 +272,8 @@ export async function saveMeetingPlace(eventId: string, _prev: ActionState, form
   const link = linkFrom(pasted);
   const passcode = String(formData.get("videoPasscode") ?? "").trim() || passcodeFrom(pasted) || "";
   const waitingRoom = formData.get("waitingRoom") === "on";
-  const ownLink = video && formData.get("linkSource") === "own";
+  // One pasted link for everyone ("add it to each invite" is gone: decisions 2026-11-07).
+  const ownLink = false;
   const venueName = String(formData.get("venueName") ?? "").trim().slice(0, 120);
   const venueAddress = String(formData.get("venueAddress") ?? "").trim();
   const placeId = String(formData.get("venuePlaceId") ?? "").trim().slice(0, 300);
@@ -242,14 +282,23 @@ export async function saveMeetingPlace(eventId: string, _prev: ActionState, form
     return formData.get(k) && Number.isFinite(n) && Math.abs(n) <= limit ? n : null;
   };
   const fieldErrors: Record<string, string> = {};
-  if (inPerson && !venueAddress) fieldErrors.venueAddress = "Add your school's address.";
+  if (inPerson && !venueAddress) fieldErrors.venueAddress = "Add the address.";
   if (venueAddress.length > 300) fieldErrors.venueAddress = "Keep the address under 300 characters.";
   if (inPerson && !room) fieldErrors.room = "Add your room and how to find it.";
   if (room.length > 200) fieldErrors.room = "Keep this under 200 characters.";
-  if (video && !ownLink) {
-    if (!/^https:\/\/\S+$/.test(link) || link.length > 500) fieldErrors.videoLink = "Paste your meeting link. It starts with https://";
+  // The setup step saves what's there (the place, the room, the ways to meet) while the link is still
+  // to come; the step isn't done until it's added (decisions 2026-11-08). Meeting setup saves all or nothing.
+  const partial = formData.get("partial") === "1";
+  const linkOk = /^https:\/\/\S+$/.test(link) && link.length <= 500;
+  if (video) {
+    if (!linkOk && !(partial && !link)) fieldErrors.videoLink = "Paste your meeting link. It starts with https://";
     if (passcode.length > 50 || /\s/.test(passcode)) fieldErrors.videoPasscode = "Enter just the passcode, with no spaces.";
-    if (!waitingRoom) fieldErrors.waitingRoom = "Set up your meeting with a waiting room, then tick this.";
+    if (!waitingRoom && !partial) fieldErrors.waitingRoom = "Set up your meeting with a waiting room, then tick this.";
+  }
+  if (partial) {
+    // A missing address or room doesn't stop the rest saving in the setup step (the step says what's missing).
+    if (!venueAddress) delete fieldErrors.venueAddress;
+    if (!room) delete fieldErrors.room;
   }
   if (Object.keys(fieldErrors).length) {
     return { error: Object.values(fieldErrors)[0], fieldErrors };
@@ -273,7 +322,7 @@ export async function saveMeetingPlace(eventId: string, _prev: ActionState, form
   const place = {
     room: inPerson ? room : null,
     own_link: ownLink,
-    video_link: video && !ownLink ? link : null,
+    video_link: video && linkOk ? link : null,
     waiting_room_confirmed: video && !ownLink && waitingRoom,
   };
   let error = await saveSettings(eventId, { ...place, meeting_modes: modes, video_passcode: video && !ownLink && passcode ? passcode : null });
@@ -352,12 +401,10 @@ export async function cancelMeeting(eventId: string, bookingId: string, _prev?: 
   // The booking is gone once canceled, so if the email didn't go out, the message keeps how to reach them (decisions 2026-11-07).
   const who = conf && isMeeting(conf.event.event_type) ? "them" : "the family";
   const contacts = ((booking as unknown as Booking | null)?.parents ?? []).map((p) => `${p.name} (${[p.email, formatPhone(p.phone ?? null)].filter(Boolean).join(", ")})`);
-  return {
-    ok: true,
-    message: emailed
-      ? `Canceled. We emailed ${who}, and the time is open again.`
-      : `Canceled, and the time is open again. We couldn't email ${who}, so please let them know: ${contacts.join("; ") || "their details weren't found"}.`,
-  };
+  // Didn't go out: shown as a message that stays in the window (not a toast that fades), with how to reach them.
+  if (!emailed)
+    return { error: `Canceled, and the time is open again. We couldn't email ${who}, so please let them know: ${contacts.join("; ") || "their details weren't found"}.` };
+  return { ok: true, message: `Canceled. We emailed ${who}, and the time is open again.` };
 }
 
 /**
@@ -429,59 +476,28 @@ export async function setMeetingOutcome(eventId: string, bookingId: string, outc
   return { ok: true };
 }
 
-/** More options: phone calls on or off. The other ways to meet stay as they are. */
-export async function saveMeetingPhone(eventId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
-  await requireUser();
-  const supabase = await createClient();
-  const { settings, saved } = await loadConferenceSettings(supabase, eventId);
-  const now: Mode[] = (saved ? (settings.meeting_modes ?? []) : []).filter((m) => m !== "phone");
-  const modes = MODES.map((m) => m.value).filter((m) => now.includes(m) || (m === "phone" && formData.get("phone") === "on"));
-  if (!modes.length) return { error: "Choose at least one way to meet. Add in person or video on Where you'll meet first." };
-  const error = await saveSettings(eventId, { meeting_modes: modes });
-  if (error) return { error: friendlyDbError(error) };
-  refresh(eventId);
-  return { ok: true, message: "Saved." };
-}
 
-/** "2 booked meetings don't fit these times…", when the new times leave any out, or null. */
-async function bookingsLeftOut(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  eventId: string,
-  tz: string,
-  formData: FormData,
-  weekly: boolean,
-  lengths: { meeting_minutes: number; gap_minutes: number; breaks: ConferenceBreak[] },
-) {
-  const [{ data }, { data: ev }] = await Promise.all([
-    supabase.from("conference_bookings").select("starts_at, child_name, parents").eq("event_id", eventId),
-    supabase.from("events").select("starts_on, window_start, window_end").eq("id", eventId).maybeSingle(),
-  ]);
+/** "2 booked meetings don't fit these times…", when new times leave any upcoming meeting out, or null. */
+async function bookingsLeftOut(supabase: Awaited<ReturnType<typeof createClient>>, eventId: string, tz: string, t: Parameters<typeof bookingsOutside>[1]) {
+  const { data } = await supabase
+    .from("conference_bookings")
+    .select("starts_at, child_name, parents")
+    .eq("event_id", eventId)
+    .gte("starts_at", new Date().toISOString());
   const booked = ((data ?? []) as { starts_at: string; child_name: string | null; parents: { name: string }[] }[]).map((b) => ({
     who: b.child_name || b.parents[0]?.name || "Someone",
     date: utcToZonedDate(b.starts_at, tz),
     time: utcToZonedTime(b.starts_at, tz),
   }));
-  const days = formData.getAll("weeklyDay").map(Number);
-  const froms = formData.getAll("weeklyStart").map(String);
-  const tos = formData.getAll("weeklyEnd").map(String);
-  const out = bookingsOutside(booked, {
-    schedule: weekly ? "weekly" : "one_day",
-    day: String(formData.get("conferenceDay") ?? ev?.starts_on ?? ""),
-    from: String(formData.get("startTime") ?? (ev ? utcToZonedTime(ev.window_start, tz) : "")),
-    to: String(formData.get("endTime") ?? (ev ? utcToZonedTime(ev.window_end, tz) : "")),
-    weekly: days.map((d, i) => ({ day: d, start: froms[i], end: tos[i] })),
-    firstDay: String(formData.get("weeklyFrom") ?? ""),
-    lastDay: String(formData.get("weeklyTo") ?? ""),
-    lengths,
-  });
+  const out = bookingsOutside(booked, t);
   if (!out.length) return null;
-  return `${out.length === 1 ? "1 booked meeting doesn't" : `${out.length} booked meetings don't`} fit these times: ${out.map((b) => `${b.who} at ${displayTime(b.time)}`).join(", ")}. Tick "Save anyway" to keep them booked and save, then reschedule or cancel them on Your meetings.`;
+  return `${out.length === 1 ? "1 booked meeting doesn't" : `${out.length} booked meetings don't`} fit these times: ${out.map((b) => `${b.who} at ${displayTime(b.time)}`).join(", ")}. They stay booked. Reload this page to review them, then save again.`;
 }
 
 /**
  * Booked meetings keep an event to one day, so "Need more times? Make a weekly copy" makes a new
  * draft with the same setup (length, breaks, where you'll meet) set to every week, without the
- * bookings, and opens More options to pick the days and hours (decisions 2026-11-07, finding 3).
+ * bookings, and opens Meeting times to pick the days and hours (decisions 2026-11-07, finding 3).
  */
 export async function copyAsWeekly(eventId: string): Promise<void> {
   const user = await requireUser();
@@ -489,7 +505,7 @@ export async function copyAsWeekly(eventId: string): Promise<void> {
   const [{ data: ev }, { settings }] = await Promise.all([
     supabase
       .from("events")
-      .select("organization_id, event_type, name, slug, timezone, starts_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng")
+      .select("organization_id, event_type, name, slug, timezone, starts_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng, ask_child_name")
       .eq("id", eventId)
       .maybeSingle(),
     loadConferenceSettings(supabase, eventId),
@@ -512,6 +528,8 @@ export async function copyAsWeekly(eventId: string): Promise<void> {
       venue_place_id: ev.venue_place_id,
       venue_lat: ev.venue_lat,
       venue_lng: ev.venue_lng,
+      // A teacher who doesn't ask for children's names doesn't start asking again.
+      ...(ev.ask_child_name === false ? { ask_child_name: false } : {}),
       created_by: user.id,
     })
     .select("id")
@@ -523,12 +541,60 @@ export async function copyAsWeekly(eventId: string): Promise<void> {
     breaks: settings.breaks,
     meeting_modes: settings.meeting_modes ?? null,
     room: settings.room,
+    // The video meeting was set up for the old day: the copy asks for it to be checked again.
     video_link: settings.video_link,
     video_passcode: settings.video_passcode ?? null,
-    waiting_room_confirmed: settings.waiting_room_confirmed,
+    waiting_room_confirmed: false,
     schedule: "weekly",
     weekly_hours: [],
   });
   revalidatePath("/dashboard");
-  redirect(`/dashboard/events/${copy.id}/conferences/options`);
+  redirect(`/dashboard/events/${copy.id}/conferences/times`);
+}
+
+/**
+ * After saving new times: when the organizer chose "email them", each booked meeting the new times
+ * leave out gets a link to pick a new time (it stays booked meanwhile). Returns a sentence for the
+ * saved message, or "".
+ */
+async function emailLeftOut(eventId: string, tz: string, formData: FormData, t: Parameters<typeof bookingsOutside>[1]) {
+  if (formData.get("confirmOutside") !== "on" || formData.get("emailOutside") !== "on") return "";
+  const conf = await loadConference({ id: eventId });
+  if (!conf) return "";
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("conference_bookings")
+    .select(`${BOOKING_COLUMNS}, access_token`)
+    .eq("event_id", eventId)
+    .gte("starts_at", new Date().toISOString());
+  const rows = (data ?? []) as unknown as (Booking & { access_token: string })[];
+  const out = bookingsOutside(
+    rows.map((b) => ({ who: b.id, date: utcToZonedDate(b.starts_at, tz), time: utcToZonedTime(b.starts_at, tz) })),
+    t,
+  ).map((o) => rows.find((b) => b.id === o.who)!);
+  if (!out.length) return "";
+  const origin = await getOrigin();
+  let sent = 0;
+  for (const b of out) {
+    const link = bookingLink(origin, conf.event.slug, b.access_token);
+    for (const p of b.parents) {
+      if (sent) await pause();
+      const message = pickNewTimeEmail(b, conf.event, conf.settings, conf.teacher, link, p);
+      if (await sendEmail({ to: p.email, ...message, eventId })) sent++;
+    }
+  }
+  return sent
+    ? ` We emailed ${out.length === 1 ? "the 1 person" : `the ${out.length} people`} outside your new hours a link to pick a new time.`
+    : " We couldn't email the people outside your new hours, so please let them know.";
+}
+
+/** The email shown when every time is booked (optional; empty shows none). */
+export async function saveMeetingContact(eventId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireUser();
+  const email = String(formData.get("contactEmail") ?? "").trim();
+  if (email && (email.length > 200 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))) return { error: "Enter an email address, like name@example.com, or leave it blank." };
+  const error = await saveSettings(eventId, { contact_email: email || null });
+  if (error) return { error: isSchemaError(error) ? "A contact email needs a database update first. Please write to us." : friendlyDbError(error) };
+  refresh(eventId);
+  return { ok: true, message: "Saved." };
 }

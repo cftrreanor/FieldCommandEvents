@@ -35,7 +35,7 @@ export function SetupTabs({
       <ul className={folderTabRow}>
         {tabs.map((t) => (
           // On a phone each tab is a bit under half the screen, so the next one always peeks in at the edge: a cue to swipe.
-          <li key={t.key} className={tabs.length > 2 ? "max-sm:w-[42vw] max-sm:shrink-0" : undefined}>
+          <li key={t.key} className={tabs.length > 2 ? "max-sm:w-[42vw] max-sm:shrink-0" : "max-sm:min-w-0 max-sm:flex-1"}>
             <LeaveStepLink
               href={t.href}
               way={way}

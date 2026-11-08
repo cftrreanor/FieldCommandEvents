@@ -924,7 +924,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
     ) : null;
 
   // Before publishing: what publishing does, and the button. (Once live, unpublishing is in event settings.)
-  const publish = setup && checklist && !published ? <PublishPanel facts={setup} remaining={checklist.remaining} previewHref={`/e/${event.slug}/volunteer`} /> : null;
+  const publish = setup && checklist && !published ? <PublishPanel facts={setup} remaining={checklist.remaining} previewHref={conferenceHere ? `/e/${event.slug}/book` : `/e/${event.slug}/volunteer`} /> : null;
 
   // Still setting up: the one thing to do next, in the main column too.
   const nextUpStep = checklist && !published ? (checklist.inProgress ?? checklist.next) : null;
@@ -1000,12 +1000,13 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
 
   return (
     <div
-      className={dayActions || checklist ? "lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-8" : undefined}
+      className={dayActions || (checklist && !(conferenceHere && !published)) ? "lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-8" : undefined}
     >
       {justPublished && !contestLive && <SuccessToast message={`Published. Your ${conferenceHere ? "booking" : "event"} page is live; the links to share are at the top.`} />}
       {justPublished && <ScrollTo id="share" />}
       {demoEnded && <SuccessToast message="You're back on your own account. The demo people and sample data are gone." />}
-      {dayActions ? <DayRail day={dayActions} /> : checklist && <SetupGuide checklist={checklist} />}
+      {/* Meetings set up in steps: the step bar is the one tracker, so no second checklist beside it (decisions 2026-11-08). */}
+      {dayActions ? <DayRail day={dayActions} /> : checklist && !(conferenceHere && !published) && <SetupGuide checklist={checklist} />}
       <div className="min-w-0">
         <Link href="/dashboard" className="text-sm text-muted hover:text-foreground">
           ← My events
@@ -1272,10 +1273,29 @@ function PublishPanel({
             </ActionButton>
           </div>
         ) : (
-          <div className="mt-5">
+          <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2">
             <ActionButton action={publishAndOpen.bind(null, facts.eventId)} variant="go" pendingText="Publishing…">
               Publish event
             </ActionButton>
+            {/* Meetings and conferences: see the booking page as people will, before it goes live (decisions 2026-11-08). */}
+            {hasConferences(facts.eventType) && (
+              <a href={previewHref} target="_blank" className="inline-flex min-h-11 items-center text-sm font-medium text-brand underline-offset-4 hover:underline">
+                Preview the booking page
+              </a>
+            )}
+            {hasConferences(facts.eventType) && (
+              <p className="w-full text-sm text-muted">
+                Optional:{" "}
+                <Link href={`/dashboard/events/${facts.eventId}/edit?section=team`} className="font-medium text-brand underline underline-offset-4">
+                  add a co-host
+                </Link>{" "}
+                or{" "}
+                <Link href={`/dashboard/events/${facts.eventId}/edit?section=emails`} className="font-medium text-brand underline underline-offset-4">
+                  change email settings
+                </Link>
+                .
+              </p>
+            )}
           </div>
         )
       )}

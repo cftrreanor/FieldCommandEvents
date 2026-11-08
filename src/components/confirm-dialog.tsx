@@ -104,7 +104,7 @@ export function DialogHost() {
         close();
       }}
       onClick={(e) => e.target === e.currentTarget && close()}
-      className="m-auto w-[calc(100%-2rem)] max-w-md rounded-xl border border-border bg-surface p-0 text-foreground shadow-elevated backdrop:bg-[#071a31]/50"
+      className="team-window m-auto w-[calc(100%-2rem)] max-w-md rounded-xl border border-border p-0 text-foreground shadow-elevated"
     >
       {request && <DialogBody key={request.id} request={request} close={close} />}
     </dialog>

@@ -9,7 +9,7 @@ import { StepPage } from "../step-page";
 
 export const metadata: Metadata = { title: "Where you'll meet" };
 
-/** Setup step 3: in person (the place and room), video (one link), or both. Phone calls are in More options. */
+/** Setup step 3: in person (the place and room), video (one link), phone calls, or any mix. */
 export default async function MeetingPlaceStep({ params }: PageProps<"/dashboard/events/[eventId]/conferences/place">) {
   const { eventId } = await params;
   const s = await loadMeetingSetup(eventId);
@@ -19,7 +19,7 @@ export default async function MeetingPlaceStep({ params }: PageProps<"/dashboard
       eventId={eventId}
       eventName={s.event.name}
       title="Where you'll meet"
-      intro={`In person, on video, or both. ${s.meeting ? "People" : "Families"} wait until you're ready for them.`}
+      intro="In person, on video, by phone, or any mix."
     >
       <Card>
         <MeetingPlaceForm
@@ -32,7 +32,6 @@ export default async function MeetingPlaceStep({ params }: PageProps<"/dashboard
           meeting={s.meeting}
           lastRoom={s.settings.room ? null : await lastRoom(s.supabase, s.event.organization_id, eventId)}
           saved={!s.placeTodo}
-          part="basics"
           autosave={{ next: { href: `${s.base}/options`, label: "Next up: More options" } }}
         />
       </Card>

@@ -26,6 +26,53 @@ export function SetupSteps({ eventId, kind, facts }: { eventId: string; kind: St
   // What a required step still needs ("Add your hours"), from its own note or the middle step's.
   const stepNote = (key: string, i: number) => (facts.notes && key in facts.notes ? (facts.notes[key] ?? null) : i === 1 ? facts.middleNote : null);
   const doneCount = done.filter(Boolean).length;
+  const stepList = (className: string) => (
+          <ol className={className}>
+            {steps.map((s, i) => {
+              const now = i === here;
+              // A required middle step that still needs something: amber, saying what. An optional one stays neutral.
+              const needs = !s.optional && i > 0 && i < last && !done[i] && Boolean(stepNote(s.key, i));
+              const optionalNote = s.optional && !done[i] ? ((s.key === "volunteers" ? facts.volunteersNote : facts.notes?.[s.key]) ?? "Optional") : null;
+              // The step you're on says "Now", "Now · ready" once it has everything it needs, or "Now · not saved".
+              const note =
+                done[i] && !now
+                  ? "Done"
+                  : now && unsaved
+                    ? "Now · not saved"
+                    : needs
+                      ? stepNote(s.key, i)
+                      : now
+                        ? done[i] && i < last
+                          ? "Now · ready"
+                          : optionalNote
+                            ? `Now · ${optionalNote.charAt(0).toLowerCase()}${optionalNote.slice(1)}`
+                            : "Now"
+                        : (optionalNote ?? "Not yet");
+              return (
+                <li key={s.key} className="min-w-0">
+                  <span
+                    aria-hidden
+                    className={`block rounded-full ${now ? "h-2 bg-brand" : done[i] ? "h-1.5 bg-success" : needs ? "h-1.5 bg-warning" : s.optional ? "h-1.5 border-[1.5px] border-dashed border-muted bg-surface" : "h-1.5 border border-field-border bg-surface"}`}
+                  />
+                  {now ? (
+                    <span aria-current="step" className="mt-1 flex min-h-11 items-center text-sm font-semibold">
+                      {s.label}
+                    </span>
+                  ) : (
+                    <Link href={`${base}${s.path}`} className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4 hover:text-brand">
+                      {s.label}
+                    </Link>
+                  )}
+                  <span className={`block text-xs leading-5 ${done[i] && !now ? "text-success" : needs ? "font-medium text-warning" : "text-muted"}`}>
+                    {done[i] && !now && <span aria-hidden>✓ </span>}
+                    {needs && <span aria-hidden>◆ </span>}
+                    {note}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+  );
   return (
     <nav aria-label="Event setup" className="mb-6 print:hidden">
       <p className="text-sm">
@@ -39,51 +86,25 @@ export function SetupSteps({ eventId, kind, facts }: { eventId: string; kind: St
           . {doneCount} of {steps.length} done.
         </span>
       </p>
-      <ol className={`mt-2 grid gap-x-3 gap-y-1 ${steps.length === 5 ? "grid-cols-2 sm:grid-cols-5" : steps.length === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
-        {steps.map((s, i) => {
-          const now = i === here;
-          // A required middle step that still needs something: amber, saying what. An optional one stays neutral.
-          const needs = !s.optional && i > 0 && i < last && !done[i] && Boolean(stepNote(s.key, i));
-          const optionalNote = s.optional && !done[i] ? ((s.key === "volunteers" ? facts.volunteersNote : facts.notes?.[s.key]) ?? "Optional") : null;
-          // The step you're on says "Now", "Now · ready" once it has everything it needs, or "Now · not saved".
-          const note =
-            done[i] && !now
-              ? "Done"
-              : now && unsaved
-                ? "Now · not saved"
-                : needs
-                  ? stepNote(s.key, i)
-                  : now
-                    ? done[i] && i < last
-                      ? "Now · ready"
-                      : optionalNote
-                        ? `Now · ${optionalNote.charAt(0).toLowerCase()}${optionalNote.slice(1)}`
-                        : "Now"
-                    : (optionalNote ?? "Not yet");
-          return (
-            <li key={s.key} className="min-w-0">
-              <span
-                aria-hidden
-                className={`block rounded-full ${now ? "h-2 bg-brand" : done[i] ? "h-1.5 bg-success" : needs ? "h-1.5 bg-warning" : s.optional ? "h-1.5 border-[1.5px] border-dashed border-muted bg-surface" : "h-1.5 border border-field-border bg-surface"}`}
-              />
-              {now ? (
-                <span aria-current="step" className="mt-1 flex min-h-11 items-center text-sm font-semibold">
-                  {s.label}
-                </span>
-              ) : (
-                <Link href={`${base}${s.path}`} className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4 hover:text-brand">
-                  {s.label}
-                </Link>
-              )}
-              <span className={`block text-xs leading-5 ${done[i] && !now ? "text-success" : needs ? "font-medium text-warning" : "text-muted"}`}>
-                {done[i] && !now && <span aria-hidden>✓ </span>}
-                {needs && <span aria-hidden>◆ </span>}
-                {note}
-              </span>
-            </li>
-          );
-        })}
+      {/* Phones: one row of strips, then every step in a list you can open (the two-column grid read wrongly). */}
+      <ol aria-hidden className="mt-2 flex gap-1 sm:hidden">
+        {steps.map((s, i) => (
+          <li
+            key={s.key}
+            className={`flex-1 rounded-full ${i === here ? "h-2 bg-brand" : done[i] ? "h-1.5 bg-success" : s.optional ? "h-1.5 border-[1.5px] border-dashed border-muted bg-surface" : "h-1.5 border border-field-border bg-surface"}`}
+          />
+        ))}
       </ol>
+      <details className="group sm:hidden">
+        <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-brand">
+          <span aria-hidden className="inline-block transition-transform group-open:rotate-90">
+            ›
+          </span>
+          See all steps
+        </summary>
+        {stepList("grid grid-cols-1 gap-y-1")}
+      </details>
+      {stepList(`mt-2 hidden gap-x-3 gap-y-1 sm:grid ${steps.length === 5 ? "sm:grid-cols-5" : steps.length === 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`)}
     </nav>
   );
 }

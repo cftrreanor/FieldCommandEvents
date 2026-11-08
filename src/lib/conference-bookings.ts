@@ -70,8 +70,8 @@ export async function withCallPhone<T extends { error: { code?: string } | null 
 export const privacyLine = (teacher: Teacher, weekly = false, child = true) =>
   // Without the child's name, the short version (like the booking page's privacy note).
   child
-    ? `Only ${whoSees(teacher)} see your child's name, your details, and your note. Other families never see who booked. Everything is deleted 30 days after ${weekly ? "your meeting" : "the conference"}.`
-    : `Only ${whoSees(teacher)} see your details and your note. Everything is deleted 30 days after ${weekly ? "your meeting" : "the conference"}.`;
+    ? `Only ${whoSees(teacher)} see your child's name, your details, and your note. Other families never see who booked. They're deleted from ${brand.name} 30 days after ${weekly ? "your meeting" : "the conference"}.`
+    : `Only ${whoSees(teacher)} see your details and your note. They're deleted from ${brand.name} 30 days after ${weekly ? "your meeting" : "the conference"}.`;
 
 /** A family's link to see, change or cancel their meeting. */
 export const bookingLink = (origin: string, slug: string, token: string) => `${origin}/e/${slug}/book/r/${token}`;
@@ -110,10 +110,11 @@ export function meetingPlace(b: Pick<Booking, "meeting_mode" | "child_name" | "p
       link: null as string | null,
     };
   }
-  if (s.own_link || !s.video_link) {
+  if (!s.video_link) {
+    // Only an event that used the old "add it to each invite" setting and hasn't added a link yet.
     return {
       title: "Video",
-      lines: [`${teacher.name} will send you the video link in a calendar invite before your meeting.`],
+      lines: [`${teacher.name} sends you the link to join before your meeting.`],
       link: null,
     };
   }
@@ -272,7 +273,7 @@ export async function bookingEmail(
         ...noteRow,
         { title: "When", detail: when, strong: true },
         // Each on its own line, so an address never runs into the next sentence (decisions 2026-11-07).
-        { title: place.title, detail: place.lines.join("\n") },
+        { title: place.title, detail: place.lines.join("\n"), plain: true },
         ...(place.passcode ? [{ title: "Passcode", detail: place.passcode, strong: true }] : []),
         ...(b.parents.length > 1 ? [{ title: b.meeting_mode === "phone" ? "On the call" : "Coming", detail: b.parents.map((p) => p.name).join(", ") }] : []),
         { title: b.child_name ? "Your child's privacy" : "Your privacy", detail: privacyLine(teacher, s.schedule === "weekly" || word === "meeting", Boolean(b.child_name)) },
@@ -426,8 +427,8 @@ export function teacherBookingEmail(
               ? place.lines[0] || "Your room"
               : b.meeting_mode === "phone"
                 ? callLine(b)
-                : s.own_link || !s.video_link
-                  ? `You send ${them} your video link`
+                : !s.video_link
+                  ? `Add your meeting link in Meeting setup, so ${them} can join`
                   : [s.video_link, s.video_passcode && `Passcode: ${s.video_passcode}`].filter(Boolean).join(" · "),
         },
         { title: b.meeting_mode === "phone" ? "On the call" : "Coming", detail: b.parents.map((p) => p.name).join(", ") },
@@ -466,4 +467,26 @@ export async function emailTeacher(
     all = (await sendEmail({ to: email, ...message })) && all;
   }
   return all;
+}
+
+/**
+ * New hours left a booked meeting out (the organizer chose to email them): it's still booked, and
+ * this asks them to pick a new time from their own link (decisions 2026-11-08, finding 2).
+ */
+export function pickNewTimeEmail(b: Booking, event: BookingEvent, s: ConferenceSettings, teacher: Teacher, link: string, to: BookingParent) {
+  const when = meetingWhen(b.starts_at, s.meeting_minutes, event.timezone);
+  const word = kindWord(event);
+  const first = to.name.split(" ")[0];
+  return {
+    subject: `Please pick a new time for your ${word} with ${teacher.name}`,
+    ...emailLayout({
+      heading: `${teacher.name} changed their hours`,
+      paragraphs: [
+        `Hi ${first}, ${teacher.name} changed the hours for ${event.name}, and your ${word} (${when}) is now outside them.`,
+        "It's still booked for now. Please pick a new time, or cancel if none of them work for you.",
+      ],
+      button: { label: "Pick a new time", url: link },
+      footer: `Sent by ${brand.name} for ${teacher.name}.`,
+    }),
+  };
 }

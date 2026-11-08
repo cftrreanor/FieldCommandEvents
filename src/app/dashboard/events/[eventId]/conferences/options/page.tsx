@@ -2,18 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Card } from "@/components/ui";
-import { modesOf } from "@/lib/conferences";
-import { saveDaysOff, saveMeetingPhone, saveMeetingTimes } from "../actions";
-import { DaysOffForm, MeetingPhoneForm, MeetingTimesForm } from "../conference-forms";
+import { saveDaysOff, saveMeetingContact, saveMeetingTimes } from "../actions";
+import { DaysOffForm, MeetingContactForm, MeetingTimesForm } from "../conference-forms";
 import { loadMeetingSetup } from "../load";
 import { StepPage } from "../step-page";
 
 export const metadata: Metadata = { title: "More options" };
 
 /**
- * Setup step 4, optional: the extras (decisions 2026-11-07, finding 5). Every week instead of one
- * day, time between meetings, breaks, phone calls, and with weekly hours, days off. The basics are
- * enough to publish, so this never blocks.
+ * Setup step 4, optional: the extras (decisions 2026-11-07 and 2026-11-08). Time between meetings,
+ * breaks, and with weekly hours, the booking window and days off. The basics are enough to publish,
+ * so this never blocks.
  */
 export default async function MeetingOptionsStep({ params }: PageProps<"/dashboard/events/[eventId]/conferences/options">) {
   const { eventId } = await params;
@@ -35,9 +34,9 @@ export default async function MeetingOptionsStep({ params }: PageProps<"/dashboa
       }
     >
       <Card>
-        <h2 className="text-lg font-semibold">Phone calls</h2>
-        <p className="mt-1 mb-4 text-sm text-muted">As well as {s.settings.meeting_modes?.length ? "the ways you picked on Where you'll meet" : "in person or video"}.</p>
-        <MeetingPhoneForm action={saveMeetingPhone.bind(null, eventId)} on={modesOf(s.settings).includes("phone")} meeting={s.meeting} />
+        <h2 className="text-lg font-semibold">When every time is booked</h2>
+        <p className="mt-1 mb-4 text-sm text-muted">What people see if they open your link and nothing is left.</p>
+        <MeetingContactForm action={saveMeetingContact.bind(null, eventId)} initial={s.settings.contact_email ?? null} autosave />
       </Card>
       {s.weekly && (
         <Card>
@@ -47,8 +46,10 @@ export default async function MeetingOptionsStep({ params }: PageProps<"/dashboa
         </Card>
       )}
       <Card>
-        <h2 className="text-lg font-semibold">Days, breaks, and time between meetings</h2>
-        <p className="mt-1 mb-4 text-sm text-muted">The same times every week instead of one day, a gap between meetings, and breaks.</p>
+        <h2 className="text-lg font-semibold">Time between meetings and breaks</h2>
+        <p className="mt-1 mb-4 text-sm text-muted">
+          {s.weekly ? "Time between meetings, breaks, and how far ahead people book." : "Time between meetings, and breaks."}
+        </p>
         <MeetingTimesForm
           action={saveMeetingTimes.bind(null, eventId)}
           initial={s.settings}

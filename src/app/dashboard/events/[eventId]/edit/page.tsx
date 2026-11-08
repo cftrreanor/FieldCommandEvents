@@ -91,6 +91,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const section: Section = asked && SECTIONS.includes(asked) ? asked : "details";
   // The guided setup, step by step (conferences and meetings have their own setup page instead).
   // Volunteer events and band contests set up in three steps (shown by the layout), not the guided Event settings.
+  const stepOnly = hasConferences(event.event_type) && event.status !== "published";
   const guided = setupParam === "1" && !hasConferences(event.event_type) && event.event_type !== "volunteer" && event.event_type !== "band_contest";
   const at = SETUP_STEPS.findIndex((s) => s.id === section);
   const prevStep = guided && at > 0 ? setupHref(eventId, SETUP_STEPS[at - 1].id) : undefined;
@@ -297,8 +298,9 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
           <p className="mt-1 text-sm text-muted">Boxes marked * are required.</p>
         </>
       )}
-      <div className={guided ? "mt-6" : "mt-6 lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-8"}>
-        {!guided && <SettingsNav sections={sections} current={section} base={base} />}
+      {/* A meetings draft's Details step: the step bar is the one menu, so no second one beside it (decisions 2026-11-08). */}
+      <div className={guided || stepOnly ? "mt-6" : "mt-6 lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-8"}>
+        {!guided && !stepOnly && <SettingsNav sections={sections} current={section} base={base} />}
         <div id="settings-panel" className="min-w-0 space-y-6">
           {section === "details" && (
             <>

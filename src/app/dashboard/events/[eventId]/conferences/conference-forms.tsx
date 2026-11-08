@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, use, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, use, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { linkFrom, passcodeFrom } from "@/lib/meeting-link";
 import { ActionForm } from "@/components/action-form";
 import { AutosaveBar, useAutosaveForm } from "@/components/autosave";
@@ -62,7 +62,7 @@ function useEditing(id: string) {
 /** The Publish / Unpublish button, or, while a tab has unsaved changes, a note to save them first. */
 export function PublishWhenSaved({ children }: { children: ReactNode }) {
   const { editing } = use(Editing);
-  return editing.length ? <p className="text-sm text-muted">Save or cancel your changes first.</p> : <>{children}</>;
+  return editing.length ? <p className="text-sm text-muted">Save or undo your changes first.</p> : <>{children}</>;
 }
 
 /**
@@ -75,7 +75,10 @@ function SaveCancel({
   label,
   disabled,
   saved = true,
+  problem = null,
 }: {
+  /** Why it can't save yet, with the id of where it's explained. */
+  problem?: { text: string; target: string } | null;
   editing: boolean;
   onCancel: () => void;
   label: string;
@@ -101,11 +104,24 @@ function SaveCancel({
             ✓
           </span>
         )}
-        <span className="font-semibold">{editing ? "Unsaved changes" : saved ? "All changes saved" : "Not saved yet"}</span>
+        <span className="font-semibold">{problem ? problem.text : editing ? "Unsaved changes" : saved ? "All changes saved" : "Not saved yet"}</span>
+        {problem && (
+          <button
+            type="button"
+            onClick={() => {
+              const box = document.getElementById(problem.target);
+              box?.scrollIntoView({ behavior: "smooth", block: "center" });
+              box?.focus({ preventScroll: true });
+            }}
+            className="inline-flex min-h-11 items-center font-medium text-brand underline underline-offset-4"
+          >
+            Review
+          </button>
+        )}
       </p>
       {editing && (
         <Button type="button" variant="ghost" onClick={onCancel}>
-          Cancel
+          Undo changes
         </Button>
       )}
       <SubmitButton disabled={disabled || (saved && !editing)}>{label}</SubmitButton>
@@ -145,9 +161,9 @@ type TimesProps = {
   /** Meetings: "people" where conferences say "families". */
   meeting?: boolean;
   /**
-   * In the setup steps, the form is split: the basics (the day and hours, how long each meeting is)
-   * on Meeting times, the extras (every week, time between meetings, breaks) on More options.
-   * Fields from the other part ride along unchanged, so each saves the whole thing.
+   * In the setup steps, the form is split: the basics (one day or every week, the hours, how long
+   * each meeting is) on Meeting times; the extras (time between meetings, breaks, the booking window)
+   * on More options. Each sends only its own part; the server keeps the rest as saved.
    */
   part?: "basics" | "extras";
   /** Save a moment after each change (the setup steps, before anyone has booked), with this step next. */
@@ -230,7 +246,13 @@ function TimesForm({
     initial.breaks.map((b, i) => ({ key: i, start: b.start, minutes: String(b.minutes), label: b.label })),
   );
   // Weekly hours as days that share the same times; each picked day is saved as its own block.
-  const [groups, setGroups] = useState<GroupDraft[]>(() => groupWeekly(initial.weekly_hours).map((g, i) => ({ key: i, ...g })));
+  const [groups, setGroups] = useState<GroupDraft[]>(() => {
+    const saved = groupWeekly(initial.weekly_hours).map((g, i) => ({ key: i, ...g }));
+    // Every week with no hours yet (a weekly copy, say): start from the day's weekday and hours.
+    if (saved.length || initial.schedule !== "weekly") return saved;
+    const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
+    return [{ key: 0, days: Number.isNaN(weekday) ? [] : [weekday], start, end }];
+  });
   const [nextKey, setNextKey] = useState(100);
   const newKey = () => {
     setNextKey((k) => k + 1);
@@ -252,8 +274,10 @@ function TimesForm({
   const perWeek = weeklyMeetingCount(weeklyHours, lengths);
   // Booked meetings these times would leave out: named before saving, and saving needs a tick.
   const outside = editing
-    ? bookingsOutside(bookedTimes, { schedule, day, from, to, weekly: weeklyHours, firstDay, lastDay, lengths })
+    ? bookingsOutside(bookedTimes, { schedule, day, from, to, weekly: weeklyHours, firstDay, lastDay, lengths, closed: initial.closed_dates, movesWithDay: true })
     : [];
+  // One day: how many times stay open for them to move to.
+  const openLeft = !weekly && outside.length ? Math.max(0, starts.length - (bookedTimes.length - outside.length)) : null;
   const changeGroup = (key: number, patch: Partial<GroupDraft>) => setGroups((gs) => gs.map((g) => (g.key === key ? { ...g, ...patch } : g)));
   const change = (key: number, patch: Partial<BreakDraft>) => setBreaks((bs) => bs.map((b) => (b.key === key ? { ...b, ...patch } : b)));
 
@@ -265,6 +289,7 @@ function TimesForm({
       onEdit={autosave ? auto.edited : () => setEditing(true)}
       onError={autosave ? auto.failed : undefined}
       quiet={Boolean(autosave)}
+      noToast={Boolean(autosave)}
       // No days start picked, so each set of weekly hours needs at least one tapped.
       validate={() => (schedule === "weekly" && groups.some((g) => !g.days.length) ? { error: "Tap at least one day for each set of hours." } : null)}
       onSuccess={() => {
@@ -274,8 +299,8 @@ function TimesForm({
       }}
     >
       <span ref={anchor} hidden />
-      {!extras && <input type="hidden" name="schedule" value={schedule} />}
-      {extras && (
+      {part && <input type="hidden" name="part" value={part} />}
+      {basics && (
       <fieldset>
         <legend className="text-sm font-semibold">When can {w.families} meet with you?</legend>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -295,7 +320,15 @@ function TimesForm({
                 checked={schedule === o.value}
                 onChange={() => {
                   setSchedule(o.value);
-                  if (o.value === "weekly" && !groups.length) setGroups([{ key: newKey(), days: [], start: "15:30", end: "16:30" }]);
+                  // Switching to every week keeps what's set: the chosen day's weekday and hours, from that day
+                  // for twelve weeks (decisions 2026-11-08, finding 1).
+                  if (o.value === "weekly" && !groups.length) {
+                    const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
+                    setGroups([{ key: newKey(), days: Number.isNaN(weekday) ? [] : [weekday], start: from || "15:30", end: to || "16:30" }]);
+                    setFirstDay(day);
+                    if (!lastDay && day) setLastDay(new Date(Date.parse(`${day}T12:00:00Z`) + 83 * 86_400_000).toISOString().slice(0, 10));
+                  }
+                  setEditing(true);
                 }}
                 className="mt-1 h-4 w-4 shrink-0 accent-[var(--brand)]"
               />
@@ -313,10 +346,7 @@ function TimesForm({
                       {initial.schedule === "weekly" ? "weekly" : "one day"}.{" "}
                       {copyAction && o.value === "weekly" && (
                         <>
-                          Need more times?{" "}
-                          <button type="submit" formAction={copyAction} formNoValidate className="inline-flex min-h-11 items-center font-medium text-brand underline underline-offset-4">
-                            Make a weekly copy
-                          </button>
+                          Need more times? <WeeklyCopyButton action={copyAction} />
                         </>
                       )}
                     </>
@@ -334,7 +364,7 @@ function TimesForm({
       </fieldset>
       )}
 
-      {extras && weekly && !weeklyIncluded && (
+      {basics && weekly && !weeklyIncluded && (
         <p className="rounded-md border border-border bg-brand-soft px-3 py-2 text-sm leading-6">
           <strong>Your {planName ? `${planName} ` : ""}plan doesn&apos;t include weekly hours.</strong> You can set them up now. To publish them, write to us at{" "}
           <a href={`mailto:${brand.supportEmail}`} className="font-medium text-brand underline underline-offset-4">
@@ -344,27 +374,9 @@ function TimesForm({
         </p>
       )}
 
-      {weekly && !extras ? (
-        // Meeting times, with weekly hours: they're set in More options; say what they are.
-        <p className="rounded-md bg-background px-3 py-2 text-sm">
-          <span className="font-medium">
-            Every week{weeklyHours.length ? `: ${sortWeekly(weeklyHours).map((h) => `${WEEKDAYS[h.day]}s ${displayTime(h.start)} – ${displayTime(h.end)}`).join("; ")}` : ""}
-          </span>{" "}
-          <span className="text-muted">Your weekly days and hours are in More options.</span>
-          {groups.flatMap((g) =>
-            g.days.map((day) => (
-              <span key={`${g.key}-${day}`} hidden>
-                <input type="hidden" name="weeklyDay" value={day} />
-                <input type="hidden" name="weeklyStart" value={g.start} />
-                <input type="hidden" name="weeklyEnd" value={g.end} />
-              </span>
-            )),
-          )}
-          <input type="hidden" name="weeklyFrom" value={firstDay} />
-          <input type="hidden" name="weeklyTo" value={lastDay} />
-          <input type="hidden" name="minNotice" value={initial.min_notice_hours} />
-          <input type="hidden" name="maxAhead" value={initial.max_days_ahead} />
-        </p>
+      {weekly && !basics ? (
+        // More options, with weekly hours: the booking window.
+        <BookingWindow initial={initial} who={w.Families} />
       ) : weekly ? (
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -378,7 +390,7 @@ function TimesForm({
 
           <fieldset>
             <legend className="text-sm font-semibold">Weekly hours</legend>
-            <p className="text-sm text-muted">Tap the days you meet, then set your hours.</p>
+            <p className="text-sm text-muted">Choose the days you meet, then set your hours.</p>
             <ul className="mt-3 space-y-3">
               {groups.map((g, gi) => (
                 <li key={g.key} className="space-y-3 rounded-lg border border-border p-3">
@@ -404,7 +416,7 @@ function TimesForm({
                       );
                     })}
                   </div>
-                  <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-[8rem_8rem_auto]">
+                  <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-[10.5rem_10.5rem_auto]">
                     <Field label="From">
                       <Input type="time" required value={g.start} onChange={(e) => changeGroup(g.key, { start: e.target.value })} />
                     </Field>
@@ -425,7 +437,6 @@ function TimesForm({
                       </Button>
                     )}
                   </div>
-                  {!g.days.length && <p className="text-sm text-muted">Tap the days these hours are for.</p>}
                   {/* Saved as one block per day. */}
                   {g.days.map((day) => (
                     <span key={day} hidden>
@@ -452,28 +463,15 @@ function TimesForm({
             )}
           </fieldset>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={`${w.Families} book at least`} hint="So no one books a meeting that starts in a few minutes.">
-              <Select name="minNotice" defaultValue={initial.min_notice_hours}>
-                {NOTICE_HOURS.map((h) => (
-                  <option key={h} value={h}>
-                    {h ? `${noticeLabel(h)} ahead` : noticeLabel(h)}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label={`${w.Families} can book up to`} hint="So your calendar doesn't fill up for the whole semester on day one.">
-              <Select name="maxAhead" defaultValue={initial.max_days_ahead}>
-                {AHEAD_DAYS.map((d) => (
-                  <option key={d} value={d}>
-                    {aheadLabel(d)} ahead
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
+          {!extras && (
+            <>
+              <input type="hidden" name="minNotice" value={initial.min_notice_hours} />
+              <input type="hidden" name="maxAhead" value={initial.max_days_ahead} />
+            </>
+          )}
+          {extras && <BookingWindow initial={initial} who={w.Families} />}
         </div>
-      ) : !basics && initial.schedule !== "weekly" ? null : askDay ? (
+      ) : !basics ? null : askDay ? (
         <div className="grid gap-4 rounded-lg border border-border p-3 sm:grid-cols-3">
           <Field label={forMeetings ? "Day" : "Conference day"}>
             <Input type="date" name="conferenceDay" required value={day} onChange={(e) => setDay(e.target.value)} />
@@ -509,16 +507,6 @@ function TimesForm({
         </p>
       )}
 
-      {!basics && <input type="hidden" name="meetingMinutes" value={meeting} />}
-      {!extras && <input type="hidden" name="gapMinutes" value={gap} />}
-      {!extras &&
-        breaks.map((b) => (
-          <span key={b.key} hidden>
-            <input type="hidden" name="breakStart" value={b.start} />
-            <input type="hidden" name="breakMinutes" value={b.minutes} />
-            <input type="hidden" name="breakLabel" value={b.label} />
-          </span>
-        ))}
       <div className={`grid gap-4 sm:grid-cols-2 ${basics && extras ? "" : "sm:max-w-md sm:grid-cols-1"}`}>
         {basics && (
         <Field label="Each meeting">
@@ -557,7 +545,7 @@ function TimesForm({
         {breaks.length > 0 && (
           <ul className="mt-3 space-y-3">
             {breaks.map((b) => (
-              <li key={b.key} className="grid grid-cols-2 items-end gap-3 rounded-lg border border-border p-3 sm:grid-cols-[8rem_7rem_1fr_auto]">
+              <li key={b.key} className="grid grid-cols-2 items-end gap-3 rounded-lg border border-border p-3 sm:grid-cols-[10.5rem_7rem_1fr_auto]">
                 <Field label="Starts">
                   <Input type="time" name="breakStart" required value={b.start} onChange={(e) => change(b.key, { start: e.target.value })} />
                 </Field>
@@ -602,7 +590,7 @@ function TimesForm({
         {weekly ? (
           <>
             <p className="font-semibold">
-              {perWeek ? `${perWeek} ${perWeek === 1 ? "meeting" : "meetings"} each week` : "No meetings fit in your weekly hours yet"}
+              {perWeek ? `${perWeek} ${perWeek === 1 ? "time" : "times"} each week` : "No times fit in your weekly hours yet"}
             </p>
             {perWeek > 0 ? (
               <ul className="mt-3 space-y-3" aria-label="Meeting times each week">
@@ -622,7 +610,9 @@ function TimesForm({
                 ))}
               </ul>
             ) : (
-              <p className="mt-1 text-sm text-muted">Try shorter meetings, fewer breaks, or longer hours.</p>
+              <p className="mt-1 text-sm text-muted">
+                {weeklyHours.length ? "Try shorter meetings, fewer breaks, or longer hours." : "Choose at least one day you meet, above."}
+              </p>
             )}
           </>
         ) : (
@@ -644,7 +634,7 @@ function TimesForm({
       </div>
 
       {outside.length > 0 && (
-        <div className="rounded-lg border border-warning/40 bg-warning-soft p-4 text-sm leading-6" role="status">
+        <div id="times-outside" tabIndex={-1} className="rounded-lg border border-warning/40 bg-warning-soft p-4 text-sm leading-6 outline-none" role="status">
           <p className="font-semibold">
             {outside.length === 1 ? "1 booked meeting doesn't" : `${outside.length} booked meetings don't`} fit these times:
           </p>
@@ -656,17 +646,33 @@ function TimesForm({
               </li>
             ))}
           </ul>
-          <p className="mt-1">They stay booked. After saving, reschedule or cancel them on Your meetings, so no one turns up at a time you&apos;re not there.</p>
+          <p className="mt-1">
+            They stay booked, and no one is emailed unless you choose to. After saving, Your meetings lists them first, to move or cancel.
+            {openLeft !== null && openLeft < outside.length && (
+              <> {openLeft === 0 ? "No open times are left to move them to, so they may need to be canceled." : `Only ${openLeft} open ${openLeft === 1 ? "time is" : "times are"} left to move them to.`}</>
+            )}
+          </p>
+          <label className="mt-2 flex gap-3">
+            <input type="checkbox" name="emailOutside" defaultChecked className="mt-1 h-4 w-4 shrink-0 accent-[var(--brand)]" />
+            <span>Email {outside.length === 1 ? "them" : `all ${outside.length}`} a link to pick a new time</span>
+          </label>
           <label className="mt-2 flex gap-3">
             <input type="checkbox" name="confirmOutside" required className="mt-1 h-4 w-4 shrink-0 accent-[var(--brand)]" />
-            <span className="font-medium">Save anyway. I&apos;ll reschedule or cancel {outside.length === 1 ? "it" : "them"}</span>
+            <span className="font-medium">Save these times, and keep {outside.length === 1 ? "this meeting" : "these meetings"} booked for now</span>
           </label>
         </div>
       )}
       {autosave ? (
         <AutosaveBar status={auto.status} retry={auto.retry} next={autosave.next} />
       ) : (
-        <SaveCancel editing={editing} onCancel={onCancel} label="Save meeting times" saved={Boolean(initial.times_saved_at)} />
+        <SaveCancel
+          editing={editing}
+          onCancel={onCancel}
+          label="Save meeting times"
+          saved={Boolean(initial.times_saved_at)}
+          // The reason Save can't go ahead yet, in the bar itself, with a way to it (decisions 2026-11-08).
+          problem={outside.length ? { text: `${outside.length} booked ${outside.length === 1 ? "meeting doesn't" : "meetings don't"} fit`, target: "times-outside" } : null}
+        />
       )}
     </ActionForm>
   );
@@ -733,6 +739,7 @@ function DaysOffFields({
       onSuccess={autosave ? auto.saved : () => setEditing(false)}
       onError={autosave ? auto.failed : undefined}
       quiet={Boolean(autosave)}
+      noToast={Boolean(autosave)}
     >
       <span ref={anchor} hidden />
       {daysOff.length > 0 ? (
@@ -811,8 +818,6 @@ type PlaceProps = {
   lastRoom?: string | null;
   /** Everything this needs is saved (nothing left to fill in before publishing). */
   saved?: boolean;
-  /** The setup step: in person and video only (phone calls are in More options). */
-  part?: "basics";
   /** Save a moment after each change, with this step next. */
   autosave?: { next?: { href: string; label: string } };
 };
@@ -848,7 +853,6 @@ function PlaceForm({
   onCancel,
   lastRoom,
   saved,
-  part,
   autosave,
 }: PlaceProps & { editing: boolean; setEditing: (on: boolean) => void; onCancel: () => void }) {
   const w = whoBooks(meeting);
@@ -856,8 +860,8 @@ function PlaceForm({
   const [modes, setModes] = useState<Mode[]>(modesOf(initial));
   const [link, setLink] = useState(initial.video_link ?? "");
   const [passcode, setPasscode] = useState(initial.video_passcode ?? "");
-  // Ways to meet on this form (the setup step leaves phone calls to More options; they ride along).
-  const shown = MODES.filter((m) => part !== "basics" || m.value !== "phone");
+  // In person, video, and phone calls, together (decisions 2026-11-08).
+  const shown = MODES;
   const inPerson = modes.includes("in_person");
   const video = modes.includes("video");
   const toggle = (m: Mode) => setModes((now) => (now.includes(m) ? now.filter((x) => x !== m) : [...now, m]));
@@ -872,8 +876,8 @@ function PlaceForm({
       onSuccess={autosave ? auto.saved : () => setEditing(false)}
       onError={autosave ? auto.failed : undefined}
       quiet={Boolean(autosave)}
+      noToast={Boolean(autosave)}
     >
-      {part === "basics" && modes.includes("phone") && <input type="hidden" name="modes" value="phone" />}
       <fieldset>
         <legend className="text-sm font-semibold">How will you meet?</legend>
         <p className="mt-1 text-sm text-muted">Choose all that work for you. With more than one, each {w.family} picks when they book.</p>
@@ -935,10 +939,12 @@ function PlaceForm({
             <>
               <Field label="Meeting link" hint={`Only ${w.families} who book get it, in their confirmation and reminder. It's never on your public page.`}>
                 <div className="flex flex-col gap-2 sm:flex-row">
+                  {autosave && <input type="hidden" name="partial" value="1" />}
                   <Input
                     name="videoLink"
                     type="url"
-                    required
+                    // In the setup step, the rest saves without it; the step stays "not done" until it's added.
+                    required={!autosave}
                     maxLength={500}
                     value={link}
                     // A whole pasted invitation becomes just its link.
@@ -1001,7 +1007,7 @@ function PlaceForm({
                 <input
                   type="checkbox"
                   name="waitingRoom"
-                  required
+                  required={!autosave}
                   defaultChecked={initial.waiting_room_confirmed}
                   className="mt-1 h-4 w-4 shrink-0 accent-[var(--brand)]"
                 />
@@ -1020,7 +1026,7 @@ function PlaceForm({
         </p>
       )}
 
-      {part !== "basics" && modes.includes("phone") && (
+      {modes.includes("phone") && (
         <div className="rounded-lg border border-border bg-brand-soft p-4 text-sm leading-6">
           <p className="font-semibold">You call each {w.family}</p>
           <p className="mt-1">
@@ -1091,34 +1097,6 @@ function WaitingRoomGuide({ hours, meeting }: { hours: string; meeting?: boolean
   );
 }
 
-/**
- * More options: phone calls, on or off. Saves itself; people give the number to call when they
- * book, so nothing else is needed.
- */
-export function MeetingPhoneForm({ action, on, meeting }: { action: Action; on: boolean; meeting?: boolean }) {
-  const w = whoBooks(meeting);
-  const auto = useAutosaveForm(true, "A change to phone calls");
-  const [checked, setChecked] = useState(on);
-  return (
-    <ActionForm action={action} resetOnSuccess={false} className="space-y-3" onEdit={auto.edited} onSuccess={auto.saved} onError={auto.failed} quiet>
-      <label className={`flex cursor-pointer gap-3 rounded-lg border p-3 ${checked ? "border-brand bg-brand-soft" : "border-field-border"}`}>
-        <input type="checkbox" name="phone" checked={checked} onChange={(e) => setChecked(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[var(--brand)]" />
-        <span>
-          <span className="block font-semibold">Phone calls</span>
-          <span className="block text-sm text-muted">You call each {w.family} at the number they give. Your number isn&apos;t shared.</span>
-        </span>
-      </label>
-      {checked && (
-        <p className="text-sm leading-6">
-          Calling from your own phone? In the US, dial <strong>*67</strong> before the number to hide yours. Some {w.families} don&apos;t answer
-          hidden numbers, so a {w.school} phone or calling app works best.
-        </p>
-      )}
-      <AutosaveStatus status={auto.status} retry={auto.retry} />
-    </ActionForm>
-  );
-}
-
 /** A small status line for a card that saves itself, inside a page whose bar is elsewhere. */
 function AutosaveStatus({ status, retry }: { status: ReturnType<typeof useAutosaveForm>["status"]; retry: () => void }) {
   return (
@@ -1144,5 +1122,74 @@ function AutosaveStatus({ status, retry }: { status: ReturnType<typeof useAutosa
         </span>
       ) : null}
     </p>
+  );
+}
+
+/** With weekly hours: how much notice people give, and how far ahead they can book (More options). */
+function BookingWindow({ initial, who }: { initial: ConferenceSettings; who: string }) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <Field label={`${who} book at least`} hint="So no one books a meeting that starts in a few minutes.">
+        <Select name="minNotice" defaultValue={initial.min_notice_hours}>
+          {NOTICE_HOURS.map((h) => (
+            <option key={h} value={h}>
+              {h ? `${noticeLabel(h)} ahead` : noticeLabel(h)}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label={`${who} can book up to`} hint="So your calendar doesn't fill up for the whole semester on day one.">
+        <Select name="maxAhead" defaultValue={initial.max_days_ahead}>
+          {AHEAD_DAYS.map((d) => (
+            <option key={d} value={d}>
+              {aheadLabel(d)} ahead
+            </option>
+          ))}
+        </Select>
+      </Field>
+    </div>
+  );
+}
+
+/**
+ * "Make a weekly copy": a new draft with this setup, every week, without the bookings. Its own
+ * button, not part of the times form (a button inside a form would just save the times).
+ */
+function WeeklyCopyButton({ action }: { action: () => Promise<void> }) {
+  const [pending, start] = useTransition();
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={() => start(() => action())}
+      className="inline-flex min-h-11 items-center font-medium text-brand underline underline-offset-4 disabled:no-underline"
+    >
+      {pending ? "Making a copy…" : "Make a weekly copy"}
+    </button>
+  );
+}
+
+/**
+ * The email shown on the booking page when every time is booked, so people can ask about another
+ * time. Optional: nothing is shown unless it's added (decisions 2026-11-08). Saves itself.
+ */
+export function MeetingContactForm({ action, initial, autosave = false }: { action: Action; initial: string | null; autosave?: boolean }) {
+  const auto = useAutosaveForm(autosave, "A change to your contact email");
+  return (
+    <ActionForm
+      action={action}
+      resetOnSuccess={false}
+      className="space-y-3"
+      onEdit={autosave ? auto.edited : undefined}
+      onSuccess={autosave ? auto.saved : undefined}
+      onError={autosave ? auto.failed : undefined}
+      quiet={autosave}
+      noToast={autosave}
+    >
+      <Field label="Contact email (optional)" hint="Shown on your booking page only when every time is booked, so people can ask about another time. Hidden once your meetings are over.">
+        <Input name="contactEmail" type="email" maxLength={200} defaultValue={initial ?? ""} autoComplete="email" />
+      </Field>
+      {autosave ? <AutosaveStatus status={auto.status} retry={auto.retry} /> : <SubmitButton pendingText="Saving…">Save contact email</SubmitButton>}
+    </ActionForm>
   );
 }

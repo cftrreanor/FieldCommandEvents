@@ -41,15 +41,18 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
       .select(columns + extra)
       .eq("event_id", eventId)
       .order("starts_at");
+  // The number to call for phone calls (before its update, without it).
+  const tryCall = await load(", outcome, call_phone");
   const [{ settings }, withOutcomes] = await Promise.all([
     loadConferenceSettings(supabase, eventId),
-    load(", outcome"),
+    isSchemaError(tryCall.error) ? load(", outcome") : Promise.resolve(tryCall),
   ]);
   // Before the conference outcomes update there's no Met / No-show to show.
   const outcomesReady = !isSchemaError(withOutcomes.error);
   const { data, error } = outcomesReady ? withOutcomes : await load("");
   if (error) missing();
   const bookings = (data ?? []) as unknown as (Pick<Booking, "id" | "starts_at" | "child_name" | "parents" | "meeting_mode" | "note"> & {
+    call_phone?: string | null;
     outcome?: keyof typeof OUTCOME_LABEL | null;
   })[];
 
@@ -68,8 +71,9 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
   const unmarked = bookings.length - met - noShows;
   // Printed before the day (no meeting has started): a sheet to work from, with how they're meeting, a
   // number, their note, and a blank box to tick, instead of "Not marked" on every row (decisions 2026-11-07).
-  const now = new Date().toISOString();
-  const beforeDay = bookings.every((b) => b.starts_at > now);
+  // Per day, not across the whole list: with weekly hours, one past meeting doesn't change the sheet for the rest.
+  const today = utcToZonedDate(new Date().toISOString(), tz);
+  const beforeDay = bookings.length > 0 && bookings.every((b) => utcToZonedDate(b.starts_at, tz) > today);
   const HOW = { in_person: "In person", video: "Video", phone: "Phone call" } as const;
 
   return (
@@ -107,8 +111,9 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
       {bookings.length === 0 ? (
         <p className="mt-6 text-muted">No meetings booked.</p>
       ) : (
-        <table className="mt-5 w-full border-collapse text-left text-sm">
-          <thead>
+        // On phones each meeting stacks, with its labels; the table is for wider screens and print (WCAG 1.4.10).
+        <table className="mt-5 w-full border-collapse text-left text-sm max-sm:block print:table">
+          <thead className="max-sm:hidden print:table-header-group">
             <tr className="border-b-2 border-foreground">
               <th scope="col" className="py-2 pr-3 font-semibold">
                 Time
@@ -141,23 +146,27 @@ export default async function MeetingSummaryPage({ params }: PageProps<"/dashboa
               )}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="max-sm:block print:table-row-group">
             {bookings.map((b) => (
-              <tr key={b.id} className="break-inside-avoid border-b border-border align-top">
-                <td className="whitespace-nowrap py-2 pr-3 tabular-nums">{time(b.starts_at)}</td>
-                {students && <td className="py-2 pr-3 font-medium">{b.child_name}</td>}
-                <td className="py-2 pr-3">{b.parents.map((p) => p.name).join(", ")}</td>
+              <tr key={b.id} className="break-inside-avoid border-b border-border align-top max-sm:block max-sm:py-2 print:table-row">
+                <td data-label="Time" className="whitespace-nowrap py-2 pr-3 tabular-nums max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] print:table-cell">{time(b.starts_at)}</td>
+                {students && <td data-label="Student" className="py-2 pr-3 font-medium max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] print:table-cell">{b.child_name}</td>}
+                <td data-label="Who" className="py-2 pr-3 max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] print:table-cell">{b.parents.map((p) => p.name).join(", ")}</td>
                 {beforeDay && (
                   <>
-                    <td className="whitespace-nowrap py-2 pr-3">{HOW[b.meeting_mode] ?? ""}</td>
-                    <td className="whitespace-nowrap py-2 pr-3 tabular-nums">{formatPhone(b.parents.find((p) => p.phone)?.phone ?? null)}</td>
-                    <td className="py-2 pr-3">{b.note}</td>
+                    <td data-label="How" className="whitespace-nowrap py-2 pr-3 max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] print:table-cell">{HOW[b.meeting_mode] ?? ""}</td>
+                    <td data-label="Phone" className="whitespace-nowrap py-2 pr-3 tabular-nums max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] print:table-cell">
+                      {/* A phone call: the number they gave to be called on. */}
+                      {formatPhone((b.meeting_mode === "phone" ? b.call_phone : null) ?? b.parents.find((p) => p.phone)?.phone ?? null)}
+                    </td>
+                    <td data-label="Note" className="py-2 pr-3 max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] print:table-cell">{b.note}</td>
                   </>
                 )}
                 {outcomesReady && (
-                  <td className="whitespace-nowrap py-2">
+                  <td data-label="Met" className="whitespace-nowrap py-2 max-sm:block max-sm:py-0.5 max-sm:whitespace-normal max-sm:before:mr-1 max-sm:before:font-semibold max-sm:before:content-[attr(data-label)] print:table-cell">
                     {beforeDay ? (
-                      <span aria-label="Not yet" className="inline-block size-5 rounded-sm border-2 border-foreground align-middle" />
+                      // A box to tick on paper; on screen it would look like a button.
+                      <span aria-label="Not yet" className="hidden size-5 rounded-sm border-2 border-foreground align-middle print:inline-block" />
                     ) : b.outcome ? (
                       OUTCOME_LABEL[b.outcome]
                     ) : (

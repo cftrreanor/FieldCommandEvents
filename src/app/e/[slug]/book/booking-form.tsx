@@ -40,6 +40,7 @@ export function BookingForm({
   calendar = false,
   meeting = false,
   contact = null,
+  preview = false,
 }: {
   action: (prev: BookingState, formData: FormData) => Promise<BookingState>;
   times: OpenTime[];
@@ -61,6 +62,8 @@ export function BookingForm({
   meeting?: boolean;
   /** Who to write to when every time is booked (shown only then). */
   contact?: string | null;
+  /** The organizer previewing a draft: no Book button. */
+  preview?: boolean;
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState(action, {});
@@ -146,7 +149,9 @@ export function BookingForm({
                 ? `come to ${place}.`
                 : "the place is in your confirmation email."
               : mode === "video"
-                ? "the link to join is in your confirmation email."
+                ? b.emailSent
+                  ? "the link to join is in your confirmation email."
+                  : "the link to join is on your booking page, below."
                 : `${teacher} calls you at the number you gave.`}
           </p>
         )}
@@ -165,19 +170,18 @@ export function BookingForm({
   if (!times.length) {
     return (
       <Card>
-        <p className="font-medium">Every time is booked.</p>
+        <p className="font-medium">Every time is booked</p>
         <p className="mt-1 text-sm text-muted">
-          {meeting ? `To find another time, write to ${teacher}` : <>To find another time, write to your child&apos;s teacher</>}
           {contact ? (
             <>
-              {" at "}
+              To find another time, write to {meeting ? teacher : <>your child&apos;s teacher</>} at{" "}
               <a href={`mailto:${contact}`} className="font-medium text-brand underline underline-offset-4 [overflow-wrap:anywhere]">
                 {contact}
               </a>
               .
             </>
           ) : (
-            "."
+            "Times open up when someone cancels, so check back later."
           )}
         </p>
       </Card>
@@ -376,11 +380,20 @@ export function BookingForm({
       </section>
 
       <div className="space-y-4">
-        <BotCheck />
-        <FormMessage error={state.error} />
-        <SubmitButton pendingText="Booking…">
-          {pickedTime ? `Book ${days.length > 1 ? `${pickedTime.dayLabel}, ` : ""}${pickedTime.label}` : "Book this time"}
-        </SubmitButton>
+        {preview ? (
+          // The organizer's preview of a draft: everything as people will see it, except booking.
+          <p className="rounded-md border border-border bg-brand-soft px-3 py-2 text-sm">Preview: booking opens when you publish.</p>
+        ) : (
+          <>
+            <BotCheck />
+            <FormMessage error={state.error} />
+            <SubmitButton pendingText="Booking…">
+              {pickedTime ? `Book ${days.length > 1 ? `${pickedTime.dayLabel}, ` : ""}${pickedTime.label}` : "Book this time"}
+            </SubmitButton>
+            {/* What's still needed, beside the button (one "not ready yet" signal everywhere, decisions 2026-11-08). */}
+            {!pickedTime && <p className="text-sm text-muted">Pick a time above, then add your name and email.</p>}
+          </>
+        )}
       </div>
     </form>
   );

@@ -37,6 +37,7 @@ export function ActionForm({
   noValidate,
   onEdit,
   quiet = false,
+  noToast = false,
   onError,
   id,
 }: {
@@ -60,6 +61,8 @@ export function ActionForm({
   onEdit?: (form: HTMLFormElement) => void;
   /** Saves itself as people type: something else shows its errors, and the cursor never jumps to them. */
   quiet?: boolean;
+  /** Don't toast the success message (the form shows its own saved status). */
+  noToast?: boolean;
   /** Called with each error the server sends back (for a form that shows them somewhere of its own). */
   onError?: (error: string) => void;
 }) {
@@ -82,7 +85,8 @@ export function ActionForm({
       if (resetOnSuccess) ref.current?.reset();
       // Something went public: show its link to share, not just a toast.
       if (state.share) shareDialog(state.share);
-      else if (state.message) toast(state.message);
+      // Self-saving setup steps report in their own status bar, so no toast as well.
+      else if (state.message && !noToast) toast(state.message);
       onSuccess?.();
       if (resetOnSuccess && ref.current) onEditRef.current?.(ref.current);
       // A server redirect would jump to the top of the page; this stays put.
@@ -122,7 +126,11 @@ export function ActionForm({
         setChecked(problem ?? null);
         const form = e.currentTarget;
         const failed = () => void form.dispatchEvent(new Event("form-failed", { bubbles: true }));
-        if (problem) return failed();
+        if (problem) {
+          // Quiet forms (self-saving steps) show problems in their own status line, not above the form.
+          if (problem.error) onError?.(problem.error);
+          return failed();
+        }
         if (confirmMessage && !(await confirmDialog(confirmFromText(confirmMessage, { ...(confirmLabel ? { confirmLabel } : {}), ...(cancelLabel ? { cancelLabel } : {}) })))) return failed();
         startTransition(() => formAction(data));
       }}

@@ -1,4 +1,5 @@
 import { LineIcon } from "@/components/line-icon";
+import { brand } from "@/lib/brand";
 /** What families are told about their child's privacy (booking page and their own page). */
 export function PrivacyNote({
   teacher,
@@ -17,7 +18,7 @@ export function PrivacyNote({
   return (
     <section aria-labelledby="privacy-heading" className="rounded-xl border border-border bg-brand-soft p-4 text-sm leading-6 sm:p-5">
       <h2 id="privacy-heading" className="text-base font-semibold">
-        <LineIcon name="lock" inline />{askChild ? <>Your child&apos;s privacy</> : "Your privacy"}
+        <LineIcon name="lock" inline />Who sees your details
       </h2>
       <ul className="mt-2 list-disc space-y-1 pl-5">
         {/* Only when families give their child's name. */}
@@ -31,7 +32,12 @@ export function PrivacyNote({
           </>
         )}
         <li>Nothing about your booking appears on the public page.</li>
-        <li>Everything is permanently deleted 30 days after {weekly ? "your meeting" : "the conference"}, or right away if you cancel.</li>
+        {/* Exactly what's deleted, and when (decisions 2026-11-08): emails people already have stay in their inboxes. */}
+        <li>
+          {askChild ? "Your child's name, your" : "Your"} names, contact details, and note are deleted from {brand.name} 30 days after{" "}
+          {weekly ? "your meeting" : "the conference"}, or as soon as you cancel. A record of the emails we sent you (to whom, and when) is kept
+          for two weeks.
+        </li>
       </ul>
     </section>
   );

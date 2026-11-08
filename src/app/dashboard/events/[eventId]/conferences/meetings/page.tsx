@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { meetingWhen, withCallPhone, type Booking } from "@/lib/conference-bookings";
-import { meetingStarts, modesOf } from "@/lib/conferences";
+import { bookingsOutside, meetingStarts, modesOf } from "@/lib/conferences";
 import { loadConferenceSettings } from "@/lib/conference-settings";
 import { getEventAccess } from "@/lib/data";
 import { hasConferences, isMeeting } from "@/lib/event-types";
@@ -143,6 +143,24 @@ export default async function MeetingsPage({ params }: PageProps<"/dashboard/eve
       over: isOver || (isToday && toMinutes(b.start) + b.minutes <= now),
       label: b.label?.trim() || "Break",
     }));
+  // Upcoming meetings the hours no longer cover (the hours changed after they booked): listed first,
+  // to move or cancel (decisions 2026-11-08, finding 2).
+  const outside = bookingsOutside(
+    bookings
+      .filter((b) => b.starts_at >= nowIso)
+      .map((b) => ({ who: b.child_name || b.parents[0]?.name || "Someone", date: utcToZonedDate(b.starts_at, tz), time: utcToZonedTime(b.starts_at, tz) })),
+    {
+      schedule: settings.schedule,
+      day: event.starts_on,
+      from: utcToZonedTime(event.window_start, tz),
+      to: utcToZonedTime(event.window_end, tz),
+      weekly: settings.weekly_hours,
+      firstDay: event.starts_on,
+      lastDay: event.ends_on,
+      closed: settings.closed_dates,
+      lengths: settings,
+    },
+  );
   const rows = weekly ? weeklyRows : [...meetings, ...breaks].sort((a, b) => toMinutes(a.key.replace("break-", "")) - toMinutes(b.key.replace("break-", "")));
 
   return (
@@ -173,6 +191,22 @@ export default async function MeetingsPage({ params }: PageProps<"/dashboard/eve
                 {setupName}
               </Link>
             </p>
+          )}
+          {outside.length > 0 && (
+            <div role="status" className="rounded-lg border border-warning/40 bg-warning-soft px-4 py-3 text-sm leading-6">
+              <p className="font-semibold">
+                {outside.length === 1 ? "1 meeting is" : `${outside.length} meetings are`} outside your hours now
+              </p>
+              <ul className="mt-1 list-disc pl-5">
+                {outside.map((o) => (
+                  <li key={`${o.date}-${o.time}-${o.who}`}>
+                    {o.who}, {weekly ? `${formatDate(o.date, { year: undefined })} at ` : ""}
+                    {displayTime(o.time)}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1">They&apos;re still booked. Reschedule or cancel each one below, so no one comes when you&apos;re not there.</p>
+            </div>
           )}
           <MeetingList
             rows={rows}

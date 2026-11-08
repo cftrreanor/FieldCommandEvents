@@ -15,7 +15,8 @@ export type OpenSlot = { value: string; day: string; label: string };
 export type DayRange = { min: string; max: string; zone: string };
 
 const dialogClass =
-  "m-auto w-[calc(100%-2rem)] max-w-lg rounded-xl border border-border bg-surface p-0 text-foreground shadow-elevated backdrop:bg-[#071a31]/50";
+  // team-window: in dark mode a raised color with a visible edge, over a darker page (globals.css).
+  "team-window m-auto w-[calc(100%-2rem)] max-w-lg rounded-xl border border-border p-0 text-foreground shadow-elevated";
 
 /** A button that opens a dialog; the dialog closes on its own Cancel, a click outside, or a successful save. */
 function DialogButton({

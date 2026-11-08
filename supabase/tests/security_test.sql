@@ -3936,12 +3936,12 @@ begin
   assert ok, 'an in-person conference needs the school''s address';
   update public.events set venue_address = '1 School Rd' where id = '10000000-0000-0000-0000-0000000000c2';
   update public.events set status = 'published' where id = '10000000-0000-0000-0000-0000000000c2';
-  -- A teacher who sends their own video link needs no link or waiting-room tick here.
+  -- Video always needs the one pasted link: "I'll add it to each invite" no longer counts (20270123000000).
   update public.conference_settings set video_link = null, waiting_room_confirmed = false, own_link = true
    where event_id = '10000000-0000-0000-0000-0000000000c1';
-  assert public.conference_not_ready('10000000-0000-0000-0000-0000000000c1') is null,
-         'a video conference whose teacher sends their own link is ready';
-  update public.conference_settings set video_link = 'https://zoom.us/j/123', own_link = false
+  assert public.conference_not_ready('10000000-0000-0000-0000-0000000000c1') = 'Add your meeting link first.',
+         'a video conference needs its link, even with the old "own link" setting';
+  update public.conference_settings set video_link = 'https://zoom.us/j/123', waiting_room_confirmed = true, own_link = false
    where event_id = '10000000-0000-0000-0000-0000000000c1';
   -- Other kinds still need a plan.
   ok := false;
@@ -5409,7 +5409,7 @@ do $$ begin
   update public.conference_settings set meeting_modes = array['in_person', 'phone'] where event_id = '10000000-0000-0000-0000-0000000000f1';
   assert public.conference_not_ready('10000000-0000-0000-0000-0000000000f1') is null, 'in person and phone with a room is ready';
   update public.conference_settings set meeting_modes = array['phone', 'video'] where event_id = '10000000-0000-0000-0000-0000000000f1';
-  assert public.conference_not_ready('10000000-0000-0000-0000-0000000000f1') = 'Add your meeting link first (step 2).',
+  assert public.conference_not_ready('10000000-0000-0000-0000-0000000000f1') = 'Add your meeting link first.',
          'adding video needs a meeting link';
 end $$;
 reset role;
