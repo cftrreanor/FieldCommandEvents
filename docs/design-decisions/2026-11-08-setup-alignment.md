@@ -43,3 +43,20 @@ changes). Software Engineer bugs fixed. The owner's decision on the new suggesti
 | 8 | Unpublishing volunteer events and band contests doesn't say what happens to people; Delete doesn't name bookings | 2 | Take the advice | |
 | 9 | "When you publish" doesn't say what opens for volunteer events and meetings | 2 | Take the advice | |
 | 10 | Small items (nav names, bus rules, band logo card, cut-off email, dashed borders, small targets, demo chips) | 2 | Later | |
+
+## The seven items left for later (2026-11-08)
+
+The owner chose to do them now. Light check (UI Designer, consultant) on
+`docs/design-reviews/2026-11-08-small-items/`: nothing rated 3 or 4; its severity 2 refinements were made
+(the locked choice muted, with its link on its own line; a shorter deadline help; one "where the logo
+shows"; the demo card's wording and button borders).
+
+| # | Item | Decision | Notes |
+|---|---|---|---|
+| 1 | "Volunteers" vs "Volunteer tracking" in the top menu | Take the advice | "Volunteer tracking" at every width |
+| 2 | Two bus-booking rules | Take the advice | "At least two weeks before contest day", matching the schedule card |
+| 3 | Band contest logo card | Take the advice | Names the registration page and each band's page |
+| 4 | Cut-off contact email | Take the advice | Its own row |
+| 5 | Dashed borders mean three things | Take the advice | Dashed = optional or an empty slot only; disabled is solid and muted; locked is solid and muted with a lock |
+| 6 | Small tap targets | Take the advice | Demo role buttons are 44 px; "See all steps", "Copy link", and "QR code" already were |
+| 7 | Demo card's "Host"/"Guest" | Take the advice | Organizer / Someone booking (meetings), Teacher / Parent (conferences) |

@@ -492,7 +492,7 @@ export function RegistrationSettings({
           id="reg-deadline"
           label="Registration deadline"
           required
-          hint={`Directors can register until 11:59 PM on this day, in your event's time zone. Pick a date before contest day (${contest.label}), with time to build the schedule: directors get their times two weeks before, so they can book buses.`}
+          hint={`Pick a date at least two weeks before contest day (${contest.label}). Directors get their times two weeks before contest day, so they can book buses. Registration closes at 11:59 PM that day, your time.`}
           saver={deadline}
         >
           <Input

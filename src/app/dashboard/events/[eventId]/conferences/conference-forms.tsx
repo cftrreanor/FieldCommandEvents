@@ -357,8 +357,8 @@ function TimesForm({
                 className="team-radio mt-1"
               />
               <span>
-                <span className="flex flex-wrap items-center gap-2 font-semibold">
-                  {/* Locked, not optional: a solid border and a lock, since dashed means optional or empty (light check, 2026-11-08). */}
+                {/* Locked, not optional: a solid border, a lock, and a muted title, since dashed means optional or empty (light check, 2026-11-08). */}
+                <span className={`flex flex-wrap items-center gap-2 font-semibold ${locked ? "text-muted" : ""}`}>
                   {locked && <LineIcon name="lock" inline />}
                   {o.label}
                   {/* Meetings always need a plan, so weekly hours aren't an extra for them. */}
@@ -371,9 +371,10 @@ function TimesForm({
                       {booked === 1 ? `1 ${w.family} has` : `${booked} ${w.families} have`} booked, so this stays{" "}
                       {initial.schedule === "weekly" ? "weekly" : "one day"}.{" "}
                       {copyAction && o.value === "weekly" && (
-                        <>
+                        // Its own line at every width, so the reason reads as one even paragraph.
+                        <span className="mt-1 block">
                           Need more times? <WeeklyCopyButton action={copyAction} />
-                        </>
+                        </span>
                       )}
                     </>
                   ) : forMeetings && o.value === "one_day" ? (

@@ -83,7 +83,9 @@ logged in `docs/design-decisions/`. The rules behind it, with where each was fou
 ## 7. Every screen
 26. **Phone (390 px), tablet (820 px), and desktop (1440 px), light and dark,** every time, with 44 px tap
     targets and nothing hidden off-screen. [L12]
-27. **Status is never shown by color alone,** and controls stay readable in dark mode. [L6, L7]
+27. **Status is never shown by color alone,** and controls stay readable in dark mode. Dashed borders mean
+    "optional" or "an empty slot" only: a disabled button is solid and muted, and a locked choice is solid and
+    muted with a lock. [L6, L7]
 28. **Design every state:** empty, partway done, ready, live, full, and over. [L2, L19]
 
 ## 8. How a new kind of event gets built

@@ -603,7 +603,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                     {conferenceHere
                       ? booking.child
                         ? "Show a teacher how conferences work, as the teacher or as a parent booking a time."
-                        : "Show how meetings work, as the host or as someone booking a time."
+                        : "Show how meetings work, as the organizer or as someone booking a time."
                       : "See this event the way each person on it does, without switching emails."}
                   </p>
                   <details className="text-sm leading-6 text-muted">

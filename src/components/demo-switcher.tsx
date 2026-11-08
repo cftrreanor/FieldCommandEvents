@@ -49,7 +49,7 @@ export function RoleButtons({
             className={`min-h-11 shrink-0 rounded-full border px-4 text-sm font-medium transition disabled:opacity-60 ${
               p.value === current
                 ? "border-brand bg-brand text-brand-foreground"
-                : "border-border bg-surface hover:border-brand"
+                : "border-[1.5px] border-field-border bg-surface hover:border-brand"
             }`}
           >
             {pending && picked === p.value ? "Switching…" : p.label}
