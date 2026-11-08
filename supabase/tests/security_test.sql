@@ -4063,6 +4063,20 @@ begin
   assert (select starts_at = s3 and calendar_sequence = 1 from public.conference_bookings where access_token = t1),
          'a family moves their meeting';
 end $$;
+-- "Emailed a link to pick a new time" is for one time: it clears when the meeting's time changes.
+do $$
+declare t1 uuid := (select access_token from public.conference_bookings where child_name = 'Ava Lopez');
+begin
+  update public.conference_bookings set reschedule_requested_at = now() where access_token = t1;
+  update public.conference_bookings set note = note where access_token = t1;
+  assert (select reschedule_requested_at is not null from public.conference_bookings where access_token = t1),
+         'the emailed mark stays while the time is the same';
+  update public.conference_bookings set starts_at = starts_at + interval '1 minute' where access_token = t1;
+  assert (select reschedule_requested_at is null from public.conference_bookings where access_token = t1),
+         'the emailed mark clears when the meeting''s time changes';
+  update public.conference_bookings set starts_at = starts_at - interval '1 minute' where access_token = t1;
+  update public.conference_bookings set reschedule_requested_at = now() where access_token = t1;
+end $$;
 -- The public sees only open times, and can't read or make bookings directly.
 set role anon;
 set request.jwt.claims = '';
@@ -4106,6 +4120,16 @@ set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":
 do $$ begin
   assert (select count(*) from public.conference_bookings where event_id = '10000000-0000-0000-0000-0000000000d1') = 1,
          'the teacher sees their bookings';
+  assert (select reschedule_requested_at is not null from public.conference_bookings where event_id = '10000000-0000-0000-0000-0000000000d1'),
+         'the teacher sees who was emailed a link to pick a new time';
+  declare ok boolean := false;
+  begin
+    begin
+      update public.conference_bookings set reschedule_requested_at = null where event_id = '10000000-0000-0000-0000-0000000000d1';
+    exception when insufficient_privilege then ok := true;
+    end;
+    assert ok, 'only the server marks who was emailed a link';
+  end;
   delete from public.conference_bookings where event_id = '10000000-0000-0000-0000-0000000000d1';
 end $$;
 reset role;

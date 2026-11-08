@@ -22,6 +22,7 @@ import {
   bookingsOutside,
 } from "@/lib/conferences";
 import { isSchemaError } from "@/lib/schema-check";
+import { eventSender } from "@/lib/event-sender";
 import { conferenceBookedCount } from "@/lib/conference-access";
 import { loadConferenceSettings } from "@/lib/conference-settings";
 import { emailMovedMeetings, loadConference } from "@/app/e/[slug]/book/data";
@@ -163,7 +164,7 @@ export async function saveMeetingTimes(eventId: string, _prev: ActionState, form
       booked > 0 && hours.length
         ? await newlyLeftOut(supabase, eventId, tz, savedTimes, { schedule: "weekly", day: from, from: "", to: "", weekly: hours, firstDay: from, lastDay: to, closed: s.closed_dates, lengths })
         : [];
-    if (leftOut.length && !choice) return { error: leftOutMessage(leftOut) };
+    if (leftOut.length && !choiceCovers(formData, choice, leftOut)) return { error: leftOutMessage(leftOut) };
     // Settings first (weekly hours may run more than one day), then the event's days.
     const error = await saveSettings(eventId, { ...common, schedule: "weekly", weekly_hours: sortWeekly(hours), min_notice_hours: notice, max_days_ahead: ahead });
     if (error) return { error: friendlyDbError(error) };
@@ -203,8 +204,7 @@ export async function saveMeetingTimes(eventId: string, _prev: ActionState, form
     booked > 0
       ? await newlyLeftOut(supabase, eventId, tz, savedTimes, { schedule: "one_day", day: date, from, to, weekly: [], firstDay: date, lastDay: date, closed: [], lengths, movesWithDay: true })
       : [];
-  if (leftOut.length && !choice) return { error: leftOutMessage(leftOut) };
-  // Emailed a link to pick a new time instead: one email each, not a "moved" one as well.
+  if (leftOut.length && !choiceCovers(formData, choice, leftOut)) return { error: leftOutMessage(leftOut) };
   const emailing = choice === "email" ? leftOut.map((b) => b.id) : [];
   let moved: Awaited<ReturnType<typeof emailMovedMeetings>> | null = null;
   if (dayField !== null) {
@@ -217,7 +217,9 @@ export async function saveMeetingTimes(eventId: string, _prev: ActionState, form
       p_timezone: tz,
     });
     if (error) return { error: friendlyDbError(error) };
-    if (date !== event.starts_on && was === "one_day") moved = await emailMovedMeetings(eventId, emailing);
+    // Everyone whose meeting moved gets an updated calendar invite, those emailed a link too, so no
+    // calendar is left on the old day.
+    if (date !== event.starts_on && was === "one_day") moved = await emailMovedMeetings(eventId);
   }
   const error = await saveSettings(eventId, current.legacy ? common : { ...common, schedule: "one_day" });
   if (error) return { error: friendlyDbError(error) };
@@ -311,7 +313,17 @@ export async function saveMeetingPlace(eventId: string, _prev: ActionState, form
   if (room.length > 200) fieldErrors.room = "Keep this under 200 characters.";
   // The setup step saves what's there (the place, the room, the ways to meet) while the link is still
   // to come; the step isn't done until it's added (decisions 2026-11-08). Meeting setup saves all or nothing.
-  const partial = formData.get("partial") === "1";
+  const supabase = await createClient();
+  // Only a draft nobody has booked saves part of the place (as the setup step does): a live event's place
+  // is always complete, whatever the form sends.
+  let partial = formData.get("partial") === "1";
+  if (partial) {
+    const [{ data: ev }, booked] = await Promise.all([
+      supabase.from("events").select("status").eq("id", eventId).maybeSingle(),
+      conferenceBookedCount(supabase, eventId),
+    ]);
+    partial = ev?.status !== "published" && booked === 0;
+  }
   const linkOk = /^https:\/\/\S+$/.test(link) && link.length <= 500;
   if (video) {
     if (!linkOk && !(partial && !link)) fieldErrors.videoLink = "Paste your meeting link. It starts with https://";
@@ -327,7 +339,6 @@ export async function saveMeetingPlace(eventId: string, _prev: ActionState, form
     return { error: Object.values(fieldErrors)[0], fieldErrors };
   }
 
-  const supabase = await createClient();
   const school = await supabase
     .from("events")
     .update({
@@ -527,6 +538,12 @@ async function newlyLeftOut(
     });
 }
 
+/** A choice was made, and only for meetings the page showed (nobody booked since it loaded). */
+function choiceCovers(formData: FormData, choice: "email" | "self" | null, leftOut: { id: string }[]) {
+  const shown = new Set(formData.getAll("shownLeftOut").map(String));
+  return choice !== null && leftOut.every((b) => shown.has(b.id));
+}
+
 /** When the page didn't show them (someone booked since it loaded): who, and what to do. */
 function leftOutMessage(out: { name: string; time: string }[]) {
   return `${out.length === 1 ? "1 booked meeting doesn't" : `${out.length} booked meetings don't`} fit these times: ${out.map((b) => `${b.name} at ${displayTime(b.time)}`).join(", ")}. Someone may have just booked: reload the page to choose what happens to them (your changes here aren't saved yet).`;
@@ -590,7 +607,12 @@ export async function copyAsWeekly(eventId: string): Promise<void> {
     schedule: "weekly",
     weekly_hours: [],
   });
-  if (settingsError) console.error("Copying meeting settings failed", settingsError.code, settingsError.message);
+  if (settingsError) {
+    // Without its settings the copy would be a one-day event spanning twelve weeks: remove it.
+    console.error("Copying meeting settings failed", settingsError.code, settingsError.message);
+    await supabase.from("events").delete().eq("id", copy.id);
+    redirect(`/dashboard/events/${eventId}/conferences?tab=times&copy=failed`);
+  }
   revalidatePath("/dashboard");
   redirect(`/dashboard/events/${copy.id}/conferences/times`);
 }
@@ -605,14 +627,22 @@ async function emailLeftOut(eventId: string, ids: string[]) {
   const conf = await loadConference({ id: eventId });
   if (!conf) return "";
   const admin = createAdminClient();
-  const { data } = await admin
-    .from("conference_bookings")
-    .select(`${BOOKING_COLUMNS}, access_token`)
-    .eq("event_id", eventId)
-    .in("id", ids)
-    .is("reschedule_requested_at", null);
+  const pick = () => admin.from("conference_bookings").select(`${BOOKING_COLUMNS}, access_token`).eq("event_id", eventId).in("id", ids);
+  // Not those already emailed for the time they're booked at (the mark clears when their time changes).
+  let { data, error } = await pick().is("reschedule_requested_at", null);
+  // Before the database update that adds the mark: email everyone, without marking.
+  const marks = !(error && isSchemaError(error));
+  if (!marks) ({ data, error } = await pick());
+  if (error) {
+    console.error("Loading meetings to email failed", error.code, error.message);
+    return " We couldn't email them, so please let them know.";
+  }
   const rows = (data ?? []) as unknown as (Booking & { access_token: string })[];
-  if (!rows.length) return "";
+  const earlier = ids.length - rows.length;
+  const already = earlier ? ` ${earlier === 1 ? "1 was" : `${earlier} were`} already emailed a link for that time, so we didn't email them again.` : "";
+  if (!rows.length) return already;
+  // "Reply to this email" only when replies reach the organizer (their Email settings).
+  const replies = Boolean((await eventSender(eventId))?.replyTo);
   const origin = await getOrigin();
   let sent = 0;
   const failed: string[] = [];
@@ -621,18 +651,20 @@ async function emailLeftOut(eventId: string, ids: string[]) {
     let any = false;
     for (const p of b.parents) {
       if (sent || failed.length) await pause();
-      const message = pickNewTimeEmail(b, conf.event, conf.settings, conf.teacher, link, p);
-      // Replies go to the organizer ("If none of the open times work, reply to this email").
-      if (await sendEmail({ to: p.email, ...message, eventId, ...(conf.teacher.email ? { replyTo: conf.teacher.email } : {}) })) {
+      const message = pickNewTimeEmail(b, conf.event, conf.settings, conf.teacher, link, p, replies);
+      if (await sendEmail({ to: p.email, ...message, eventId })) {
         sent++;
         any = true;
       } else failed.push(`${p.name} (${p.email})`);
     }
-    if (any) await admin.from("conference_bookings").update({ reschedule_requested_at: new Date().toISOString() }).eq("id", b.id);
+    if (any && marks) {
+      const { error: markError } = await admin.from("conference_bookings").update({ reschedule_requested_at: new Date().toISOString() }).eq("id", b.id);
+      if (markError) console.error("Marking a meeting as emailed failed", markError.code, markError.message);
+    }
   }
   return `${sent ? ` We emailed ${sent === 1 ? "1 person" : `${sent} people`} a link to pick a new time.` : ""}${
     failed.length ? ` We couldn't email ${failed.join(", ")}, so please let them know.` : ""
-  }`;
+  }${already}`;
 }
 
 /** The email shown when every time is booked (optional; empty shows none). */

@@ -162,7 +162,7 @@ export function BookingForm({
         )}
         <p className="text-sm text-muted">
           {b.emailSent
-            ? `We emailed a calendar invite to ${b.emails.join(" and ")}, with the details and a link to change or cancel. We'll remind you the day before.`
+            ? `We emailed your confirmation to ${b.emails.join(" and ")}. It has the details, a calendar invite, and a link to change or cancel. We'll remind you the day before.`
             : "We couldn't send every confirmation email, but your time is booked. Save the link below to change or cancel."}
         </p>
         <a href={b.link} className="font-medium text-brand underline underline-offset-4">
@@ -189,6 +189,15 @@ export function BookingForm({
             "Times open up when someone cancels, so check back later."
           )}
         </p>
+        {/* Writing to the organizer is the one thing to do here: a full-size target, not just a link in a sentence. */}
+        {contact && (
+          <a
+            href={`mailto:${contact}`}
+            className="mt-3 inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-medium hover:bg-background max-sm:w-full max-sm:justify-center"
+          >
+            Email {meeting ? teacher : "the teacher"}
+          </a>
+        )}
         <p className="mt-2 text-sm text-muted">Already booked? Use the link in your confirmation email to change or cancel.</p>
       </Card>
     );
@@ -393,18 +402,25 @@ export function BookingForm({
           <>
             <BotCheck />
             <FormMessage error={state.error} />
-            <SubmitButton pendingText="Booking…">
+            <SubmitButton pendingText="Booking…" className="max-sm:w-full">
               {pickedTime ? `Book ${days.length > 1 ? `${pickedTime.dayLabel}, ` : ""}${pickedTime.label}` : "Book this time"}
             </SubmitButton>
             {/* What's still needed, beside the button (one "not ready yet" signal everywhere, decisions 2026-11-08). */}
-            {/* What's still needed, in order: a time, how you'll meet (when there's a choice), then who's coming. */}
             {(() => {
-              const needed = [!pickedTime && "a time", askMode && !mode && "how you'll meet", !(parents[0]?.name.trim() && parents[0]?.email.trim()) && "your name and email"].filter(Boolean);
-              return needed.length ? <p className="text-sm text-muted">Still needed: {needed.join(", then ")}</p> : null;
+              const needed = [!pickedTime && "a time", askMode && !mode && "how you'll meet", !(parents[0]?.name.trim() && parents[0]?.email.trim()) && "your name and email"].filter(
+                (x): x is string => Boolean(x),
+              );
+              return needed.length ? <p className="text-sm text-muted">Still needed: {listWords(needed)}</p> : null;
             })()}
           </>
         )}
       </div>
     </form>
   );
+}
+
+/** "a time", "a time and your name", "a time, how you'll meet, and your name" (Oxford comma). */
+function listWords(items: string[]) {
+  if (items.length < 3) return items.join(" and ");
+  return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
 }

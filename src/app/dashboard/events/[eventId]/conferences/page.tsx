@@ -303,7 +303,7 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
         <Card className="mt-6">
           <h2 className="text-lg font-semibold">When every time is booked</h2>
           <p className="mt-1 mb-4 text-sm text-muted">What people see if they open your link and nothing is left.</p>
-          <MeetingContactForm action={saveMeetingContact.bind(null, eventId)} initial={settings.contact_email ?? null} />
+          <MeetingContactForm action={saveMeetingContact.bind(null, eventId)} initial={settings.contact_email ?? null} autosave />
         </Card>
       </ConferenceSetup>
     </div>
@@ -314,11 +314,12 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
 async function bookedTimes(supabase: Awaited<ReturnType<typeof createClient>>, eventId: string, tz: string): Promise<BookedTime[]> {
   const { data } = await supabase
     .from("conference_bookings")
-    .select("starts_at, child_name, parents")
+    .select("id, starts_at, child_name, parents")
     .eq("event_id", eventId)
     .gte("starts_at", new Date().toISOString())
     .order("starts_at");
-  return ((data ?? []) as { starts_at: string; child_name: string | null; parents: { name: string }[] }[]).map((b) => ({
+  return ((data ?? []) as { id: string; starts_at: string; child_name: string | null; parents: { name: string }[] }[]).map((b) => ({
+    id: b.id,
     who: b.child_name || b.parents[0]?.name || "Someone",
     date: utcToZonedDate(b.starts_at, tz),
     time: utcToZonedTime(b.starts_at, tz),

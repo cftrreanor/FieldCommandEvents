@@ -60,7 +60,7 @@ export function VenuePicker({
     return (
       <div className="grid gap-4">
         {notice && <p className="text-sm text-muted">{notice}</p>}
-        <Field label={`${kind} name`} hint="Optional.">
+        <Field label={`${kind} name (optional)`}>
           <Input name="venueName" defaultValue={initial?.name ?? ""} placeholder={example} />
         </Field>
         <Field label={`${kind} address`}>

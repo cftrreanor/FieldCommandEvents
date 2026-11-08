@@ -659,7 +659,7 @@ function TimesForm({
       </div>
 
       {part === "basics" && (
-        <p className="text-sm text-muted">Need a break, or time between meetings? Add it in More options, the next step after Where you&apos;ll meet.</p>
+        <p className="text-sm text-muted">Need a break, or time between meetings? You&apos;ll set those in step 4, More options.</p>
       )}
       {outside.length > 0 && (
         <div id="times-outside" tabIndex={-1} className="rounded-lg border border-warning/40 bg-warning-soft p-4 text-sm leading-6 outline-none">
@@ -674,16 +674,18 @@ function TimesForm({
               </li>
             ))}
           </ul>
+          {/* The meetings shown here: the server won't apply this choice to anyone booked since. */}
+          {outside.map((b) => b.id && <input key={b.id} type="hidden" name="shownLeftOut" value={b.id} />)}
           <fieldset className="mt-3">
             <legend className="font-semibold">What should happen to {outside.length === 1 ? "this meeting" : `these ${outside.length} meetings`}?</legend>
             {(
               [
-                { value: "email", label: `Keep ${outside.length === 1 ? "it" : "them"} booked, and email ${outside.length === 1 ? "them" : "each"} a link to pick a new time` },
-                { value: "self", label: `Keep ${outside.length === 1 ? "it" : "them"} booked. I'll contact ${outside.length === 1 ? "them" : "each one"} myself` },
+                { value: "email", label: `Email ${outside.length === 1 ? "them" : "each"} a link to pick a new time` },
+                { value: "self", label: `I'll contact ${outside.length === 1 ? "them myself (the time stays as booked)" : "each one myself (their times stay as booked)"}` },
               ] as const
             ).map((o) => (
               <label key={o.value} className="mt-2 flex min-h-11 items-start gap-3">
-                <input type="radio" name="outsideChoice" value={o.value} checked={picked === o.value} onChange={() => setChoice(o.value)} className="team-radio mt-1" />
+                <input type="radio" name="outsideChoice" value={o.value} checked={picked === o.value} onChange={() => setChoice(o.value)} className="team-radio on-warning mt-1" />
                 <span>{o.label}</span>
               </label>
             ))}
@@ -704,7 +706,7 @@ function TimesForm({
           editing={editing}
           onCancel={onCancel}
           // Save says what will happen (decisions 2026-11-08, light check).
-          label={outside.length ? (picked === "email" ? `Save and email ${outside.length === 1 ? "them" : `all ${outside.length}`}` : `Save, keep ${outside.length} booked`) : "Save meeting times"}
+          label={outside.length ? (picked === "email" ? `Save and email ${people(outside.length)}` : `Save, I'll contact ${people(outside.length)}`) : "Save meeting times"}
           saved={Boolean(initial.times_saved_at)}
           problem={outside.length ? { text: `${outside.length} don't fit`, target: "times-outside" } : null}
         />
@@ -941,6 +943,8 @@ function PlaceForm({
         </div>
       </fieldset>
 
+      {/* With more than one way to meet, each gets a heading of its own. */}
+      {meeting && inPerson && (video || modes.includes("phone")) && <h3 className="-mb-2 border-t border-border pt-4 text-base font-semibold">In person</h3>}
       {inPerson && (
         <fieldset className="grid gap-4">
           <legend className="mb-1 text-sm font-semibold">{meeting ? "Where you meet" : "Your school"}</legend>
@@ -969,6 +973,7 @@ function PlaceForm({
         </Field>
       )}
 
+      {meeting && video && (inPerson || modes.includes("phone")) && <h3 className="-mb-2 border-t border-border pt-4 text-base font-semibold">Video</h3>}
       {video && (
         <div className="space-y-4">
           <WaitingRoomGuide hours={hours} meeting={meeting} />
@@ -1225,14 +1230,19 @@ export function MeetingContactForm({ action, initial, autosave = false }: { acti
       <Field label="Contact email (optional)" hint="Shown on your booking page only when every time is booked, so people can ask about another time. Hidden once your meetings are over.">
         <Input name="contactEmail" type="email" maxLength={200} defaultValue={initial ?? ""} autoComplete="email" />
       </Field>
+      {/* Saves itself, in the setup step and on Meeting setup alike (one save model for one field). */}
       {autosave ? (
         <AutosaveStatus status={auto.status} retry={auto.retry} />
       ) : (
-        // Secondary: the page's main save is the bar under Meeting times.
         <SubmitButton variant="secondary" pendingText="Saving…">
           Save contact email
         </SubmitButton>
       )}
     </ActionForm>
   );
+}
+
+/** "1 person", "3 people". */
+function people(n: number) {
+  return n === 1 ? "1 person" : `${n} people`;
 }

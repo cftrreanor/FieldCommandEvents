@@ -473,7 +473,7 @@ export async function emailTeacher(
  * New hours left a booked meeting out (the organizer chose to email them): it's still booked, and
  * this asks them to pick a new time from their own link (decisions 2026-11-08, finding 2).
  */
-export function pickNewTimeEmail(b: Booking, event: BookingEvent, s: ConferenceSettings, teacher: Teacher, link: string, to: BookingParent) {
+export function pickNewTimeEmail(b: Booking, event: BookingEvent, s: ConferenceSettings, teacher: Teacher, link: string, to: BookingParent, replies: boolean) {
   const when = meetingWhen(b.starts_at, s.meeting_minutes, event.timezone);
   const word = kindWord(event);
   const first = to.name.split(" ")[0];
@@ -483,7 +483,14 @@ export function pickNewTimeEmail(b: Booking, event: BookingEvent, s: ConferenceS
       heading: "Please pick a new time",
       paragraphs: [
         `Hi ${first}, ${teacher.name} changed the hours for ${event.name}. Your ${word} (${when}) is now outside those hours.`,
-        `Your ${word} stays booked until you pick a new time or cancel. If none of the open times work, reply to this email.`,
+        `Your ${word} stays booked until you pick a new time or cancel.${
+          // Where to turn: replies when they reach the organizer, else the email they chose to show, else nothing.
+          replies
+            ? " If none of the open times work, reply to this email."
+            : s.contact_email
+              ? ` If none of the open times work, write to ${s.contact_email}.`
+              : ""
+        }`,
       ],
       button: { label: "Pick a new time", url: link },
       footer: `Sent by ${brand.name} for ${teacher.name}.`,

@@ -233,7 +233,8 @@ export function notReady(s: ConferenceSettings | null, venueAddress: string | nu
 
 
 /** A booked meeting, in the event's time zone: who, the day ("2026-11-14"), and the start ("09:15"). */
-export type BookedTime = { who: string; date: string; time: string };
+/** A booked meeting: who, its day and time, and (on Meeting setup) the booking, so Save says which ones were shown. */
+export type BookedTime = { who: string; date: string; time: string; id?: string };
 
 /**
  * The booked meetings that no longer fit new times: on another day, outside the hours, in a break,

@@ -95,6 +95,8 @@ a word for two things on one screen.
 - **Again in:** Meetings as built ("Your meetings" was also "See your meetings", "Meetings list",
   and "Meetings page"; "Manage meetings" opened setup, 7 of 8). **Sharper rule:** a page has one name,
   used on every button and link that opens it; a button's words name the page it opens.
+- **Again in:** Meetings final check ("confirmation email" and "calendar invite" for the same email on
+  one page, so people expect two; 2 of 3). One email, one name, with what's in it listed once.
 
 ## L6. Dark mode: muted text is white
 In dark mode `--muted` is pure white, so anything that relies on grey looks live or filled in.
@@ -116,6 +118,9 @@ and add a word like "Ended". Only disabled controls fade, and they say why.
 **Checked automatically** (faded-container).
 - **Seen in:** volunteer jobs v3 (faint buttons that worked), check-in desk (ended shifts looked
   disabled), badges (Print faded with no reason).
+- **Again in:** Meetings final check (the not-ready Book button was a dashed outline, the same as open
+  times and a locked choice, 2 of 3). Not ready keeps the button's shape with a solid muted fill;
+  dashed outlines mean open or empty slots only.
 
 ## L8. Promise only what the app does
 Every claim on a screen, in an email, or on the website must be true in the code today: "one
@@ -224,6 +229,9 @@ Steps in one flow use one save model and one "next" spot: they all save themselv
 bar (status left, Next up right), or they all use a Save button.
 - **Seen in:** setup redesign (three kinds of saving), band PR 1 built (Details had Save changes
   and a Next link at the top; Registration saved itself with Next in the bar, 5 of 8 reviewers).
+- **Again in:** Meetings final check (Meeting setup's bar said "All changes saved" over a contact email
+  card with its own Save button, 2 of 3). **Sharper rule:** this holds within one page too: a card on a
+  self-saving page saves itself.
 
 ## L20. Reorder arrows stay put and say what they moved
 Up and down arrows sit in two fixed columns (an unusable one keeps its space), look like buttons,

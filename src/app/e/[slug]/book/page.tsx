@@ -84,9 +84,10 @@ export default async function BookConferencePage({ params, searchParams }: Param
     <>
       <EventHeaderBar slug={slug} />
       {/* Once booked, the event's hours step aside so the person's own time leads (decisions 2026-11-08). */}
-      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:py-12 [&:has([data-booked])_[data-event-summary]]:hidden">
+      {/* Booked: "You're booked" and the time are the first big text, so the label goes and the title shrinks. */}
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:py-12 [&:has([data-booked])_[data-event-summary]]:hidden [&:has([data-booked])_[data-booking-kicker]]:hidden [&:has([data-booked])_h1]:text-xl [&:has([data-booked])_h1]:font-semibold">
         <header>
-          <p className="text-sm font-medium text-muted">{words.child ? "Parent-teacher conference" : "Book a meeting"}</p>
+          <p data-booking-kicker className="text-sm font-medium text-muted">{words.child ? "Parent-teacher conference" : "Book a meeting"}</p>
           <h1 className="mt-1 text-4xl font-medium tracking-tight sm:text-5xl">{event.name}</h1>
           {/* Who's behind it: the person and their group, as the email says (decisions 2026-11-08). */}
           <p className="mt-2 text-xl font-medium">

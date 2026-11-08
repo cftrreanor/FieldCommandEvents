@@ -257,7 +257,7 @@ export function MeetingList({
             </div>
           ) : (
             !r.booking.started && (
-              <div className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 max-sm:gap-x-2 print:hidden">
+              <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 print:hidden">
                 <RescheduleButton
                   who={whoOf(r.booking)}
                   them={r.booking.child ? "the family" : "them"}

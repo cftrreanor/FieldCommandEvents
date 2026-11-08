@@ -246,12 +246,13 @@
   font-weight: 400;
 }
 
-/* Not ready yet, but still pressable (it says what's missing): a plain outlined button with
-   full-contrast words, never a faded one that can't be read outdoors. */
+/* Not ready yet, but still pressable (it says what's missing): the button's own shape with a solid,
+   muted fill and readable words, never a faded one that can't be read outdoors. Dashed outlines mean
+   open or empty times only (light check, 2026-11-08). */
 form [data-not-ready] {
-  background: var(--surface) !important;
-  color: var(--muted) !important;
-  border: 1.5px dashed var(--field-border) !important;
+  background: color-mix(in srgb, var(--muted) 14%, var(--surface)) !important;
+  color: var(--foreground) !important;
+  border: 1.5px solid var(--field-border) !important;
   box-shadow: none !important;
 }
 form[data-missing] :is(input, select, textarea):invalid {
@@ -378,6 +379,10 @@ form[data-missing="fix"]::after {
   border: 2px solid var(--field-border);
   border-radius: 9999px;
   background: var(--surface);
+}
+/* On a warning box the usual gray ring is faint (in dark mode most of all): ring it in the warning color. */
+.team-radio.on-warning {
+  border-color: var(--warning);
 }
 .team-radio:checked {
   border-color: var(--brand);

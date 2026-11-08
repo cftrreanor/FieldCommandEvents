@@ -11,3 +11,24 @@ alter table public.conference_bookings add column reschedule_requested_at timest
 -- Readable by those who can read the booking (row-level security still applies): Your meetings says
 -- who was emailed.
 grant select (reschedule_requested_at) on public.conference_bookings to authenticated;
+
+-- The mark is for the time they were emailed about: when the meeting's time changes (they picked a new
+-- time, the organizer moved it, or the day moved), it clears, so a later change can email them again
+-- (light check, 2026-11-08).
+create or replace function public.clear_reschedule_request()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.starts_at is distinct from old.starts_at then
+    new.reschedule_requested_at := null;
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.clear_reschedule_request() from public, anon, authenticated;
+
+create trigger conference_bookings_clear_reschedule_request
+  before update of starts_at on public.conference_bookings
+  for each row execute function public.clear_reschedule_request();
