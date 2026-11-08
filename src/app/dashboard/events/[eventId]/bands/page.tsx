@@ -29,7 +29,7 @@ import { SetupTabs } from "../../_components/setup-tabs";
 import { ReopenRegistration } from "./reopen-registration";
 import { RegistrationSettings } from "./registration-settings";
 
-export const metadata: Metadata = { title: "Registration" };
+export const metadata: Metadata = { title: "Band registration" };
 // Sending a long list of invitations finishes after the page answers; give it time.
 export const maxDuration = 300;
 
@@ -279,7 +279,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
             </ActionButton>
           </div>
         )}
-        <div className="mt-6">{registrationForm({ href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Volunteer Setup" })}</div>
+        <div className="mt-6">{registrationForm({ href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Jobs and shifts" })}</div>
       </div>
     );
   }

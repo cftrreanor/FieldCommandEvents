@@ -689,7 +689,7 @@ export function RegistrationSettings({
           )}
         </div>
         {draft && missing.length > 0 && (
-          <p className="mt-1.5 text-sm text-muted">You can leave and come back. Before you publish, add {missing.join(" and ")}.</p>
+          <p className="mt-1.5 hidden text-sm text-muted sm:block">You can leave and come back. Before you publish, add {missing.join(" and ")}.</p>
         )}
       </div>
     </div>

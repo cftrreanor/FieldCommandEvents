@@ -4,7 +4,7 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { formatDate, formatTime, utcToZonedDate, zoneAbbreviation } from "@/lib/time";
 import { hasPass, readPass } from "@/lib/volunteer-pass";
 
-// Maps & documents a host shares. Files sit in a private bucket; people open
+// Maps and documents a host shares. Files sit in a private bucket; people open
 // them through /files/<id>, which checks they're allowed and hands out a
 // short-lived link. Lists for each page are loaded with the server's key,
 // filtered by who the page is for.

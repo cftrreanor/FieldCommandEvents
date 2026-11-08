@@ -104,7 +104,9 @@ function SaveCancel({
             ✓
           </span>
         )}
-        <span className="font-semibold">{problem ? problem.text : editing ? "Unsaved changes" : saved ? "All changes saved" : "Not saved yet"}</span>
+        <span className="shrink-0 font-semibold">{problem ? problem.text : editing ? "Unsaved changes" : saved ? "All changes saved" : "Not saved yet"}</span>
+        {/* Why this page has a Save button when the setup steps save themselves (light check, 2026-11-08). */}
+        {!problem && saved && !editing && <span className="hidden text-muted sm:inline">· Nothing changes for people who booked until you save</span>}
         {problem && (
           <button
             type="button"
@@ -124,7 +126,8 @@ function SaveCancel({
           Undo changes
         </Button>
       )}
-      <SubmitButton disabled={disabled || (saved && !editing)}>{label}</SubmitButton>
+      {/* Shown once there's something to save, never as a grey button beside "All changes saved". */}
+      {(editing || !saved) && <SubmitButton disabled={disabled}>{label}</SubmitButton>}
     </div>
   );
 }

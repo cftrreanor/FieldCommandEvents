@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { Card } from "@/components/ui";
 import { SettingsNav, type SettingsSection } from "./settings-nav";
 import { TeamRoles } from "../team/team-roles";
-import { EVENT_TYPES, bookingWords, eventTypeLabel, groupWords, leadWords, hasBands, hasBooths, hasConferences, hasEnsembles, hasParents, isMeeting } from "@/lib/event-types";
+import { EVENT_TYPES, bookingWords, eventTypeLabel, groupWords, leadWords, hasBands, hasBooths, hasConferences, hasEnsembles, hasParents, isMeeting, usesJobs } from "@/lib/event-types";
+import { conferenceBookedCount } from "@/lib/conference-access";
 import { ActionButton } from "../forms";
 import { getEventAccess } from "@/lib/data";
 import { isPlacesConfigured } from "@/lib/places";
@@ -93,8 +94,8 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   // Volunteer events and band contests set up in three steps (shown by the layout), not the guided Event settings.
   // The Details step of an event set up in steps (opened from the step bar, no section asked for): the step bar is
   // the one menu there. "Event settings" (?section=…) always shows every section, with its own list.
-  const stepOnly =
-    (hasConferences(event.event_type) || event.event_type === "volunteer" || event.event_type === "band_contest") && event.status !== "published" && !sectionParam;
+  const steppedSetup = hasConferences(event.event_type) || event.event_type === "volunteer" || event.event_type === "band_contest";
+  const stepOnly = steppedSetup && event.status !== "published" && !asked;
   const guided = setupParam === "1" && !hasConferences(event.event_type) && event.event_type !== "volunteer" && event.event_type !== "band_contest";
   const at = SETUP_STEPS.findIndex((s) => s.id === section);
   const prevStep = guided && at > 0 ? setupHref(eventId, SETUP_STEPS[at - 1].id) : undefined;
@@ -266,12 +267,23 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
     { id: "details", label: "Event details", done: true, status: eventTypeLabel(event.event_type) },
     { id: "team", label: "Team setup", done: teamCount > 0, status: teamCount ? `${teamCount} ${teamCount === 1 ? "person" : "people"}` : "Optional" },
     { id: "emails", label: "Email settings", done: Boolean(replyRow || notifySaved), status: replyRow || notifySaved ? "Saved" : "Default" },
-    ...(conference ? [] : [{ id: "files", label: "Maps & documents", done: files.length > 0, status: files.length ? `${files.length} ${files.length === 1 ? "file" : "files"}` : "Optional" }]),
-    { id: "more", label: "Publishing & more", done: event.status === "published", status: event.status === "published" ? "Live" : "Draft" },
+    ...(conference ? [] : [{ id: "files", label: "Maps and documents", done: files.length > 0, status: files.length ? `${files.length} ${files.length === 1 ? "file" : "files"}` : "Optional" }]),
+    { id: "more", label: "Publishing and more", done: event.status === "published", status: event.status === "published" ? "Live" : "Draft" },
   ];
   const published = event.status === "published";
   // Could it be published again after unpublishing? Not after a plan ends, or once another event takes a one-at-a-time spot.
   const republishBlocked = published && section === "more" ? await republishReason(supabase, eventId) : null;
+  // A live meetings event: how many have booked, so unpublishing says what happens to them.
+  const bookedNow = published && section === "more" && hasConferences(event.event_type) ? await conferenceBookedCount(supabase, eventId) : 0;
+  const booked = bookedNow === 1 ? "1 person has" : `${bookedNow} people have`;
+  // What unpublishing stops, in each kind's own words (light check, 2026-11-08).
+  const unpublishIntro = hasConferences(event.event_type)
+    ? `Your booking page is live${bookedNow ? `, and ${booked} booked` : ""}. Unpublishing hides the page and stops new bookings.${bookedNow ? " Their times stay booked, and nobody is emailed." : " Nobody is emailed."}`
+    : event.event_type === "band_contest"
+      ? "Your event is live. Unpublishing hides its public pages and closes band registration and volunteer sign-up. Nobody is emailed."
+      : event.event_type === "volunteer"
+        ? "Your event is live. Unpublishing hides its public pages and closes volunteer sign-up. Nobody is emailed."
+        : "Your event is live. Unpublishing hides its public pages and stops every sign-up and registration. Nobody is emailed.";
   const afterUnpublish = republishBlocked
     ? `${republishBlocked} If you unpublish it, you can't publish it again until that changes.`
     : "You can publish again anytime.";
@@ -295,11 +307,13 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
       ) : (
         <>
           <Link href={`/dashboard/events/${eventId}`} className="text-sm text-muted hover:text-foreground">
-            ← Back to {event.name}
+            {/* Event settings opened during setup: the way back to the steps. */}
+            ← {!published && steppedSetup && !stepOnly ? "Back to setup" : `Back to ${event.name}`}
           </Link>
           <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">{stepOnly ? "Event details" : "Event settings"}</h1>
           <SavedBy eventId={eventId} area={["details", "files"]} className="mt-2" />
-          <p className="mt-1 text-sm text-muted">Boxes marked * are required.</p>
+          {/* Only where there are boxes to fill in. */}
+          {section !== "more" && <p className="mt-1 text-sm text-muted">Boxes marked * are required.</p>}
         </>
       )}
       {/* A meetings draft's Details step: the step bar is the one menu, so no second one beside it (decisions 2026-11-08). */}
@@ -365,7 +379,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                     One logo for your account, shown next to ours at the top of your public event pages and printed on volunteer
                     badges. Print badges from{" "}
                     <Link href={`/dashboard/events/${eventId}/volunteering/badges`} className="font-medium text-brand underline">
-                      Volunteer Setup
+                      {usesJobs(event.event_type) ? "Jobs and shifts" : "Volunteer Setup"}
                     </Link>
                     .
                   </p>
@@ -387,7 +401,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
 
           {section === "files" && (
             <Panel
-              title="Maps & documents"
+              title="Maps and documents"
               intro={
                 groupsHere
                   ? `Share a ${bandsHere ? "stadium" : "building"} map, parking map, or director packet. Choose who sees each one: the public page, ${words.one} directors, volunteers, or your team.`
@@ -412,7 +426,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
               <p className="mb-4 mt-1 text-sm text-muted">
                 {conference
                   ? "Co-hosts share your account: they can see your bookings, and reschedule or cancel meetings."
-                  : `Everyone helping you run ${event.name}, one tab per role. ${leadWords(event.event_type).many} can also be added from each sign-up in Volunteer Setup.`}
+                  : `Everyone helping you run ${event.name}, one tab per role. ${leadWords(event.event_type).many} can also be added from each ${usesJobs(event.event_type) ? "job in Jobs and shifts" : "sign-up in Volunteer Setup"}.`}
               </p>
               <TeamRoles eventId={eventId} roles={conference ? ["hosts"] : ["hosts", "volunteer-leads", "section-leads"]} open={typeof tab === "string" ? tab : null}
                 href={(t) => `${guided ? setupHref(eventId, "team") : `/dashboard/events/${eventId}/edit?section=team`}&tab=${t}`}
@@ -493,7 +507,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                 title="Publishing"
                 intro={
                   published
-                    ? `Your event is live. Unpublishing hides its public pages and stops every sign-up and registration. Nobody is emailed. ${afterUnpublish}`
+                    ? `${unpublishIntro} ${afterUnpublish}`
                     : guided
                       ? "Ready for people to see it? Publish now and your event page goes live. You can also publish later from your event page."
                       : "Your event isn't published yet. Publish it from the event page when you're ready."
@@ -506,12 +520,9 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                 ) : published ? (
                   <ActionButton
                     action={setEventPublished.bind(null, eventId, false)}
-                    variant="stop"
-                    confirmMessage={
-                      hasConferences(event.event_type)
-                        ? `Unpublish? Your booking page will be hidden. Meetings already booked stay booked, and no one is emailed. ${afterUnpublish}`
-                        : `Unpublish? The public pages will be hidden and volunteer sign-up will close. ${afterUnpublish}`
-                    }
+                    // Reversible, so an outline: red is kept for deleting.
+                    variant="secondary"
+                    confirmMessage={`Unpublish? ${unpublishIntro} ${afterUnpublish}`}
                   >
                     Unpublish event
                   </ActionButton>

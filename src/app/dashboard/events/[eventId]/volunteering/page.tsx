@@ -31,7 +31,7 @@ import { LineIcon } from "@/components/line-icon";
 export async function generateMetadata({ params }: PageProps<"/dashboard/events/[eventId]/volunteering">): Promise<Metadata> {
   const { eventId } = await params;
   const { data } = await (await createClient()).from("events").select("event_type").eq("id", eventId).maybeSingle();
-  return { title: usesJobs(data?.event_type) ? "Volunteer jobs" : "Volunteer Setup" };
+  return { title: usesJobs(data?.event_type) ? "Jobs and shifts" : "Volunteer Setup" };
 }
 
 type HostRow = { user_id: string; role: "owner" | "admin"; profiles: { full_name: string; email: string } | null };
@@ -510,7 +510,7 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                           next: published
                             ? { href: `/dashboard/events/${eventId}`, label: "Back to the event" }
                             : bandsHere
-                              ? { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish registration" }
+                              ? { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish" }
                               : { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish your event" },
                         },
                       }
@@ -586,16 +586,18 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                 </h3>
                 <p className="mt-1 mb-4 text-sm text-muted">
                   {jobsHere
-                    ? "Name it and choose shifts or things to bring. You add them next."
+                    ? "Choose shifts or things to bring, then name the job. You add the times or items next."
                     : "Name it and choose its type. You'll add its details, Coordinators, and time slots or items next."}
                 </p>
                 <NewStationForm action={createStation.bind(null, eventId)} openTab job={jobsHere} />
-                {bandsHere && !published && stations.length === 0 && (
-                  // Volunteers are optional before publishing: the way on without any.
+                {jobsHere && !published && stations.length === 0 && (
+                  // The way on, as on every other step: optional for a band contest; a volunteer event needs a job first.
                   <p className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border pt-3 text-sm">
-                    <span className="text-muted">No volunteer jobs yet? Add them any time before contest day.</span>
+                    <span className="text-muted">
+                      {bandsHere ? "No volunteer jobs yet? Add them any time before contest day." : "Publishing needs at least one job with a shift or a thing to bring."}
+                    </span>
                     <Link href={`/dashboard/events/${eventId}#publish`} className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
-                      Next up: Publish registration →
+                      Next up: Publish →
                     </Link>
                   </p>
                 )}

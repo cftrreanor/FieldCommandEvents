@@ -114,7 +114,11 @@ export function AutosaveBar({
             <span aria-hidden>◆ </span>Not saved yet. {todo}
           </p>
         ) : (
-          <p className="text-muted">Changes save automatically</p>
+          // Short on phones, so the bar stays one line over the form.
+          <p className="text-muted">
+            <span className="sm:hidden">Saves as you go</span>
+            <span className="hidden sm:inline">Changes save automatically</span>
+          </p>
         )}
       </div>
       {next && (

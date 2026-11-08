@@ -179,7 +179,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   const gate = path.find((c) => c.checkpoint_kind === "gate");
 
   const tz = event.timezone;
-  // Maps & documents: hosts see every file (hidden ones too); the team, the ones shared with them.
+  // Maps and documents: hosts see every file (hidden ones too); the team, the ones shared with them.
   const files: EventFile[] = access.isHost
     ? (((await supabase.from("event_files").select("id, event_id, label, path, file_name, content_type, size_bytes, audiences, visible_from, uploaded_by, uploaded_at").eq("event_id", eventId).order("created_at")).data ?? []) as EventFile[])
     : await filesFor([eventId], ["public", "team"], () => tz);
@@ -440,7 +440,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
                   </Link>
                   {!past && (
                     <Link href={`/dashboard/events/${eventId}/announcements`} className={BTN_OUTLINE}>
-                      Broadcast Message
+                      Broadcast message
                     </Link>
                   )}
                 </div>
@@ -500,7 +500,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
                 </Link>
                 {access.canManage && !past && (
                   <Link href={`/dashboard/events/${eventId}/announcements`} className={BTN_OUTLINE}>
-                    Broadcast Message
+                    Broadcast message
                   </Link>
                 )}
               </div>
@@ -571,7 +571,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
                     access.canManage && { href: `/dashboard/events/${eventId}/volunteers`, label: "Volunteer check-in" },
                     myStations.length > 0 && { href: `/dashboard/events/${eventId}/contest-day`, label: "What I lead" },
                     hasBooths(event.event_type) && { href: `/dashboard/events/${eventId}/booths/check-in`, label: "Partner check-in" },
-                    access.canManage && !past && { href: `/dashboard/events/${eventId}/announcements`, label: "Broadcast Message" },
+                    access.canManage && !past && { href: `/dashboard/events/${eventId}/announcements`, label: "Broadcast message" },
                   ]
                     .filter((l): l is { href: string; label: string } => Boolean(l))
                     .map((l, i) => (
@@ -632,7 +632,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
                       ? { href: "/place", label: "Choose where you'll meet" }
                       : { href: "/times", label: "Meeting times" };
                 return (
-                  <Link href={`/dashboard/events/${eventId}/conferences${step.href}`} className={timesTodo || placeTodo ? BTN : BTN_OUTLINE}>
+                  // An outline, as on the volunteer and band cards: the Publish box above has the one main button.
+                  <Link href={`/dashboard/events/${eventId}/conferences${step.href}`} className={BTN_OUTLINE}>
                     {step.label}
                   </Link>
                 );
@@ -642,6 +643,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           {/* Once it's live: how full it is, the same way the volunteer card shows its spots (owner, 2026-11-08). */}
           {published && conference?.times_saved_at && conference.schedule !== "weekly" && (() => {
             const total = meetingStarts(utcToZonedTime(event.window_start, tz), utcToZonedTime(event.window_end, tz), conference).length;
+            if (!total) return null;
             const pct = total ? Math.round((conferenceBooked / total) * 100) : 0;
             return (
               <div className="mt-4 space-y-4 border-t border-border pt-4">
@@ -652,7 +654,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
                     </p>
                     <p className="text-sm tabular-nums text-muted">{pct}%</p>
                   </div>
-                  <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-background" role="progressbar" aria-label="Meeting times booked" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+                  <div className="mt-2 h-2.5 overflow-hidden rounded-full border border-border bg-background" role="progressbar" aria-label="Meeting times booked" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
                     <div className={`h-full rounded-full ${pct >= 100 ? "bg-success" : "bg-brand"}`} style={{ width: `${Math.min(pct, 100)}%` }} />
                   </div>
                 </div>
@@ -830,7 +832,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
       </Card>
     </PageSection>
   ) : hasBooths(event.event_type) ? (
-    <PageSection id="signups" title="Booths & partners">
+    <PageSection id="signups" title="Booths and partners">
       <BoothsCard eventId={eventId} isDay={isEventDay} />
     </PageSection>
   ) : null;
@@ -852,10 +854,10 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
             {event.event_type === "band_contest" && !event.performance_order_published && !past && (
               // When to post times by, and why: directors book buses from them. Before publishing, it's later work.
               <span className="basis-full text-sm">
-                <span className="font-semibold">
-                  {published ? "Publish by" : "After you publish registration, by"} {formatDate(twoWeeksBefore(event.starts_on), { year: undefined })}
+                <span className="font-semibold">Publish it by {formatDate(twoWeeksBefore(event.starts_on), { year: undefined })}</span>
+                <span className="text-muted">
+                  , two weeks before contest day, so directors can book buses.{published ? "" : " You can start once registration is published."}
                 </span>
-                <span className="text-muted">, two weeks before contest day, so directors can book buses</span>
               </span>
             )}
           </div>
@@ -868,8 +870,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
 
   // A published volunteer event's jobs with no shift or thing to bring (hosts only, from the setup facts).
   const liveEmpty = published && usesJobs(event.event_type) ? (setup?.emptyJobs ?? []) : [];
-  // A published event with no volunteer jobs at all: the card's button becomes "Add a job".
-  const noJobsYet = published && stations.length === 0;
+  // No volunteer jobs at all (a draft or live): one line and "Add a job", not a row of zeros (light check, 2026-11-08).
+  const noJobsYet = stations.length === 0;
   const volunteers =
     access.canManage && !conferenceHere ? (
       <PageSection id="volunteers" title="Volunteers">
@@ -877,7 +879,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between [&>*:last-child]:shrink-0">
             <div className="flex flex-wrap items-center gap-2">
               {/* Hosts get open/closed with its switch at the bottom of the card; everyone else, here. */}
-              {!(access.isHost && published && !past) && (
+              {/* A draft says so once, at the top of the page: no second "not published" here. */}
+              {published && !(access.isHost && !past) && (
                 <Badge tone={published && event.volunteer_signup_open ? "live" : "neutral"}>
                   {!published ? "Event not published" : event.volunteer_signup_open ? "Sign-up open" : "Sign-up closed"}
                 </Badge>
@@ -893,7 +896,11 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
                 // Nothing to sign up for yet: say so, not "Sign-up open" or a row of zeros.
                 <p className="text-sm leading-6">
                   <span className="font-semibold">No jobs yet.</span>{" "}
-                  <span className="text-muted">Add one with shifts, and its sign-up link appears in {contestLive ? "Get the word out" : "Links to share"}.</span>
+                  <span className="text-muted">
+                    {published
+                      ? `Add one with shifts, and its sign-up link appears in ${contestLive ? "Get the word out" : "Links to share"}.`
+                      : "Add one with shifts, and volunteers can sign up once you publish."}
+                  </span>
                 </p>
               )}
             </div>
@@ -952,7 +959,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   // Hosts add and manage files in event settings; the rest of the team sees what's shared with them.
   const filesBlock =
     !conferenceHere && !access.isHost && files.length > 0 ? (
-      <PageSection id="files" title="Maps & documents">
+      <PageSection id="files" title="Maps and documents">
         <Card className="space-y-5">
           <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between [&>*:last-child]:shrink-0">
             <p className="text-sm leading-6 text-muted">
@@ -1023,17 +1030,19 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         : event.event_type === "band_contest"
           ? // A band contest too: the publish card leads, naming what registration still needs, or with the button.
             // Then the setup order: registration, volunteers (optional), and the schedule, which comes after publishing.
-            ["publish", "attention", "signups", "volunteers", "schedule", "day", "files"]
+            // Contest day waits until registration is published (light check, 2026-11-08).
+            ["publish", "attention", "signups", "volunteers", "schedule", "files"]
           : hasConferences(event.event_type)
             ? // Meetings and conferences set up in steps too, so publishing leads the page (decisions 2026-11-07).
               ["publish", "attention", "signups", "schedule", "volunteers", "day", "files"]
             : ["next", "attention", "signups", "schedule", "volunteers", "publish", "day", "files"];
   const labels: Record<string, string> = {
     day: dayTitle,
-    signups: signupsLabel,
-    schedule: roomsHere ? "Rooms" : "Schedule",
+    // The same words as the sections they jump to (light check, 2026-11-08).
+    signups: groupsHere && access.isHost ? `${words.One} registration` : signupsLabel,
+    schedule: roomsHere ? "Rooms and schedule" : "Performance schedule",
     volunteers: "Volunteers",
-    files: "Maps & documents",
+    files: "Maps and documents",
   };
   const navLinks = order.filter((k) => labels[k] && blocks[k]).map((k) => ({ id: k, label: labels[k] }));
   const latest = announcements[0];
@@ -1225,7 +1234,7 @@ function PublishPanel({
           <p className="font-semibold">{bandMissing}</p>
           <p className="mt-1">Publishing needs a registration deadline that hasn&apos;t passed and at least one classification.</p>
           <Link href={`/dashboard/events/${facts.eventId}/bands`} className={`${BTN} mt-3`}>
-            Go to registration
+            Go to band registration
           </Link>
         </div>
       )}
@@ -1765,7 +1774,7 @@ function VolunteerStats({
           </p>
           <p className="text-sm tabular-nums text-muted">{pct}%</p>
         </div>
-        <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-background" role="progressbar" aria-label="Volunteer spots filled" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+        <div className="mt-2 h-2.5 overflow-hidden rounded-full border border-border bg-background" role="progressbar" aria-label="Volunteer spots filled" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
           <div className={`h-full rounded-full ${pct >= 100 ? "bg-success" : "bg-brand"}`} style={{ width: `${Math.min(pct, 100)}%` }} />
         </div>
       </div>

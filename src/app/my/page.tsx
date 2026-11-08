@@ -95,7 +95,7 @@ export default async function MyShiftsPage({ searchParams }: PageProps<"/my">) {
   const byEvent = groupBy(upcoming, (r) => r.event_id);
   // Events with only items to bring still get their own section.
   const sections = [...new Set([...byEvent.keys(), ...itemsByEvent.keys()])];
-  // Maps & documents the host shared with volunteers (or everyone).
+  // Maps and documents the host shared with volunteers (or everyone).
   const tzOf = new Map([...items, ...rows].map((r) => [r.event_id, r.timezone]));
   const files = groupBy(
     await filesFor(sections, ["public", "volunteers"], (id) => tzOf.get(id) ?? "America/Chicago"),
@@ -318,7 +318,7 @@ export default async function MyShiftsPage({ searchParams }: PageProps<"/my">) {
               ))}
               {files.has(eventId) && (
                 <div className="mt-4">
-                  <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Maps &amp; documents</h3>
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Maps and documents</h3>
                   <FileLinks files={files.get(eventId)!} className="mt-2" />
                 </div>
               )}

@@ -268,7 +268,7 @@ export function setupChecklist(f: SetupFacts): SetupChecklist {
   const publish: SetupStep = {
     id: "publish",
     // A band contest's publishing is what opens registration.
-    label: bandContest ? "Publish registration" : "Publish your event",
+    label: "Publish your event",
     hint: bandContest
       ? f.registrationOpensOn
         ? `Puts your contest page online. Directors can register from ${formatDate(f.registrationOpensOn, { year: undefined })}.`

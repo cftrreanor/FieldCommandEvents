@@ -14,8 +14,8 @@ export const SETUP_STEPS = {
   band: [
     { key: "details", label: "Details", path: "/edit", optional: false },
     { key: "registration", label: "Band registration", path: "/bands", optional: false },
-    { key: "volunteers", label: "Volunteer Setup", path: "/volunteering", optional: true },
-    { key: "publish", label: "Publish registration", path: "", optional: false },
+    { key: "volunteers", label: "Jobs and shifts", path: "/volunteering", optional: true },
+    { key: "publish", label: "Publish", path: "", optional: false },
   ],
   // Meetings and parent-teacher conferences: the basics are enough to publish; the extras (every
   // week, phone calls, breaks, time between meetings) wait in an optional step (decisions 2026-11-07).

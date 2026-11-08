@@ -25,7 +25,7 @@ export type ManagedFile = {
 
 type Audience = { value: string; label: string; hint: string };
 
-/** Maps & documents on Edit details: add, change, replace and remove files. */
+/** Maps and documents on Edit details: add, change, replace and remove files. */
 export function FilesManager({
   files,
   audiences,

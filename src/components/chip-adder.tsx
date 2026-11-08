@@ -75,7 +75,7 @@ export function ChipAdder({
     <div className="space-y-3">
       {groups.length > 0 && room > 0 && (
         <div className="space-y-2">
-          <p className="text-sm font-medium">Tap to add</p>
+          <p className="text-sm font-medium">Add common ones</p>
           {groups.map((g, i) => (
             <div key={g.title ?? i} className="flex flex-wrap items-center gap-2">
               {g.left.map((n) => (

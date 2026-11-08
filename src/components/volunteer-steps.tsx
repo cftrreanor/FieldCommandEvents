@@ -55,7 +55,10 @@ export function SetupSteps({
                   : now && unsaved
                     ? "Now · not saved"
                     : needs
-                      ? stepNote(s.key, i)
+                      ? // "Now" first under the step you're on, then what it needs.
+                        now
+                        ? `Now · ${lowerFirst(stepNote(s.key, i) ?? "")}`
+                        : stepNote(s.key, i)
                       : now
                         ? done[i] && i < last
                           ? "Now · ready"
@@ -90,17 +93,25 @@ export function SetupSteps({
   );
   return (
     <nav aria-label="Event setup" className="mb-6 print:hidden">
-      <p className="text-sm">
-        <span className="font-semibold">
-          Step {here + 1} of {steps.length}:
-        </span>{" "}
-        {steps[here].label}
-        {steps[here].optional && <span className="text-muted"> (optional)</span>}
-        {here === 1 && facts.count && <span className="text-muted"> · {facts.count}</span>}
-        <span className="sr-only">
-          . {doneCount} of {steps.length} done.
-        </span>
-      </p>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+        <p className="text-sm">
+          <span className="font-semibold">
+            Step {here + 1} of {steps.length}:
+          </span>{" "}
+          {steps[here].label}
+          {steps[here].optional && <span className="text-muted"> (optional)</span>}
+          {here === 1 && facts.count && <span className="text-muted"> · {facts.count}</span>}
+          <span className="sr-only">
+            . {doneCount} of {steps.length} done.
+          </span>
+        </p>
+        {/* Team, emails, and maps are in Event settings: in reach from every step (the Publish step has its own button). */}
+        {!preview && here < last && (
+          <Link href={`${base}/edit?section=details`} className="inline-flex min-h-11 items-center text-sm font-medium text-brand underline underline-offset-4">
+            Event settings
+          </Link>
+        )}
+      </div>
       {/* Phones: one row of strips, then every step in a list you can open (the two-column grid read wrongly). */}
       <ol aria-hidden className="mt-2 flex gap-1 sm:hidden">
         {steps.map((s, i) => (
@@ -128,4 +139,8 @@ export function SetupSteps({
       {stepList(`mt-2 hidden gap-x-3 gap-y-1 sm:grid ${steps.length === 5 ? "sm:grid-cols-5" : steps.length === 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`)}
     </nav>
   );
+}
+
+function lowerFirst(text: string) {
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }
