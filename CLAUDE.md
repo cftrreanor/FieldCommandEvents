@@ -15,6 +15,10 @@
 - Designs go through the design-review skill (.claude/skills/design-review): mock-ups before
   building, screenshots before a PR goes out. Severity 3–4 findings block until the owner decides,
   and decisions are logged in docs/design-decisions/.
+- Every kind of event set up in steps (volunteer events, band contests, meetings, and any new kind) follows
+  docs/event-setup-pattern.md: the step bar as the one tracker, the same step pages, saving, publishing,
+  live management, and words. Build new kinds from it (its checklist and shared components), check
+  designs against it before review, and log any departure as an owner decision in docs/design-decisions/.
 - Before mocking up or building anything people see, read docs/design-lessons.md (what the review panel
   keeps finding). Run its self-check before every review, and add repeat findings to it afterward.
 - When a page's main data is missing, call `missing()` from src/lib/schema-check.ts, not
