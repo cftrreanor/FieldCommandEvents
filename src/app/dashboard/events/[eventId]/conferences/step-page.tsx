@@ -18,7 +18,8 @@ export function StepPage({ eventId, eventName, title, intro, children }: { event
       <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">{title}</h1>
       <SavedBy eventId={eventId} area="conference" className="mt-2" />
       <p className="mt-2 max-w-3xl text-muted">{intro}</p>
-      <div className="mt-6 max-w-3xl space-y-6">{children}</div>
+      {/* The cards span the step bar's width, as on the Details step, so the page doesn't sit off to the left (QA issue 351). */}
+      <div className="mt-6 space-y-6">{children}</div>
     </div>
   );
 }

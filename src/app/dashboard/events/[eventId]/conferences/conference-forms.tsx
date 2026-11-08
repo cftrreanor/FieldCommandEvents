@@ -229,15 +229,9 @@ function TimesForm({
       if (f) auto.edited(f);
     }, 0);
   };
-  // A new event's step starts with suggested hours: save them right away, so what's on screen is what's saved.
-  const savedOnce = Boolean(initial.times_saved_at);
-  useEffect(() => {
-    if (!autosave || savedOnce || part === "extras") return;
-    const f = anchor.current?.closest("form");
-    if (f) auto.edited(f);
-    // Once, when the step first opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Never picked yet: the day and hours start empty. The event's stored dates are only placeholders, so
+  // nothing is suggested or saved until the organizer picks them (owner, QA 2026-11-08).
+  const fresh = !initial.times_saved_at;
   const [schedule, setSchedule] = useState<Schedule>(initial.schedule);
   const weekly = schedule === "weekly";
   const [meeting, setMeeting] = useState(initial.meeting_minutes);
@@ -261,11 +255,11 @@ function TimesForm({
   // The day and hours can be changed right here; saving moves the event too.
   // A new conference (times never saved) starts with the day and hours open, since none were picked yet.
   const [changingHours, setChangingHours] = useState(!initial.times_saved_at);
-  const [day, setDay] = useState(date);
-  const [from, setFrom] = useState(start);
-  const [to, setTo] = useState(end);
-  const [firstDay, setFirstDay] = useState(date);
-  const [lastDay, setLastDay] = useState(initial.schedule === "weekly" ? endDate : "");
+  const [day, setDay] = useState(fresh ? "" : date);
+  const [from, setFrom] = useState(fresh ? "" : start);
+  const [to, setTo] = useState(fresh ? "" : end);
+  const [firstDay, setFirstDay] = useState(fresh ? "" : date);
+  const [lastDay, setLastDay] = useState(!fresh && initial.schedule === "weekly" ? endDate : "");
   // Coming back from weekly hours to one day: pick the day. In the setup steps the day is always open.
   const askDay = autosave ? basics || initial.schedule === "weekly" : changingHours || (!weekly && initial.schedule === "weekly");
   const lengths = { meeting_minutes: meeting, gap_minutes: gap, breaks: breaks.map((b) => ({ start: b.start, minutes: Number(b.minutes) || 0, label: b.label })) };
@@ -347,7 +341,8 @@ function TimesForm({
                   if (o.value === "weekly") {
                     if (!groups.length) {
                       const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
-                      setGroups([{ key: newKey(), days: Number.isNaN(weekday) ? [] : [weekday], start: from || "15:30", end: to || "16:30" }]);
+                      // Nothing picked yet: an empty row to fill in, never suggested hours.
+                      setGroups([{ key: newKey(), days: day && !Number.isNaN(weekday) ? [weekday] : [], start: from, end: to }]);
                     }
                     if (!firstDay) setFirstDay(day);
                     // Never an empty, red Last day on switching: twelve weeks from the first day, to change.
@@ -642,8 +637,10 @@ function TimesForm({
           </>
         ) : (
           <>
-            <p className="font-semibold">{meetingSummary(starts, meeting)}</p>
-            {starts.length > 0 ? (
+            <p className="font-semibold">{day && from && to ? meetingSummary(starts, meeting) : "No times yet"}</p>
+            {!(day && from && to) ? (
+              <p className="mt-1 text-sm text-muted">Pick your day and hours above to see the times people can book.</p>
+            ) : starts.length > 0 ? (
               <ul className="mt-3 flex flex-wrap gap-2" aria-label="Meeting times">
                 {starts.map((t) => (
                   <li key={t} className="rounded-sm border border-border bg-surface px-2 py-1 text-sm tabular-nums">
@@ -700,7 +697,7 @@ function TimesForm({
         </div>
       )}
       {autosave ? (
-        <AutosaveBar status={auto.status} retry={auto.retry} next={autosave.next} />
+        <AutosaveBar status={auto.status} retry={auto.retry} next={autosave.next} todo={fresh && basics ? "Add your day and hours" : null} />
       ) : (
         <SaveCancel
           editing={editing}

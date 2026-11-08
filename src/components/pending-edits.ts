@@ -163,6 +163,8 @@ export function useLeaveGuard(what = "A change") {
       void (async () => {
         flushPending();
         const saved = await settled();
+        // Something isn't filled in: show which boxes (each says why) before asking.
+        if (pendingCounts().incomplete) document.querySelectorAll("form").forEach((f) => !f.noValidate && f.checkValidity());
         const go =
           (saved && !pendingCounts().unadded && !pendingCounts().incomplete) ||
           (await confirmDialog(

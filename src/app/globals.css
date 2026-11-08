@@ -255,7 +255,10 @@ form [data-not-ready] {
   border: 1.5px solid var(--field-border) !important;
   box-shadow: none !important;
 }
-form[data-missing] :is(input, select, textarea):invalid {
+/* Red only once someone tried to save, or left a box that still needs something: never on a form
+   they haven't touched (light check, 2026-11-08). Each red box says why underneath, in words. */
+form[data-missing] :is(input, select, textarea):invalid,
+form :is(input, select, textarea)[data-left]:invalid {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent);
 }
@@ -264,7 +267,7 @@ form[data-missing] :is(input[type="checkbox"], input[type="radio"]):invalid {
   outline-offset: 2px;
 }
 form[data-missing]::after {
-  content: "Fill in the boxes outlined in red.";
+  content: "Fill in the marked boxes.";
   display: block;
   grid-column: 1 / -1;
   flex-basis: 100%;
@@ -274,7 +277,17 @@ form[data-missing]::after {
   font-weight: 600;
 }
 form[data-missing="fix"]::after {
-  content: "Check the boxes outlined in red.";
+  content: "Check the marked boxes.";
+}
+form[data-missing] label:has(:is(input, select, textarea):invalid:not([type="checkbox"], [type="radio"]))::after,
+form label:has(:is(input, select, textarea)[data-left]:invalid:not([type="checkbox"], [type="radio"]))::after {
+  content: "▲ Fill this in";
+  color: var(--danger);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+form label:has(:is(input, select, textarea)[data-why="fix"]:invalid)::after {
+  content: "▲ Check this answer";
 }
 
 /* Dark mode: no grey text, so anything faded with opacity elsewhere (past

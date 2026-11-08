@@ -108,7 +108,8 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const askChildName = hasConferences(event.event_type) ? await asksChildName(supabase, eventId) : true;
   // Conferences and meetings: the day or weekly hours, as set in their setup page.
   const setup = hasConferences(event.event_type) ? (await loadConferenceSettings(supabase, eventId)).settings : null;
-  const when = setup
+  // Only once the day and hours are picked: before that the event's dates are placeholders.
+  const when = setup?.times_saved_at
     ? {
         summary: `${
           setup.schedule === "weekly"
@@ -306,7 +307,13 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
             <>
               <Panel
                 title="Event details"
-                intro={when ? `The name and time zone everyone sees. The day or weekly hours are set in ${when.setupName}.` : "The name, dates, times, and venue everyone sees."}
+                intro={
+                  when
+                    ? `The name and time zone everyone sees. The day or weekly hours are set in ${when.setupName}.`
+                    : setup
+                      ? "The name and time zone everyone sees."
+                      : "The name, dates, times, and venue everyone sees."
+                }
               >
                 <EventForm
                   action={updateEvent.bind(null, eventId)}

@@ -34,9 +34,27 @@ export function RequiredFields() {
     };
     const updateAll = () => document.querySelectorAll("form").forEach(update);
 
+    // Why a box is marked: empty ("Fill this in") or in the wrong format ("Check this answer").
+    const why = (field: Element) => {
+      const f = field as HTMLInputElement;
+      if (f.willValidate) f.setAttribute("data-why", f.validity.valueMissing ? "fill" : "fix");
+    };
+
     const onEdit = (e: Event) => {
-      const form = (e.target as Element | null)?.closest?.("form");
+      const target = e.target as Element | null;
+      if (target?.hasAttribute?.("data-why")) why(target);
+      const form = target?.closest?.("form");
       if (form) update(form);
+    };
+
+    // Leaving a box that still needs something marks just that box (until it's fixed).
+    const onLeave = (e: Event) => {
+      const field = e.target;
+      if (!(field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement)) return;
+      const form = field.closest("form");
+      if (!form || !checkable(form) || !field.willValidate) return;
+      field.toggleAttribute("data-left", !field.validity.valid);
+      why(field);
     };
 
     // The browser found a box it won't submit: mark the whole form instead of its pop-up.
@@ -45,6 +63,7 @@ export function RequiredFields() {
       const form = field.closest("form");
       if (!form || !checkable(form)) return;
       e.preventDefault();
+      why(field);
       form.setAttribute("data-missing", missingKind(form));
       // Every invalid box fires this; only the first one gets the focus.
       const first = form.querySelector<HTMLElement>(":invalid:not(form):not(fieldset)");
@@ -67,6 +86,7 @@ export function RequiredFields() {
     document.addEventListener("change", onEdit, true);
     document.addEventListener("reset", later, true);
     document.addEventListener("invalid", onInvalid, true);
+    document.addEventListener("focusout", onLeave, true);
     updateAll();
     return () => {
       observer.disconnect();
@@ -75,6 +95,7 @@ export function RequiredFields() {
       document.removeEventListener("change", onEdit, true);
       document.removeEventListener("reset", later, true);
       document.removeEventListener("invalid", onInvalid, true);
+      document.removeEventListener("focusout", onLeave, true);
     };
   }, []);
   return null;

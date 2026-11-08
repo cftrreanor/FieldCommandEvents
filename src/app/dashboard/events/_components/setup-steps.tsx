@@ -13,24 +13,6 @@ export const SETUP_STEPS: SetupStep[] = [
   { id: "more", label: "Publishing & more", optional: true },
 ];
 
-/**
- * A volunteer event's setup: the same three steps that run along the top of its pages once it exists
- * (Details, then its jobs, then publishing). Team, emails, and maps wait in Event settings.
- */
-export const VOLUNTEER_SETUP_STEPS: SetupStep[] = [
-  { id: "details", label: "Details" },
-  { id: "jobs", label: "Jobs and shifts" },
-  { id: "publish", label: "Publish" },
-];
-
-/** A band contest's setup: Details, what directors need to register, volunteers if any, then publishing opens registration. */
-export const BAND_SETUP_STEPS: SetupStep[] = [
-  { id: "details", label: "Details" },
-  { id: "registration", label: "Registration" },
-  { id: "volunteers", label: "Volunteers", optional: true },
-  { id: "publish", label: "Publish registration" },
-];
-
 /** The setup page for a step (the first one is the new-event form, then Event settings with ?setup=1). */
 export function setupHref(eventId: string, step: string) {
   return `/dashboard/events/${eventId}/edit?setup=1&section=${step}`;
@@ -44,7 +26,7 @@ export function SetupHeader({
   steps = SETUP_STEPS,
 }: {
   current: string;
-  /** The steps to show: most events' five, or a volunteer event's three. */
+  /** The steps to show (most events' guided setup). */
   steps?: SetupStep[];
   /** `guard`: ask before leaving with unsaved changes ("Save and finish later"). */
   back: { href: string; label: string; guard?: boolean };
@@ -66,11 +48,7 @@ export function SetupHeader({
       <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">Set up your event</h1>
       <p className="mt-2 text-sm text-muted">
         Step {at + 1} of {steps.length}.{" "}
-        {steps === SETUP_STEPS
-          ? "Skip anything for now: it's all in Event settings later."
-          : steps === BAND_SETUP_STEPS
-            ? "Add your team and maps whenever you're ready, from Event settings."
-            : "Add your team, maps, and volunteer jobs whenever you're ready, from Event settings."}{" "}
+        Skip anything for now: it&apos;s all in Event settings later.{" "}
         Boxes marked * are required. {children}
       </p>
       <ol className={`mt-5 grid gap-2 ${steps.length === 3 ? "grid-cols-3" : steps.length === 4 ? "grid-cols-4" : "grid-cols-5"}`} aria-label="Setup steps">

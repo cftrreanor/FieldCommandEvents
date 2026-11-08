@@ -24,9 +24,10 @@ export function useAutosaveForm(on: boolean, what = "A change") {
     const f = form.current;
     if (!f) return;
     // Any box the browser would refuse (text areas and menus too, or the form would quietly not send).
+    // Checked quietly: nothing turns red until they leave a box or try to move on.
     const bad = [...f.elements].find(
       (el): el is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement =>
-        (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) && !el.checkValidity(),
+        (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) && el.willValidate && !el.validity.valid,
     );
     if (bad) {
       // The box's name only (a Field's label also holds its hint).
@@ -69,7 +70,18 @@ export function useAutosaveForm(on: boolean, what = "A change") {
 }
 
 /** The pinned bar under a draft's Details: whether everything is saved. */
-export function AutosaveBar({ status, retry, next }: { status: AutoStatus; retry: () => void; next?: { href: string; label: string } }) {
+export function AutosaveBar({
+  status,
+  retry,
+  next,
+  todo,
+}: {
+  status: AutoStatus;
+  retry: () => void;
+  next?: { href: string; label: string };
+  /** The step has nothing saved yet ("Add your day and hours"): said instead of "Changes save automatically", with Next lighter until then. */
+  todo?: string | null;
+}) {
   return (
     <div className="sticky bottom-[var(--day-bar,0px)] z-10 -mx-4 -mb-4 flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 rounded-b-lg border-t-2 border-border bg-surface px-4 py-3 shadow-[0_-6px_16px_rgb(0_0_0/0.10)] sm:-mx-6 sm:-mb-6 sm:px-6">
       <div className="min-w-0 flex-1 text-sm" role="status">
@@ -97,12 +109,21 @@ export function AutosaveBar({ status, retry, next }: { status: AutoStatus; retry
             </span>
             Saved
           </p>
+        ) : todo ? (
+          <p className="font-medium text-warning">
+            <span aria-hidden>◆ </span>Not saved yet. {todo}
+          </p>
         ) : (
           <p className="text-muted">Changes save automatically</p>
         )}
       </div>
       {next && (
-        <Link href={next.href} className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover">
+        <Link
+          href={next.href}
+          className={`inline-flex min-h-11 items-center rounded-md px-4 text-sm font-semibold ${
+            todo && status.kind !== "saved" ? "border border-field-border bg-surface hover:bg-background" : "bg-brand text-brand-foreground hover:bg-brand-hover"
+          }`}
+        >
           {next.label} →
         </Link>
       )}
