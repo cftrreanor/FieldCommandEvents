@@ -18,6 +18,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // The CSS (Tailwind, small) arrives inside each page instead of as a separate file the browser waits for
+  // before showing anything (page speed, 2026-11-09).
+  experimental: { inlineCss: true },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
@@ -33,4 +36,13 @@ export default withSentryConfig(nextConfig, {
   silent: !process.env.CI,
   sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
   telemetry: false,
+  // The app only sends error alerts (no performance tracing or session recordings: lib/sentry-options.ts),
+  // so the browser bundle leaves that code out: less JavaScript on every page (page speed, 2026-11-09).
+  bundleSizeOptimizations: {
+    excludeDebugStatements: true,
+    excludeTracing: true,
+    excludeReplayShadowDom: true,
+    excludeReplayIframe: true,
+    excludeReplayWorker: true,
+  },
 });

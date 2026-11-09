@@ -28,7 +28,7 @@ export function PhoneFrame({
           sizes="(min-width: 1024px) 260px, 45vw"
           className="h-auto w-full"
           // Not lazy at the top of the page: the main screenshot is what phones measure as "loaded" (Largest Contentful Paint).
-          {...(hero ? { loading: "eager" as const, fetchPriority: hero === "main" ? ("high" as const) : ("auto" as const) } : {})}
+          {...(hero ? { loading: "eager" as const, fetchPriority: hero === "main" ? ("high" as const) : ("low" as const) } : {})}
         />
       </div>
     </div>
