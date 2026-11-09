@@ -166,7 +166,8 @@ type TimesProps = {
   meeting?: boolean;
   /**
    * In the setup steps, the form is split: the basics (one day or every week, the hours, how long
-   * each meeting is) on Meeting times; the extras (time between meetings, breaks, the booking window)
+   * each meeting is, time between meetings, and breaks: owner, 2026-11-09) on Meeting times; the extras
+   * (with weekly hours, the booking window)
    * on More options. Each sends only its own part; the server keeps the rest as saved.
    */
   part?: "basics" | "extras";
@@ -298,6 +299,14 @@ function TimesForm({
   const short = openLeft !== null && openLeft < outside.length;
   const [choice, setChoice] = useState<"email" | "self" | null>(null);
   const picked = choice ?? (short ? "self" : "email");
+  // What's still missing before the times can save, named exactly (light check, 2026-11-09).
+  const missing = weekly
+    ? [!firstDay || !lastDay ? "your first and last day" : null, !groups.some((g) => g.days.length) ? "the days you meet" : null, groups.some((g) => !g.start || !g.end) ? "your hours" : null]
+    : [!day ? "your day" : null, !from || !to ? "your hours" : null];
+  const missingList = missing.filter((m): m is string => Boolean(m));
+  const missingNote = missingList.length
+    ? `Add ${missingList.length < 3 ? missingList.join(" and ") : `${missingList.slice(0, -1).join(", ")}, and ${missingList.at(-1)}`}`
+    : null;
   const changeGroup = (key: number, patch: Partial<GroupDraft>) => setGroups((gs) => gs.map((g) => (g.key === key ? { ...g, ...patch } : g)));
   const change = (key: number, patch: Partial<BreakDraft>) => setBreaks((bs) => bs.map((b) => (b.key === key ? { ...b, ...patch } : b)));
 
@@ -407,10 +416,11 @@ function TimesForm({
       ) : weekly ? (
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="First day">
+            {/* Not red before anyone's had a go, but say these are what's holding up the save (light check, 2026-11-09). */}
+            <Field label="First day" hint={autosave && !firstDay ? "Needed before your times save." : undefined}>
               <Input type="date" name="weeklyFrom" required value={firstDay} onChange={(e) => setFirstDay(e.target.value)} />
             </Field>
-            <Field label="Last day" hint="For example, the last day of the semester.">
+            <Field label="Last day" hint={autosave && !lastDay ? "Needed before your times save. For example, the last day of the semester." : "For example, the last day of the semester."}>
               <Input type="date" name="weeklyTo" required min={firstDay} value={lastDay} onChange={(e) => setLastDay(e.target.value)} />
             </Field>
           </div>
@@ -534,8 +544,9 @@ function TimesForm({
         </p>
       )}
 
-      <div className={`grid gap-4 sm:grid-cols-2 ${basics && extras ? "" : "sm:max-w-md sm:grid-cols-1"}`}>
-        {basics && (
+      {/* Meeting length, time between meetings, and breaks all live with the hours (owner, 2026-11-09). */}
+      {basics && (
+      <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Meeting length">
           <Select name="meetingMinutes" value={meeting} onChange={(e) => setMeeting(Number(e.target.value))}>
             {MEETING_LENGTHS.map((m) => (
@@ -545,8 +556,6 @@ function TimesForm({
             ))}
           </Select>
         </Field>
-        )}
-        {extras && (
         <Field label="Time between meetings" hint={`A moment to write notes or let the next ${w.family} in.`}>
           <Select name="gapMinutes" value={gap} onChange={(e) => setGap(Number(e.target.value))}>
             {GAP_LENGTHS.map((m) => (
@@ -556,10 +565,10 @@ function TimesForm({
             ))}
           </Select>
         </Field>
-        )}
       </div>
+      )}
 
-      {extras && (
+      {basics && (
       <div>
         <p className="text-sm font-semibold">Breaks</p>
         <p className="text-sm text-muted">
@@ -613,6 +622,18 @@ function TimesForm({
       </div>
       )}
 
+      {/* Weekly hours in the setup steps: holidays and the booking window are a step away, so nobody forgets them. */}
+      {part === "basics" && weekly && (
+        <p className="text-sm text-muted">
+          Days off and how far ahead people book are in{" "}
+          <a href="options" className="font-medium text-brand underline underline-offset-4">
+            More options
+          </a>
+          .
+        </p>
+      )}
+      {/* The times people can book: shown with the hours on Meeting times, not repeated in More options. */}
+      {basics && (
       <div className="rounded-lg border border-border bg-background p-4">
         {weekly ? (
           <>
@@ -661,10 +682,8 @@ function TimesForm({
           </>
         )}
       </div>
-
-      {part === "basics" && (
-        <p className="text-sm text-muted">Need a break, or time between meetings? You&apos;ll set those in step 4, More options.</p>
       )}
+
       {outside.length > 0 && (
         <div id="times-outside" tabIndex={-1} className="rounded-lg border border-warning/40 bg-warning-soft p-4 text-sm leading-6 outline-none">
           <p className="font-semibold">
@@ -704,7 +723,7 @@ function TimesForm({
         </div>
       )}
       {autosave ? (
-        <AutosaveBar status={auto.status} retry={auto.retry} next={autosave.next} todo={fresh && basics ? "Add your day and hours" : null} />
+        <AutosaveBar status={auto.status} retry={auto.retry} next={autosave.next} todo={fresh && basics ? missingNote : null} />
       ) : (
         <SaveCancel
           editing={editing}
@@ -1145,7 +1164,8 @@ function WaitingRoomGuide({ hours, meeting }: { hours: string; meeting?: boolean
 /** A small status line for a card that saves itself, inside a page whose bar is elsewhere. */
 function AutosaveStatus({ status, retry }: { status: ReturnType<typeof useAutosaveForm>["status"]; retry: () => void }) {
   return (
-    <p className="min-h-6 text-sm" role="status">
+    // An empty line takes no room: the card ends with its last field until there's something to say.
+    <p className="text-sm empty:hidden" role="status">
       {status.kind === "failed" ? (
         <span className="font-semibold text-danger">
           <span aria-hidden>▲ </span>Not saved. {status.error}{" "}
@@ -1218,7 +1238,21 @@ function WeeklyCopyButton({ action }: { action: () => Promise<void> }) {
  * The email shown on the booking page when every time is booked, so people can ask about another
  * time. Optional: nothing is shown unless it's added (decisions 2026-11-08). Saves itself.
  */
-export function MeetingContactForm({ action, initial, autosave = false }: { action: Action; initial: string | null; autosave?: boolean }) {
+export function MeetingContactForm({
+  action,
+  initial,
+  autosave = false,
+  next,
+  meeting = true,
+}: {
+  action: Action;
+  initial: string | null;
+  autosave?: boolean;
+  /** Meetings ("people", "meetings") or conferences ("families", "conferences"). */
+  meeting?: boolean;
+  /** The step's pinned bar with "Next up", when this is the step's only form (a one-day event's More options). */
+  next?: { href: string; label: string };
+}) {
   const auto = useAutosaveForm(autosave, "A change to your contact email");
   return (
     <ActionForm
@@ -1231,11 +1265,16 @@ export function MeetingContactForm({ action, initial, autosave = false }: { acti
       quiet={autosave}
       noToast={autosave}
     >
-      <Field label="Contact email (optional)" hint="Shown on your booking page only when every time is booked, so people can ask about another time. Hidden once your meetings are over.">
+      <Field
+        label="Contact email (optional)"
+        hint={`Shown on your booking page only when every time is booked, so ${meeting ? "people" : "families"} can ask about another time. Hidden once your ${meeting ? "meetings" : "conferences"} are over.`}
+      >
         <Input name="contactEmail" type="email" maxLength={200} defaultValue={initial ?? ""} autoComplete="email" />
       </Field>
       {/* Saves itself, in the setup step and on Meeting setup alike (one save model for one field). */}
-      {autosave ? (
+      {autosave && next ? (
+        <AutosaveBar status={auto.status} retry={auto.retry} next={next} />
+      ) : autosave ? (
         <AutosaveStatus status={auto.status} retry={auto.retry} />
       ) : (
         <SubmitButton variant="secondary" pendingText="Saving…">

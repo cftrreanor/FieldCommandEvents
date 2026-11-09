@@ -32,7 +32,12 @@ export default async function MeetingPlaceStep({ params }: PageProps<"/dashboard
           meeting={s.meeting}
           lastRoom={s.settings.room ? null : await lastRoom(s.supabase, s.event.organization_id, eventId)}
           saved={!s.placeTodo}
-          autosave={{ next: { href: `${s.base}/options`, label: "Next up: More options" } }}
+          autosave={{
+            next: s.weekly
+              ? { href: `${s.base}/options`, label: "Next up: More options" }
+              : // One day: no More options step, so straight on to Publish (owner, 2026-11-09).
+                { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish" },
+          }}
         />
       </Card>
     </StepPage>

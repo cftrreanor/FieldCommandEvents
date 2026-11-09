@@ -42,3 +42,26 @@ The owner's standing direction for this round was "Yes, fix all": no finding nee
 | 10 | Long email lists sent inside the save | 2 | Later | Fine at today's sizes (no one is emailed twice if it stops); batch when weekly events grow |
 | — | Wording and layout (both choices led with the same words; Save names who's emailed; breaks hint; contact email saves itself; one name for the confirmation email; "Still needed" list; Reschedule and Cancel buttons at every width; summary Contact column and Met column; records note below; not-ready button style; booked page leads with "You're booked"; warning radios in dark mode; "Place name (optional)"; In person and Video headings; "Email Dana" button) | 2 | Take the advice | |
 | — | Phone numbers look spaced on the summary ("555 - 0501") | 2 | Keep as is | The numbers use a plain hyphen; the spacing is the font's own glyph in the screenshot browser, and turning off its contextual letters changed nothing |
+
+## Time between meetings and breaks back on Meeting times (2026-11-09)
+
+The owner, after time between meetings didn't stick when changed on More options (screen recording, live
+site; it couldn't be reproduced locally): "That time between meetings and breaks should just be on the
+meeting times page." This changes the 2026-11-08 choice to keep them in the optional step.
+
+| Change | Decision | Notes |
+|---|---|---|
+| Time between meetings and breaks | Owner's decision | On Meeting times, with the hours and meeting length, saved with them |
+| More options | Follows from it | The contact email; with weekly hours, days off and how far ahead people book |
+
+### Light check on the move (2026-11-09)
+
+UX Designer, UI Designer, usability consultant on `docs/design-reviews/2026-11-09-breaks-on-meeting-times/`.
+
+| # | Finding | Severity | Decision | Notes |
+|---|---|---|---|---|
+| 1 | Weekly hours: the bar said "Add your day and hours" when only the dates were missing, so nothing saved and the reason was wrong | 3 | Take the advice | The bar and step bar name exactly what's missing ("Add your first and last day"); blank date boxes say they're needed to save; on phones the note has its own line above the button |
+| 2 | One-day More options was a whole step for one optional box | 2 | Owner: fold it into Publish | One-day meetings have four steps; the contact email is an optional box on the Publish step. Weekly hours keep More options (days off, how far ahead people book) |
+| 3 | Days off and the booking window are a step away from the weekly times | 2 | Take the advice | A line under the weekly times points to More options |
+| 4 | "A break" used for days off and for breaks | 2 | Take the advice | Days off: "Holidays, trips, or school vacations" |
+| 5 | Empty space at the bottom of cards | 2 | Take the advice | The "Saved" line takes no room until there's something to say |

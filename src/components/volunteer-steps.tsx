@@ -27,7 +27,7 @@ export function SetupSteps({
   const pending = usePendingCounts();
   const unsaved = pending.failed + pending.incomplete + pending.unadded > 0;
   const base = `/dashboard/events/${eventId}`;
-  const steps = STEPS[kind];
+  const steps = STEPS[kind].filter((s) => !facts.skip?.includes(s.key));
   // Event settings (Details with ?section=) is a settings page, not the Details step: it has its own list.
   const query = useSearchParams();
   // The same rule as the page: any section asked for, by ?section= or an old ?step= link.

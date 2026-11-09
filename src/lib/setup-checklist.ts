@@ -64,6 +64,8 @@ export type SetupFacts = {
   scheduleSlots: number;
   /** Conferences: meeting times saved (the place may still be missing). */
   conferenceTimesSaved?: boolean;
+  /** Meetings with weekly hours: their More options step (days off, booking window). One-day events have none. */
+  conferenceWeekly?: boolean;
   booths: number;
   parentRegistrationOpen: boolean;
   parentClosesAt: boolean;

@@ -45,6 +45,8 @@ import { bandRegistrationMissing, publishEffects, setupChecklist, twoWeeksBefore
 import { volunteerTotals } from "@/lib/volunteer-totals";
 import { opensLater, registrationIsOpen } from "@/lib/bands";
 import { SetupGuide } from "@/components/setup-guide";
+import { MeetingContactForm } from "./conferences/conference-forms";
+import { saveMeetingContact } from "./conferences/actions";
 import { DayRail } from "@/components/event-day-nav";
 import { loadDayActions } from "@/lib/event-day-actions";
 import { SavedBy } from "@/components/saved-by";
@@ -981,7 +983,13 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
     ) : null;
 
   // Before publishing: what publishing does, and the button. (Once live, unpublishing is in event settings.)
-  const publish = setup && checklist && !published ? <PublishPanel facts={setup} remaining={checklist.remaining} previewHref={conferenceHere ? `/e/${event.slug}/book` : `/e/${event.slug}/volunteer`} /> : null;
+  const publish = setup && checklist && !published ? <PublishPanel
+        facts={setup}
+        remaining={checklist.remaining}
+        previewHref={conferenceHere ? `/e/${event.slug}/book` : `/e/${event.slug}/volunteer`}
+        // A one-day meetings event's optional contact email lives here (it has no More options step: owner, 2026-11-09).
+        contact={conferenceHere && access.isHost && conference?.schedule !== "weekly" ? { initial: conference?.contact_email ?? null, meeting: event.event_type === "meeting" } : undefined}
+      /> : null;
 
   // Still setting up: the one thing to do next, in the main column too.
   const nextUpStep = checklist && !published ? (checklist.inProgress ?? checklist.next) : null;
@@ -1203,11 +1211,14 @@ function PublishPanel({
   facts,
   remaining,
   previewHref,
+  contact,
 }: {
   facts: SetupFacts;
   remaining: ReturnType<typeof setupChecklist>["remaining"];
   /** A volunteer event's sign-up page, as the team previews it. */
   previewHref: string;
+  /** A one-day meetings event: its optional contact email for when every time is booked. */
+  contact?: { initial: string | null; meeting: boolean };
 }) {
   // The empty jobs are named in their own box below, so the "one more step" line skips them.
   const others = (facts.emptyJobs ?? []).length ? remaining.filter((r) => r.id !== "shifts") : remaining;
@@ -1302,6 +1313,13 @@ function PublishPanel({
         <p className="mt-2 flex items-center gap-2 text-sm font-medium text-success">
           <span aria-hidden>✓</span> Everything your event needs is set up.
         </p>
+      )}
+      {contact && (
+        <div className="mt-4 border-t border-border pt-4">
+          <p className="text-sm font-semibold">When every time is booked (optional)</p>
+          <p className="mt-1 mb-3 text-sm text-muted">What {contact.meeting ? "people" : "families"} see if they open your link and nothing is left.</p>
+          <MeetingContactForm action={saveMeetingContact.bind(null, facts.eventId)} initial={contact.initial} meeting={contact.meeting} autosave />
+        </div>
       )}
       <p className="mt-4 text-sm font-semibold">When you publish:</p>
       <ul className="mt-2 space-y-1.5 text-sm text-muted">

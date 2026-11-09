@@ -274,7 +274,7 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
               <>
                 <h2 className="text-lg font-semibold">Days off</h2>
                 <p className="mt-1 mb-4 text-sm text-muted">
-                  Optional. Holidays, field trips, or a break like winter break. No meetings are booked on them. Leave Through blank for a single day.
+                  Optional. Holidays, field trips, or school vacations. No meetings are booked on them. Leave Through blank for a single day.
                 </p>
                 <DaysOffForm action={saveDaysOff.bind(null, eventId)} closedDates={settings.closed_dates} meeting={meeting} />
               </>
@@ -283,8 +283,8 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
         </div>
         <Card className="mt-6">
           <h2 className="text-lg font-semibold">When every time is booked</h2>
-          <p className="mt-1 mb-4 text-sm text-muted">What people see if they open your link and nothing is left.</p>
-          <MeetingContactForm action={saveMeetingContact.bind(null, eventId)} initial={settings.contact_email ?? null} autosave />
+          <p className="mt-1 mb-4 text-sm text-muted">What {meeting ? "people" : "families"} see if they open your link and nothing is left.</p>
+          <MeetingContactForm action={saveMeetingContact.bind(null, eventId)} initial={settings.contact_email ?? null} meeting={meeting} autosave />
         </Card>
       </ConferenceSetup>
     </div>

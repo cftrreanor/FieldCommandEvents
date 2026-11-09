@@ -50,5 +50,7 @@ export type SetupStepFacts = {
   /** Steps with more than one middle step (meetings): each step's own done and note, by key. */
   done?: Partial<Record<string, boolean>>;
   notes?: Partial<Record<string, string | null>>;
+  /** Steps this event doesn't have (a one-day meetings event has no More options: owner, 2026-11-09). */
+  skip?: string[];
 };
 

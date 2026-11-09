@@ -84,7 +84,8 @@ export function AutosaveBar({
 }) {
   return (
     <div className="sticky bottom-[var(--day-bar,0px)] z-10 -mx-4 -mb-4 flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 rounded-b-lg border-t-2 border-border bg-surface px-4 py-3 shadow-[0_-6px_16px_rgb(0_0_0/0.10)] sm:-mx-6 sm:-mb-6 sm:px-6">
-      <div className="min-w-0 flex-1 text-sm" role="status">
+      {/* A long "not saved yet" note takes its own line on phones, above the button, instead of a narrow column. */}
+      <div className={`min-w-0 flex-1 text-sm ${todo || status.kind === "incomplete" ? "basis-full sm:basis-auto" : ""}`} role="status">
         {status.kind === "failed" ? (
           <p className="flex flex-wrap items-center gap-x-2 font-semibold text-danger">
             <span>
@@ -121,7 +122,7 @@ export function AutosaveBar({
       {next && (
         <Link
           href={next.href}
-          className={`inline-flex min-h-11 items-center rounded-md px-4 text-sm font-semibold ${
+          className={`ml-auto inline-flex min-h-11 items-center rounded-md px-4 text-sm font-semibold ${
             todo && status.kind !== "saved" ? "border border-field-border bg-surface hover:bg-background" : "bg-brand text-brand-foreground hover:bg-brand-hover"
           }`}
         >
