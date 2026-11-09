@@ -13,7 +13,9 @@ import { FeedbackButton } from "@/components/feedback-button";
 // The design system's faces: Inter (variable, so the in-between 460/540 weights
 // render) for everything, JetBrains Mono for codes.
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
-const jetbrainsMono = JetBrains_Mono({ variable: "--font-jetbrains-mono", subsets: ["latin"] });
+// Not preloaded: only dashboard and admin pages show codes, so public pages don't spend a phone's
+// first second downloading it (it loads when a page uses it).
+const jetbrainsMono = JetBrains_Mono({ variable: "--font-jetbrains-mono", subsets: ["latin"], preload: false });
 
 const DESCRIPTION =
   "Every detail organized. Every organizer supported. Band contests, choir festivals, school fairs and fundraisers, volunteer events, parent check-in, and parent-teacher conferences, with registration, volunteer sign-ups, and check-in on any phone.";
