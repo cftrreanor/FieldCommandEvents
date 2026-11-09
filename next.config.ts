@@ -18,6 +18,14 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Not experimental.inlineCss: tested 2026-11-09, it sends the CSS twice and added about 85 ms of frozen
+  // time on phones, for no gain in when the page shows.
+  // AVIF where the browser takes it (about 20% smaller than WebP), WebP otherwise.
+  images: {
+    formats: ["image/avif", "image/webp"],
+    // 448 and 512 fit the 228–248 px phone screenshots on phones and retina screens, between 384 and 640.
+    imageSizes: [32, 48, 64, 96, 128, 256, 384, 448, 512],
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
@@ -33,4 +41,13 @@ export default withSentryConfig(nextConfig, {
   silent: !process.env.CI,
   sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
   telemetry: false,
+  // The app only sends error alerts (no performance tracing or session recordings: lib/sentry-options.ts),
+  // so the browser bundle leaves that code out: less JavaScript on every page (page speed, 2026-11-09).
+  bundleSizeOptimizations: {
+    excludeDebugStatements: true,
+    excludeTracing: true,
+    excludeReplayShadowDom: true,
+    excludeReplayIframe: true,
+    excludeReplayWorker: true,
+  },
 });
