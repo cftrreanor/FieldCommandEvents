@@ -230,7 +230,7 @@ export function FeatureSections({ sections }: { sections: Audience["sections"] }
               </ul>
             )}
           </div>
-          {s.screen && <PhoneFrame src={s.screen.src} alt={s.screen.alt} className="mx-auto mt-2 w-full max-w-[240px] md:mt-0 md:w-[240px]" />}
+          {s.screen && <PhoneFrame src={s.screen.src} alt={s.screen.alt} className="mx-auto mt-2 w-full max-w-[240px] md:mt-0 md:w-[240px]" sizes="228px" />}
         </section>
       ))}
     </div>

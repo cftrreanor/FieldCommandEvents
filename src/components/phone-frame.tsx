@@ -17,7 +17,7 @@ export function PhoneFrame({
   className?: string;
   /** At the top of the page, seen first: load it straight away (the "eager" ones), and the main one first ("main"). */
   hero?: "main" | "eager";
-  /** How wide it's shown, so the browser picks the right file: 224–248 px in the page's sections. */
+  /** How wide the screenshot itself is shown, so the browser picks the right file (248 px in How it works). */
   sizes?: string;
 }) {
   return (

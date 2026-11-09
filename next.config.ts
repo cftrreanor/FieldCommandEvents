@@ -22,7 +22,11 @@ const nextConfig: NextConfig = {
   // before showing anything (page speed, 2026-11-09).
   experimental: { inlineCss: true },
   // AVIF where the browser takes it (about 20% smaller than WebP), WebP otherwise.
-  images: { formats: ["image/avif", "image/webp"] },
+  images: {
+    formats: ["image/avif", "image/webp"],
+    // 448 and 512 fit the 228–248 px phone screenshots on phones and retina screens, between 384 and 640.
+    imageSizes: [32, 48, 64, 96, 128, 256, 384, 448, 512],
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
