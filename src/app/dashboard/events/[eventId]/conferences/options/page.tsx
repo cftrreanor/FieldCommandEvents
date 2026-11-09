@@ -39,10 +39,11 @@ export default async function MeetingOptionsStep({ params }: PageProps<"/dashboa
     >
       <Card>
         <h2 className="text-lg font-semibold">When every time is booked</h2>
-        <p className="mt-1 mb-4 text-sm text-muted">What people see if they open your link and nothing is left.</p>
+        <p className="mt-1 mb-4 text-sm text-muted">What {s.meeting ? "people" : "families"} see if they open your link and nothing is left.</p>
         <MeetingContactForm
           action={saveMeetingContact.bind(null, eventId)}
           initial={s.settings.contact_email ?? null}
+          meeting={s.meeting}
           autosave
         />
       </Card>

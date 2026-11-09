@@ -1243,10 +1243,13 @@ export function MeetingContactForm({
   initial,
   autosave = false,
   next,
+  meeting = true,
 }: {
   action: Action;
   initial: string | null;
   autosave?: boolean;
+  /** Meetings ("people", "meetings") or conferences ("families", "conferences"). */
+  meeting?: boolean;
   /** The step's pinned bar with "Next up", when this is the step's only form (a one-day event's More options). */
   next?: { href: string; label: string };
 }) {
@@ -1262,7 +1265,10 @@ export function MeetingContactForm({
       quiet={autosave}
       noToast={autosave}
     >
-      <Field label="Contact email (optional)" hint="Shown on your booking page only when every time is booked, so people can ask about another time. Hidden once your meetings are over.">
+      <Field
+        label="Contact email (optional)"
+        hint={`Shown on your booking page only when every time is booked, so ${meeting ? "people" : "families"} can ask about another time. Hidden once your ${meeting ? "meetings" : "conferences"} are over.`}
+      >
         <Input name="contactEmail" type="email" maxLength={200} defaultValue={initial ?? ""} autoComplete="email" />
       </Field>
       {/* Saves itself, in the setup step and on Meeting setup alike (one save model for one field). */}
