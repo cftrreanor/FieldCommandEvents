@@ -166,7 +166,8 @@ type TimesProps = {
   meeting?: boolean;
   /**
    * In the setup steps, the form is split: the basics (one day or every week, the hours, how long
-   * each meeting is) on Meeting times; the extras (time between meetings, breaks, the booking window)
+   * each meeting is, time between meetings, and breaks: owner, 2026-11-09) on Meeting times; the extras
+   * (with weekly hours, the booking window)
    * on More options. Each sends only its own part; the server keeps the rest as saved.
    */
   part?: "basics" | "extras";
@@ -534,8 +535,9 @@ function TimesForm({
         </p>
       )}
 
-      <div className={`grid gap-4 sm:grid-cols-2 ${basics && extras ? "" : "sm:max-w-md sm:grid-cols-1"}`}>
-        {basics && (
+      {/* Meeting length, time between meetings, and breaks all live with the hours (owner, 2026-11-09). */}
+      {basics && (
+      <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Meeting length">
           <Select name="meetingMinutes" value={meeting} onChange={(e) => setMeeting(Number(e.target.value))}>
             {MEETING_LENGTHS.map((m) => (
@@ -545,8 +547,6 @@ function TimesForm({
             ))}
           </Select>
         </Field>
-        )}
-        {extras && (
         <Field label="Time between meetings" hint={`A moment to write notes or let the next ${w.family} in.`}>
           <Select name="gapMinutes" value={gap} onChange={(e) => setGap(Number(e.target.value))}>
             {GAP_LENGTHS.map((m) => (
@@ -556,10 +556,10 @@ function TimesForm({
             ))}
           </Select>
         </Field>
-        )}
       </div>
+      )}
 
-      {extras && (
+      {basics && (
       <div>
         <p className="text-sm font-semibold">Breaks</p>
         <p className="text-sm text-muted">
@@ -613,6 +613,8 @@ function TimesForm({
       </div>
       )}
 
+      {/* The times people can book: shown with the hours on Meeting times, not repeated in More options. */}
+      {basics && (
       <div className="rounded-lg border border-border bg-background p-4">
         {weekly ? (
           <>
@@ -661,10 +663,8 @@ function TimesForm({
           </>
         )}
       </div>
-
-      {part === "basics" && (
-        <p className="text-sm text-muted">Need a break, or time between meetings? You&apos;ll set those in step 4, More options.</p>
       )}
+
       {outside.length > 0 && (
         <div id="times-outside" tabIndex={-1} className="rounded-lg border border-warning/40 bg-warning-soft p-4 text-sm leading-6 outline-none">
           <p className="font-semibold">
@@ -1218,7 +1218,18 @@ function WeeklyCopyButton({ action }: { action: () => Promise<void> }) {
  * The email shown on the booking page when every time is booked, so people can ask about another
  * time. Optional: nothing is shown unless it's added (decisions 2026-11-08). Saves itself.
  */
-export function MeetingContactForm({ action, initial, autosave = false }: { action: Action; initial: string | null; autosave?: boolean }) {
+export function MeetingContactForm({
+  action,
+  initial,
+  autosave = false,
+  next,
+}: {
+  action: Action;
+  initial: string | null;
+  autosave?: boolean;
+  /** The step's pinned bar with "Next up", when this is the step's only form (a one-day event's More options). */
+  next?: { href: string; label: string };
+}) {
   const auto = useAutosaveForm(autosave, "A change to your contact email");
   return (
     <ActionForm
@@ -1235,7 +1246,9 @@ export function MeetingContactForm({ action, initial, autosave = false }: { acti
         <Input name="contactEmail" type="email" maxLength={200} defaultValue={initial ?? ""} autoComplete="email" />
       </Field>
       {/* Saves itself, in the setup step and on Meeting setup alike (one save model for one field). */}
-      {autosave ? (
+      {autosave && next ? (
+        <AutosaveBar status={auto.status} retry={auto.retry} next={next} />
+      ) : autosave ? (
         <AutosaveStatus status={auto.status} retry={auto.retry} />
       ) : (
         <SubmitButton variant="secondary" pendingText="Saving…">

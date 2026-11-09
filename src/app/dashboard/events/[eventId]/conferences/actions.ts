@@ -76,11 +76,12 @@ export async function saveMeetingTimes(eventId: string, _prev: ActionState, form
   const who = isMeeting(event.event_type) ? "People" : "Families";
 
   const meeting = ownsBasics ? Number(formData.get("meetingMinutes")) : s.meeting_minutes;
-  const gap = ownsExtras ? Number(formData.get("gapMinutes") ?? 0) : s.gap_minutes;
+  // Time between meetings and breaks are on Meeting times, with the hours (owner, 2026-11-09).
+  const gap = ownsBasics ? Number(formData.get("gapMinutes") ?? 0) : s.gap_minutes;
   if (!(MEETING_LENGTHS as readonly number[]).includes(meeting)) return { error: "Pick how long each meeting is." };
   if (!(GAP_LENGTHS as readonly number[]).includes(gap)) return { error: "Pick the time between meetings." };
   let breaks: ConferenceBreak[] = s.breaks;
-  if (ownsExtras) {
+  if (ownsBasics) {
     const starts = formData.getAll("breakStart").map(String);
     const minutes = formData.getAll("breakMinutes").map(String);
     const labels = formData.getAll("breakLabel").map(String);

@@ -21,7 +21,7 @@ export default async function MeetingTimesStep({ params }: PageProps<"/dashboard
       eventId={eventId}
       eventName={s.event.name}
       title="Meeting times"
-      intro={`The day and hours you're free, and how long each meeting is. Your hours are cut into times ${s.meeting ? "people" : "families"} can book. All times are ${zoneName(s.tz)}.`}
+      intro={`The day and hours you're free, how long each meeting is, and any breaks. Your hours are cut into times ${s.meeting ? "people" : "families"} can book. All times are ${zoneName(s.tz)}.`}
     >
       <Card>
         <MeetingTimesForm
