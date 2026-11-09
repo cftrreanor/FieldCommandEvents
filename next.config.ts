@@ -18,9 +18,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  // The CSS (Tailwind, small) arrives inside each page instead of as a separate file the browser waits for
-  // before showing anything (page speed, 2026-11-09).
-  experimental: { inlineCss: true },
+  // Not experimental.inlineCss: tested 2026-11-09, it sends the CSS twice and added about 85 ms of frozen
+  // time on phones, for no gain in when the page shows.
   // AVIF where the browser takes it (about 20% smaller than WebP), WebP otherwise.
   images: {
     formats: ["image/avif", "image/webp"],
