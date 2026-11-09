@@ -20,6 +20,8 @@ export default async function MeetingOptionsStep({ params }: PageProps<"/dashboa
   const s = await loadMeetingSetup(eventId);
   // Published, or unpublished with people still booked: changes wait for Save, on Meeting setup.
   if (s.published || s.booked > 0) redirect(`${s.base}?tab=times`);
+  // One day: no More options step; its contact email is on Publish (owner, 2026-11-09).
+  if (!s.weekly) redirect(`/dashboard/events/${eventId}#publish`);
   const publishHref = `/dashboard/events/${eventId}#publish`;
   return (
     <StepPage
@@ -42,14 +44,12 @@ export default async function MeetingOptionsStep({ params }: PageProps<"/dashboa
           action={saveMeetingContact.bind(null, eventId)}
           initial={s.settings.contact_email ?? null}
           autosave
-          // One day: this is the step's only form, so it carries the step's bar (weekly hours have theirs below).
-          next={s.weekly ? undefined : { href: publishHref, label: "Next up: Publish" }}
         />
       </Card>
       {s.weekly && (
         <Card>
           <h2 className="text-lg font-semibold">Days off</h2>
-          <p className="mt-1 mb-4 text-sm text-muted">Holidays, trips, or a break. No meetings are booked on them. Leave Through blank for a single day.</p>
+          <p className="mt-1 mb-4 text-sm text-muted">Holidays, trips, or school vacations. No meetings are booked on them. Leave Through blank for a single day.</p>
           <DaysOffForm action={saveDaysOff.bind(null, eventId)} closedDates={s.settings.closed_dates} meeting={s.meeting} autosave />
         </Card>
       )}

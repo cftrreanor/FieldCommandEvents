@@ -75,5 +75,7 @@ function meetingSteps(f: SetupFacts): SetupStepFacts {
     count: null,
     done: { times: !times, place: !place, options: false },
     notes: { times, place: place?.replace(/\.$/, "") ?? null, options: "Optional" },
+    // One day: no More options step; its one setting (the contact email) is on Publish (owner, 2026-11-09).
+    skip: f.conferenceWeekly ? undefined : ["options"],
   };
 }

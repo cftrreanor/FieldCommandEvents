@@ -53,3 +53,15 @@ meeting times page." This changes the 2026-11-08 choice to keep them in the opti
 |---|---|---|
 | Time between meetings and breaks | Owner's decision | On Meeting times, with the hours and meeting length, saved with them |
 | More options | Follows from it | The contact email; with weekly hours, days off and how far ahead people book |
+
+### Light check on the move (2026-11-09)
+
+UX Designer, UI Designer, usability consultant on `docs/design-reviews/2026-11-09-breaks-on-meeting-times/`.
+
+| # | Finding | Severity | Decision | Notes |
+|---|---|---|---|---|
+| 1 | Weekly hours: the bar said "Add your day and hours" when only the dates were missing, so nothing saved and the reason was wrong | 3 | Take the advice | The bar and step bar name exactly what's missing ("Add your first and last day"); blank date boxes say they're needed to save; on phones the note has its own line above the button |
+| 2 | One-day More options was a whole step for one optional box | 2 | Owner: fold it into Publish | One-day meetings have four steps; the contact email is an optional box on the Publish step. Weekly hours keep More options (days off, how far ahead people book) |
+| 3 | Days off and the booking window are a step away from the weekly times | 2 | Take the advice | A line under the weekly times points to More options |
+| 4 | "A break" used for days off and for breaks | 2 | Take the advice | Days off: "Holidays, trips, or school vacations" |
+| 5 | Empty space at the bottom of cards | 2 | Take the advice | The "Saved" line takes no room until there's something to say |

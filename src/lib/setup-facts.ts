@@ -88,6 +88,7 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
     rooms,
     scheduleSlots,
     conferenceTimesSaved: Boolean(conference?.times_saved_at),
+    conferenceWeekly: conference?.schedule === "weekly",
     booths,
     parentRegistrationOpen: event.parent_registration_open,
     parentClosesAt: Boolean(event.parent_registration_closes_at),
@@ -95,7 +96,9 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
     // The setup steps split it: what Meeting times and Where you'll meet each still need.
     conferenceTimesMissing: conferenceHere
       ? !conference?.times_saved_at
-        ? "Add your hours"
+        ? conference?.schedule === "weekly"
+          ? "Add your weekly hours and dates"
+          : "Add your day and hours"
         : conference.schedule === "weekly" && !conference.weekly_hours.length
           ? "Add your weekly hours"
           : null

@@ -274,7 +274,7 @@ export default async function ConferencesPage({ params, searchParams }: PageProp
               <>
                 <h2 className="text-lg font-semibold">Days off</h2>
                 <p className="mt-1 mb-4 text-sm text-muted">
-                  Optional. Holidays, field trips, or a break like winter break. No meetings are booked on them. Leave Through blank for a single day.
+                  Optional. Holidays, field trips, or school vacations. No meetings are booked on them. Leave Through blank for a single day.
                 </p>
                 <DaysOffForm action={saveDaysOff.bind(null, eventId)} closedDates={settings.closed_dates} meeting={meeting} />
               </>

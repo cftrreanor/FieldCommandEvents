@@ -21,7 +21,8 @@ logged in `docs/design-decisions/`. The rules behind it, with where each was fou
 3. **One tracker.** While setting up, the step bar along the top is the only progress tracker: no checklist
    panel beside it, and no second menu on the Details step. [L24]
 4. **The same shape for every kind:** Details, then the event's own step or steps, then Publish. Optional
-   steps are marked "Optional" and never block.
+   steps are marked "Optional" and never block. An optional step that would hold only one setting isn't a
+   step: the setting goes on Publish (a one-day meetings event's contact email, owner, 2026-11-09).
 5. **Every step says where it stands, in words, not color alone:** "Done", "Now", "Not yet", "Optional", or
    what it needs ("Add a job"). The step you're on always says "Now" first ("Now · add a job"). On phones,
    the steps that need work are named in a line under the bar.

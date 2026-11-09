@@ -299,6 +299,14 @@ function TimesForm({
   const short = openLeft !== null && openLeft < outside.length;
   const [choice, setChoice] = useState<"email" | "self" | null>(null);
   const picked = choice ?? (short ? "self" : "email");
+  // What's still missing before the times can save, named exactly (light check, 2026-11-09).
+  const missing = weekly
+    ? [!firstDay || !lastDay ? "your first and last day" : null, !groups.some((g) => g.days.length) ? "the days you meet" : null, groups.some((g) => !g.start || !g.end) ? "your hours" : null]
+    : [!day ? "your day" : null, !from || !to ? "your hours" : null];
+  const missingList = missing.filter((m): m is string => Boolean(m));
+  const missingNote = missingList.length
+    ? `Add ${missingList.length < 3 ? missingList.join(" and ") : `${missingList.slice(0, -1).join(", ")}, and ${missingList.at(-1)}`}`
+    : null;
   const changeGroup = (key: number, patch: Partial<GroupDraft>) => setGroups((gs) => gs.map((g) => (g.key === key ? { ...g, ...patch } : g)));
   const change = (key: number, patch: Partial<BreakDraft>) => setBreaks((bs) => bs.map((b) => (b.key === key ? { ...b, ...patch } : b)));
 
@@ -408,10 +416,11 @@ function TimesForm({
       ) : weekly ? (
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="First day">
+            {/* Not red before anyone's had a go, but say these are what's holding up the save (light check, 2026-11-09). */}
+            <Field label="First day" hint={autosave && !firstDay ? "Needed before your times save." : undefined}>
               <Input type="date" name="weeklyFrom" required value={firstDay} onChange={(e) => setFirstDay(e.target.value)} />
             </Field>
-            <Field label="Last day" hint="For example, the last day of the semester.">
+            <Field label="Last day" hint={autosave && !lastDay ? "Needed before your times save. For example, the last day of the semester." : "For example, the last day of the semester."}>
               <Input type="date" name="weeklyTo" required min={firstDay} value={lastDay} onChange={(e) => setLastDay(e.target.value)} />
             </Field>
           </div>
@@ -613,6 +622,16 @@ function TimesForm({
       </div>
       )}
 
+      {/* Weekly hours in the setup steps: holidays and the booking window are a step away, so nobody forgets them. */}
+      {part === "basics" && weekly && (
+        <p className="text-sm text-muted">
+          Days off and how far ahead people book are in{" "}
+          <a href="options" className="font-medium text-brand underline underline-offset-4">
+            More options
+          </a>
+          .
+        </p>
+      )}
       {/* The times people can book: shown with the hours on Meeting times, not repeated in More options. */}
       {basics && (
       <div className="rounded-lg border border-border bg-background p-4">
@@ -704,7 +723,7 @@ function TimesForm({
         </div>
       )}
       {autosave ? (
-        <AutosaveBar status={auto.status} retry={auto.retry} next={autosave.next} todo={fresh && basics ? "Add your day and hours" : null} />
+        <AutosaveBar status={auto.status} retry={auto.retry} next={autosave.next} todo={fresh && basics ? missingNote : null} />
       ) : (
         <SaveCancel
           editing={editing}
@@ -1145,7 +1164,8 @@ function WaitingRoomGuide({ hours, meeting }: { hours: string; meeting?: boolean
 /** A small status line for a card that saves itself, inside a page whose bar is elsewhere. */
 function AutosaveStatus({ status, retry }: { status: ReturnType<typeof useAutosaveForm>["status"]; retry: () => void }) {
   return (
-    <p className="min-h-6 text-sm" role="status">
+    // An empty line takes no room: the card ends with its last field until there's something to say.
+    <p className="text-sm empty:hidden" role="status">
       {status.kind === "failed" ? (
         <span className="font-semibold text-danger">
           <span aria-hidden>▲ </span>Not saved. {status.error}{" "}
