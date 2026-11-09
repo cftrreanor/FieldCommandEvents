@@ -337,6 +337,7 @@ export default async function Home() {
                   key={p.src}
                   src={p.src}
                   alt={p.alt}
+                  hero={i === 1 ? "main" : "eager"}
                   className={
                     i === 1
                       ? "relative z-10 -mx-3 w-[38%] max-w-[200px] sm:w-44 lg:w-48"
