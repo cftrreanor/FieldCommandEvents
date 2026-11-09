@@ -21,6 +21,8 @@ const nextConfig: NextConfig = {
   // The CSS (Tailwind, small) arrives inside each page instead of as a separate file the browser waits for
   // before showing anything (page speed, 2026-11-09).
   experimental: { inlineCss: true },
+  // AVIF where the browser takes it (about 20% smaller than WebP), WebP otherwise.
+  images: { formats: ["image/avif", "image/webp"] },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

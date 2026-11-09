@@ -338,6 +338,8 @@ export default async function Home() {
                   src={p.src}
                   alt={p.alt}
                   hero={i === 1 ? "main" : "eager"}
+                  // Their real widths: the middle one 132–176 px, the side ones 113–144 px.
+                  sizes={i === 1 ? "(min-width: 1024px) 176px, (min-width: 640px) 160px, 34vw" : "(min-width: 1024px) 144px, (min-width: 640px) 128px, 28vw"}
                   className={
                     i === 1
                       ? "relative z-10 -mx-3 w-[38%] max-w-[200px] sm:w-44 lg:w-48"

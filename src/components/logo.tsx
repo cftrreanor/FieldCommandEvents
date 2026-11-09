@@ -6,7 +6,8 @@ import { brand } from "@/lib/brand";
 export function Logo({ href = "/", className = "h-11 w-auto sm:h-12" }: { href?: string; className?: string }) {
   return (
     <Link href={href} className="flex shrink-0 items-center rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">
-      <Image src="/logo.png" alt={brand.name} width={260} height={160} priority className={className} />
+      {/* Shown about 72–78 px wide (h-11 / h-12): sized to that, so phones get a small file, not the 640 px one. */}
+      <Image src="/logo.png" alt={brand.name} width={78} height={48} preload className={className} />
     </Link>
   );
 }
