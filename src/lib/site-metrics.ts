@@ -8,7 +8,7 @@ export const MARKETING_PAGES = [
   { path: "/band-contests", label: "Band contests" },
   { path: "/choir-festivals", label: "Choir festivals" },
   { path: "/school-fairs", label: "School fairs" },
-  { path: "/volunteer-events", label: "Volunteer events" },
+  { path: "/volunteer-events", label: "Volunteers and sign-ups" },
   { path: "/parent-check-in", label: "Parent check-in" },
   { path: "/parent-teacher-conferences", label: "Parent-teacher conferences" },
   { path: "/meetings", label: "Meetings" },

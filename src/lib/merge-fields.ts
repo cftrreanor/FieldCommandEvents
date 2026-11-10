@@ -38,7 +38,7 @@ export const QUICK_BUTTONS = [
   { group: "Event pages", label: "Band contests", markup: "[[See how it works for band contests|{{site_url}}/band-contests]]" },
   { group: "Event pages", label: "Choir and group festivals", markup: "[[See how it works for group festivals|{{site_url}}/choir-festivals]]" },
   { group: "Event pages", label: "School fairs and fundraisers", markup: "[[See how it works for school fairs|{{site_url}}/school-fairs]]" },
-  { group: "Event pages", label: "Volunteer events", markup: "[[See how it works for volunteer events|{{site_url}}/volunteer-events]]" },
+  { group: "Event pages", label: "Volunteers and sign-ups", markup: "[[See how it works for volunteers and sign-ups|{{site_url}}/volunteer-events]]" },
   { group: "Event pages", label: "Parent and visitor check-in", markup: "[[See how it works for visitor check-in|{{site_url}}/parent-check-in]]" },
   { group: "Event pages", label: "Parent-teacher conferences", markup: "[[See how it works for conferences|{{site_url}}/parent-teacher-conferences]]" },
   { group: "Event pages", label: "Meetings", markup: "[[See how it works for meetings|{{site_url}}/meetings]]" },

@@ -31,7 +31,7 @@ export const rateLabel = (code: string) => RATES.find((r) => r.value === code)?.
 /** One-time passes: one published event of a type the package doesn't include. List prices match plan_tiers. */
 export const PASSES = [
   { type: "school_visit", label: "School visitor day", cents: 5000 },
-  { type: "volunteer", label: "Volunteer event", cents: 7500 },
+  { type: "volunteer", label: "Volunteers and sign-ups", cents: 7500 },
   { type: "fair", label: "School fair", cents: 10000 },
   { type: "group_event", label: "Group event", cents: 12500 },
   { type: "band_contest", label: "Band contest", cents: 15000 },

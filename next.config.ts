@@ -26,6 +26,10 @@ const nextConfig: NextConfig = {
     // 448 and 512 fit the 228–248 px phone screenshots on phones and retina screens, between 384 and 640.
     imageSizes: [32, 48, 64, 96, 128, 256, 384, 448, 512],
   },
+  // Sign-up sheets are volunteer events (one kind, one page): the search-friendly address leads there.
+  async redirects() {
+    return [{ source: "/sign-up-sheets", destination: "/volunteer-events", permanent: true }];
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

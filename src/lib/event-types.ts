@@ -16,9 +16,9 @@ export const EVENT_TYPES = [
   },
   {
     value: "volunteer",
-    label: "Volunteer event",
+    label: "Volunteers and sign-ups",
     icon: "volunteer",
-    blurb: "Shifts, things to bring, a check-in desk, and your team. Run everything else your own way.",
+    blurb: "Sign-up sheets, volunteer shifts, things to bring like potluck dishes, a check-in desk, and your team. Run everything else your own way.",
   },
   {
     value: "school_visit",

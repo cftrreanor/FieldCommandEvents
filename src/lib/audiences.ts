@@ -4,7 +4,7 @@ import { PILOT_END_LABEL } from "@/lib/pilot";
 import type { IconName } from "./icons";
 
 /**
- * The pages for each kind of event (/sign-up-sheets, /band-contests, /choir-festivals…),
+ * The pages for each kind of event (/volunteer-events, /band-contests, /choir-festivals…),
  * written for the people who run them and the words they search for.
  * Every claim here must match what the product really does: no payments,
  * texting, ticketing, waitlists or exports.
@@ -33,119 +33,6 @@ export type Audience = {
 };
 
 export const audiences = {
-  signups: {
-    path: "/sign-up-sheets",
-    eventType: "volunteer",
-    icon: "note",
-    name: "Sign-up sheets",
-    metaTitle: "Online Sign-up Sheets Without Ads or Accounts",
-    metaDescription:
-      "Online sign-up sheets for volunteers, potlucks, class parties, and group events. Organizers sign in to run their events. Everyone else signs up from the organizer's link, with up to four others at once, and is never asked to make an account or shown ads.",
-    eyebrow: "For organizers with spots to fill",
-    headline: "Sign-up sheets without the ads",
-    intro:
-      "You set it up from your organizer account. Volunteers, families, and guests sign up from your link, with up to four others at once, and are never asked to make an account or shown ads.",
-    replaces: [
-      "Sign-up sites covered in ads",
-      "Making everyone who signs up create an account",
-      "Signing up one person at a time",
-      "Paper sheets on a clipboard",
-      "Reminder texts sent one by one",
-    ],
-    sections: [
-      {
-        title: "Sign up together",
-        body: "One person signs up with up to four others, who take the same shifts or pick their own. Nobody makes an account, downloads an app, or scrolls past ads to do it.",
-        points: [
-          "Share one link or QR code, by email, text, or a printed flyer",
-          "Everyone sees how many spots are left before they pick",
-          "Volunteers under 18 use a guardian's contact details, and sign-ups can be marked adults only",
-        ],
-        screen: {
-          src: "/screens/volunteer-shift-picker.webp",
-          alt: "A sign-up page on a phone in the organizer's colors: sign-ups with their shifts and how many spots are left.",
-        },
-      },
-      {
-        title: "Shifts and things to bring",
-        body: "Set how many people each shift needs, or list what you need brought and how many of each. Sign-ups stop when a spot is full, so everything fills evenly.",
-        points: [
-          "Build a day of equal shifts in one step, or add each shift by hand",
-          "Make any sign-up a list of things to bring, like sides, desserts, and drinks for a potluck",
-          "Add where to report, any instructions, and who's leading each sign-up",
-        ],
-      },
-      {
-        title: "Reminders and changes on their own",
-        body: "Everyone who signs up hears from you at the right times, without you sending a thing.",
-        points: [
-          "A confirmation with a calendar invite as soon as they sign up",
-          "An update if their shift changes, and a reminder the day before",
-          "A private link to see their sign-ups, add more, or cancel",
-        ],
-        screen: {
-          src: "/screens/volunteer-my-shifts.webp",
-          alt: "A volunteer's own page on a phone: their shift, where to report, and their lead's contact details.",
-        },
-      },
-      {
-        title: "Check-in on the day, if you want it",
-        body: "Check people in with one tap on any phone, tablet, or laptop, see who isn't here yet, and add walk-ups on the spot.",
-        points: [
-          "Search for anyone by name, and undo a wrong tap",
-          "Release a no-show to free up their spot",
-          "Print name badges with your logo and a QR code",
-        ],
-      },
-    ],
-    steps: [
-      {
-        title: "Set up your sign-ups",
-        body: "Add shifts or things to bring, with how many of each you need.",
-        screen: "/screens/set-up-shifts-blue.webp",
-        alt: "Setting up a sign-up with its morning and late-morning shifts.",
-      },
-      {
-        title: "Share your link",
-        body: "People pick their spots with no account and no ads, and get a confirmation and a reminder.",
-        screen: "/screens/volunteer-signup-blue.webp",
-        alt: "Someone picking a shift on the event's sign-up page.",
-      },
-      {
-        title: "See who's coming",
-        body: "Watch spots fill, and check people in on the day if you want to.",
-        screen: "/screens/volunteer-checkin-desk.webp",
-        alt: "The check-in desk: one shift's volunteers, some checked in, with Check in buttons.",
-      },
-    ],
-    privacy: [
-      "People signing up never make an account, and their phone numbers are deleted 10 days after the event.",
-      "Volunteers under 18 are stored by first name and last initial, with a guardian's contact details.",
-      "No ads, no spam, and emails used only for your event",
-    ],
-    faqs: [
-      {
-        q: "Who needs an account, and what does it cost?",
-        a: `Only the organizer. Your events live in your account, free during the pilot until ${PILOT_END_LABEL}. After the pilot, organizers pay to use ${brand.name}, and we'll talk with you before anything changes. Nothing renews or charges on its own. Everyone signing up uses your link at no charge, and is never asked to make an account.`,
-      },
-      {
-        q: "Will people see ads?",
-        a: `No. There are no ads anywhere in ${brand.name}, and we only email people about the event they signed up for.`,
-      },
-      {
-        q: "Can a family sign up together?",
-        a: "Yes. One person can sign up with up to four others, who take the same shifts or pick their own. Volunteers under 18 use a guardian's contact details.",
-      },
-      {
-        q: "Can I make a potluck sign-up?",
-        a: "Yes. Make any sign-up a list of things to bring, like sides, desserts, and drinks, with how many of each you need. People pick what they'll bring, and the list shows what's still needed.",
-      },
-      {
-        q: "Do people get reminders?",
-        a: "Yes. A confirmation with a calendar invite when they sign up, an update if their shift changes, and a reminder the day before. Each person also gets a private link to change or cancel.",
-      },
-    ],
-  },
   bands: {
     path: "/band-contests",
     eventType: "band_contest",
@@ -557,23 +444,24 @@ export const audiences = {
     path: "/volunteer-events",
     eventType: "volunteer",
     icon: "volunteer",
-    name: "Volunteer events",
-    metaTitle: "Volunteer Sign-up, Scheduling & Check-in Software",
+    name: "Volunteers and sign-ups",
+    metaTitle: "Online Sign-up Sheets & Volunteer Scheduling, No Ads",
     metaDescription:
-      "Volunteer management for nonprofits, clubs, congregations, and community groups. Volunteers sign up for shifts without an account and get confirmations, calendar invites, and day-before reminders. Check them in with one tap on any device.",
-    eyebrow: "For nonprofits, clubs, and community groups",
-    headline: "Volunteer sign-ups and check-in in one place",
+      "Online sign-up sheets and volunteer scheduling for schools, PTOs, congregations, clubs, nonprofits, and community groups. Organizers sign in to run their events. Volunteers, families, and guests join from the organizer's link and are never asked to make an account or shown ads.",
+    eyebrow: "For volunteer shifts, potlucks, and anything with spots to fill",
+    headline: "Sign-up sheets and volunteer shifts without the ads",
     intro:
-      "For cleanups, food drives, races, and potlucks, volunteers sign up for shifts and things to bring on their own phones. Confirmations, calendar invites, and reminders go out on their own, so you know who's coming and who's here.",
+      "You set it up from your organizer account. Volunteers, families, and guests sign up from your link, with up to four others at once, and are never asked to make an account or shown ads.",
     replaces: [
-      "Paper sign-up sheets and shared spreadsheets",
-      "Reminder emails sent one at a time the night before",
-      "Group texts to fill a last-minute gap",
+      "Sign-up sites covered in ads",
+      "Making everyone who signs up create an account",
+      "Paper sheets on a clipboard and shared spreadsheets",
+      "Sending reminders one by one the night before",
       "Guessing who actually showed up",
     ],
     sections: [
       {
-        title: "Sign-ups and shifts that fill evenly",
+        title: "Shifts and things to bring that fill evenly",
         body: "Set up each sign-up, its shifts, and how many people each shift needs. Sign-ups stop when a shift is full, so you never end up with ten people at one table and nobody at the next.",
         points: [
           "Build a day of equal shifts in one step, or add each shift by hand",
@@ -660,8 +548,20 @@ export const audiences = {
     ],
     faqs: [
       {
+        q: "Who needs an account, and what does it cost?",
+        a: `Only the organizer. Your events live in your account, free during the pilot until ${PILOT_END_LABEL}. After the pilot, organizers pay to use ${brand.name}, and we'll talk with you before anything changes. Nothing renews or charges on its own. Everyone signing up uses your link at no charge, and is never asked to make an account.`,
+      },
+      {
         q: "Do volunteers need to create an account?",
         a: "No. Volunteers sign up from a link or QR code with just their name and contact details. Their confirmation email includes a private link to see their shifts, sign up for more, or cancel.",
+      },
+      {
+        q: "Will people see ads?",
+        a: `No. There are no ads anywhere in ${brand.name}, and we only email people about the event they signed up for.`,
+      },
+      {
+        q: "Can I make a potluck sign-up?",
+        a: "Yes. Make any sign-up a list of things to bring, like sides, desserts, and drinks, with how many of each you need. People pick what they'll bring, and the list shows what's still needed.",
       },
       {
         q: "Do volunteers get reminders?",
@@ -837,4 +737,4 @@ export const CONFERENCES_PAGE = { path: "/parent-teacher-conferences", name: "Pa
 /** Meetings: office hours and appointments anyone can book (not a school-event audience, so its own page). */
 export const MEETINGS_PAGE = { path: "/meetings", name: "Meetings", icon: "calendar" } as const;
 
-export const AUDIENCES: Audience[] = [audiences.signups, audiences.bands, audiences.groups, audiences.fairs, audiences.volunteers, audiences.parents];
+export const AUDIENCES: Audience[] = [audiences.volunteers, audiences.bands, audiences.groups, audiences.fairs, audiences.parents];

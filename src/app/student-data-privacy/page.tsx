@@ -43,7 +43,7 @@ const collected = [
     adults: "Directors' and assistant directors' names, the head director's email address and phone number, the school's address and contact email, and any accessibility or staging needs",
   },
   {
-    event: "Volunteer events",
+    event: "Volunteers and sign-ups",
     students:
       "Volunteers under 18: first name and last initial, age (to match shifts with a minimum age), and an optional email address and phone number, signed up by a parent or guardian. A record of the guardian's confirmation (who confirmed, when, and the exact words) is kept permanently",
     adults: "Volunteers' names, email addresses, and phone numbers, and shift check-in times",

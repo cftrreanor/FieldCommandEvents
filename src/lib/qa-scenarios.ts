@@ -71,7 +71,7 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     id: "volunteer",
-    label: "Volunteer event",
+    label: "Volunteers and sign-ups",
     hint: "In a week, with shifts to sign up for.",
     type: "volunteer",
     name: "Community Cleanup Day",
@@ -158,7 +158,7 @@ export const SITE_PAGES: { group: string; pages: { label: string; href: string }
       { label: "Band contests", href: "/band-contests" },
       { label: "Choir festivals", href: "/choir-festivals" },
       { label: "School fairs", href: "/school-fairs" },
-      { label: "Volunteer events", href: "/volunteer-events" },
+      { label: "Volunteers and sign-ups", href: "/volunteer-events" },
       { label: "Parent check-in", href: "/parent-check-in" },
       { label: "Parent-teacher conferences", href: "/parent-teacher-conferences" },
       { label: "Meetings", href: "/meetings" },

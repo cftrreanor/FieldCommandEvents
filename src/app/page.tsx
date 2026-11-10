@@ -27,15 +27,15 @@ const CONTACT = `mailto:${brand.supportEmail}`;
 // The kinds of event (src/lib/event-types.ts), as the page's main pitch.
 const kinds = [
   {
-    icon: audiences.signups.icon,
-    title: "Sign-up sheets",
-    summary: "Potlucks, class parties, and anything with spots to fill",
-    href: audiences.signups.path,
-    examples: "Potlucks, class parties, group outings, and anything with spots to fill",
+    icon: "volunteer" as const,
+    title: "Volunteers and sign-ups",
+    summary: "Sign-up sheets, potlucks, cleanups, and volunteer shifts",
+    href: audiences.volunteers.path,
+    examples: "Sign-up sheets, potlucks, cleanups, food drives, and races",
     points: [
-      "One link for shifts and things to bring",
-      "Nobody signing up is asked to make an account or shown ads",
-      "Sign up with up to four others at once",
+      "Shifts and things to bring that fill evenly, with spots left shown",
+      "No account and no ads for anyone signing up",
+      "Check-in on any device, with walk-ups and printable badges",
     ],
   },
   {
@@ -84,18 +84,6 @@ const kinds = [
       "Booths and community partners organized by zone",
       "Partner check-in on the day, with who's still on the way",
       "A public “What's at the event” page that thanks your partners",
-    ],
-  },
-  {
-    icon: "volunteer" as const,
-    title: "Volunteer events",
-    summary: "Cleanups, food drives, races, and potlucks",
-    href: audiences.volunteers.path,
-    examples: "Cleanups, food drives, races, and potlucks",
-    points: [
-      "Sign-ups and shifts that fill evenly, with spots left shown",
-      "Confirmations, calendar invites, and day-before reminders, with no account and no ads",
-      "Check-in on any device, with walk-ups and printable badges",
     ],
   },
   {
@@ -375,7 +363,7 @@ export default async function Home() {
               Choose your kind of event, and {brand.name} gives you the tools it needs.
             </p>
             {/* Wide screens: compact tiles, all at once. The details are on each event's own page. */}
-            <ul className="mt-8 hidden gap-4 lg:grid lg:grid-cols-3">
+            <ul className="mt-8 hidden gap-4 lg:grid lg:grid-cols-4">
               {kinds.map((k) => (
                 <li key={k.title}>
                   <Link

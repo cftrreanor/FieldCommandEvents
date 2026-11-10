@@ -76,7 +76,7 @@ nonprofits, and community groups. Keep "school" where the page is about schools.
 - Avoid "privacy protected" until data practices are confirmed
 - Use "no ads, no spam, emails used only for your event" instead
 - Name frustrations with other tools, never the competitors themselves. This holds for search pages too:
-  the Sign-up sheets page answers "alternative to [tool]" searches by naming what people dislike (ads,
+  the Volunteers and sign-ups page answers "alternative to [tool]" searches by naming what people dislike (ads,
   accounts, one person at a time), not the tool (owner, 2026-11-10)
 
 ## Navigation and structure
@@ -94,7 +94,7 @@ nonprofits, and community groups. Keep "school" where the page is about schools.
    - Primary button: *Join the pilot*
 
 2. **Router: "What are you organizing?"** (a card for each kind of event, each linking to its page, with
-   Sign-up sheets first)
+   Volunteers and sign-ups first: sign-up sheets are volunteer events, one kind with one page)
    - **Contests and festivals:** Schedules, rooms, judges, and buses in one place
    - **School events:** Theater, UIL academics, fairs, and more
    - **Classroom sign-ups:** Parties, conferences, and visits, ready in minutes
