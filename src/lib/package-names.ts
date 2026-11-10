@@ -42,12 +42,16 @@ export const loadTiers = cache(async (): Promise<Tier[]> => {
 export function packageChoices(tiers: Tier[], keep?: string | null): { value: string; label: string }[] {
   return tiers
     .filter((t) => t.kind === "package" && (!t.retired_at || t.code === keep))
-    .map((t) => ({ value: t.code, label: t.name }));
+    .map((t) => ({ value: t.code, label: t.retired_at ? `${t.name} (retired)` : t.name }));
 }
 
-/** Packages an invitation can start someone on: not retired, and not District Command (by hand for now). */
-export function invitePackageChoices(tiers: Tier[]): { value: string; label: string }[] {
-  return packageChoices(tiers).filter((p) => p.value !== "district");
+/**
+ * Packages an invitation can start someone on: not retired, and not District Command (by hand for now). An
+ * invitation or lead already saved on a package that's since been retired keeps it (`keep`), so reopening it
+ * never quietly switches it to another package.
+ */
+export function invitePackageChoices(tiers: Tier[], keep?: string | null): { value: string; label: string }[] {
+  return packageChoices(tiers, keep).filter((p) => p.value !== "district" || p.value === keep);
 }
 
 /** A package that exists and isn't retired (or is the one already in use). The database checks again. */

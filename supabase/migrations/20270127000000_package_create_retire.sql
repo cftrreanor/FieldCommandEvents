@@ -61,7 +61,7 @@ begin
   insert into plan_tiers (code, kind, name, event_types, one_at_a_time, weekly_hours, max_team, event_staff,
                           volunteer_history, teacher_rate, sort)
   values (new_code, 'package', clean, source.event_types, source.one_at_a_time, source.weekly_hours, source.max_team,
-          source.event_staff, source.volunteer_history, false,
+          source.event_staff, source.volunteer_history, source.teacher_rate,
           coalesce((select max(sort) from plan_tiers where kind = 'package'), 0) + 10);
   insert into admin_log (admin_id, action, details)
   values (auth.uid(), 'package_created', jsonb_build_object(
@@ -102,7 +102,8 @@ revoke execute on function public.admin_set_package_retired(text, boolean, text)
 grant execute on function public.admin_set_package_retired(text, boolean, text) to authenticated;
 
 -- A retired package is never newly given: not to an account, an invitation, or a pilot request's plan.
--- Rows already on it keep it (only a change *to* it is refused).
+-- Rows already on it keep it (only a change *to* it is refused). An invitation sent before the package was
+-- retired still starts its host on it: accepting it sets app.invitation_package for that one step.
 create function public.retired_package_check()
 returns trigger
 language plpgsql security definer set search_path = public
@@ -112,6 +113,9 @@ declare
   new_pkg text := to_jsonb(new) ->> col;
   old_pkg text := case when tg_op = 'UPDATE' then to_jsonb(old) ->> col end;
 begin
+  if tg_table_name = 'organizations' and current_setting('app.invitation_package', true) = 'on' then
+    return new;
+  end if;
   if new_pkg is not null and new_pkg is distinct from old_pkg
      and exists (select 1 from plan_tiers where code = new_pkg and retired_at is not null) then
     raise exception '% is retired. Pick another package.', (select name from plan_tiers where code = new_pkg)
@@ -128,3 +132,26 @@ create trigger host_invitations_retired_package before insert or update of packa
   for each row execute function public.retired_package_check('package');
 create trigger pilot_requests_retired_package before insert or update of planned_package on public.pilot_requests
   for each row execute function public.retired_package_check('planned_package');
+
+-- Accepting an invitation: its package was promised when it was sent, so a later retirement doesn't block it.
+create or replace function public.apply_invitation_plan(p_org uuid, inv public.host_invitations)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  if inv.plan_status is not null then
+    perform public.apply_plan(p_org, inv.plan_status, inv.free_until, 'Set from host invitation', inv.invited_by);
+  end if;
+  if inv.package is not null then
+    perform set_config('app.invitation_package', 'on', true);
+    perform public.apply_package(p_org, inv.package, (select rate from organizations where id = p_org),
+                                 'Set from host invitation', 'admin', inv.invited_by);
+    perform set_config('app.invitation_package', 'off', true);
+  end if;
+  update pilot_requests r
+     set organization = left(coalesce(nullif(trim(o.school), ''), o.name), 200)
+    from organizations o
+   where o.id = p_org and r.id = inv.pilot_request_id and r.organization = r.name;
+end;
+$$;
+revoke execute on function public.apply_invitation_plan(uuid, public.host_invitations) from public, anon, authenticated;

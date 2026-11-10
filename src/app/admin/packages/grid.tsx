@@ -55,7 +55,7 @@ const toDollars = (cents: number | null | undefined) => (cents == null ? "" : St
 const BUILT_IN: string[] = PACKAGES.map((p) => p.value);
 // New accounts and teachers start on these, so they can't be retired (20270127000000_package_create_retire.sql).
 const CANT_RETIRE = ["free_teacher", "free", "event"];
-const tagClass = "ml-1 inline-block rounded-sm px-1 text-[11px] font-semibold text-foreground ring-1";
+const tagClass = "mx-auto mt-1 block w-fit rounded-sm px-1.5 py-px text-xs font-semibold text-foreground ring-1";
 
 /** The packages as a grid: a column each, a row for each thing they include. Selecting a box opens its editor. */
 export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; passes: Tier[]; counts: Record<string, number> }) {
@@ -416,7 +416,9 @@ function Editor({
           : editing.kind === "team"
             ? `Team spots on ${pkg?.name}`
             : editing.kind === "details"
-              ? `${pkg?.name}: name and prices`
+              ? pkg && !CANT_RETIRE.includes(pkg.code)
+                ? `${pkg.name}: name, prices, and retiring`
+                : `${pkg?.name}: name and prices`
               : `${pass?.name}: price`;
   const options: { value: Setting; hint: string }[] =
     editing.kind === "type"
@@ -616,7 +618,7 @@ function RetireSection({
         type="button"
         disabled={busy}
         onClick={toggle}
-        className="inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:bg-background disabled:opacity-60"
+        className="inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4 disabled:opacity-60"
       >
         {busy ? "Saving…" : retired ? `Bring back ${pkg.name}` : `Retire ${pkg.name}`}
       </button>
@@ -679,7 +681,7 @@ function NewPackage({
             ))}
           </select>
         </Field>
-        <p className="text-sm text-muted">Prices start as &ldquo;Not set&rdquo;. No accounts are moved onto it: you choose each account&apos;s package as today.</p>
+        <p className="text-sm text-muted">Prices start as &ldquo;Not set&rdquo;. No accounts are moved onto it: you still choose each account&apos;s package yourself.</p>
         <Field label="Note for the activity log (optional)">
           <Input value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} />
         </Field>

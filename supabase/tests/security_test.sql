@@ -8733,6 +8733,42 @@ begin
   end;
   assert ok, 'or to an invitation';
 end $$;
+-- An invitation sent before the package was retired still starts its host on it.
+do $$
+declare
+  inv public.host_invitations;
+  org uuid;
+  ok boolean := false;
+begin
+  insert into public.organizations (name, slug) values ('Promised Boosters', 'promised-boosters-test') returning id into org;
+  inv.email := 'promised@example.com';
+  inv.package := 'booster_command';
+  perform public.apply_invitation_plan(org, inv);
+  assert (select package = 'booster_command' from public.organizations where id = org),
+         'an invitation sent before retiring still gives its package';
+  delete from public.organizations where id = org;
+  -- A pilot request's plan can't be newly set to it.
+  begin
+    update public.pilot_requests set planned_package = 'booster_command' where id = (select id from public.pilot_requests limit 1);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok or not exists (select 1 from public.pilot_requests), 'or to a pilot request''s plan';
+end $$;
+-- An account already on it can still change only its rate.
+select set_config('test.retired_org', (select id::text from public.organizations where package = 'booster_command' limit 1), false);
+set role authenticated;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000006","email":"stranger@example.com"}';
+do $$
+declare org uuid := current_setting('test.retired_org')::uuid;
+begin
+  perform public.set_account_package(org, 'booster_command', 'teacher', 'rate only', 'admin');
+  perform public.set_account_package(org, 'booster_command', 'standard', 'put back', 'admin');
+end $$;
+reset role;
+do $$ begin
+  assert exists (select 1 from public.admin_log where action = 'package_changed' and details ->> 'note' = 'rate only'),
+         'changing only the rate keeps a retired package';
+end $$;
 set role authenticated;
 set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000006","email":"stranger@example.com"}';
 select public.admin_set_package_retired('booster_command', false, 'test');
