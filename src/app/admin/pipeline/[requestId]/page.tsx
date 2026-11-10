@@ -15,7 +15,7 @@ import { addNote, moveStage } from "../../notes-actions";
 import { EmailPanel } from "../../email-panel";
 import { emailItems, noteItems, Timeline } from "../../timeline";
 import { sendHostInvitation } from "../actions";
-import { tierNames } from "@/lib/package-names";
+import { invitePackageChoices, loadTiers, tierNames } from "@/lib/package-names";
 import { InviteHostPanel } from "../invite-host-panel";
 import { StageSelect } from "../stage-select";
 
@@ -41,6 +41,8 @@ async function selectInvitation(admin: ReturnType<typeof createAdminClient>, ema
 /** One pilot request: who asked, where it stands, and the conversation so far. */
 export default async function PilotRequestPage({ params }: PageProps<"/admin/pipeline/[requestId]">) {
   const names = await tierNames();
+  const tiers = await loadTiers();
+
   const user = await requirePlatformAdmin();
   const { requestId } = await params;
   const admin = createAdminClient();
@@ -140,6 +142,7 @@ export default async function PilotRequestPage({ params }: PageProps<"/admin/pip
               <div className="mt-2">
                 <InviteHostPanel
                   names={names}
+                  packages={invitePackageChoices(tiers, inv?.package ?? r.planned_package)}
                   action={sendHostInvitation.bind(null, r.id)}
                   templates={templates.map((t) => ({ id: t.id, name: t.name }))}
                   defaults={{

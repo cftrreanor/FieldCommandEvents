@@ -9,8 +9,8 @@ import { emailLayout, emailLogoUrl, sendEmail } from "@/lib/email";
 import { renderEmail } from "@/lib/email-format";
 import { EMAIL_LINK_DAYS } from "@/lib/email-link-age";
 import { hostWelcomeLink } from "@/lib/host-invite-link";
-import { tierNames } from "@/lib/package-names";
-import { invitePackageLabel, inviteStatusLabel, isInvitePackage, isInviteStatus } from "@/lib/invitation-plan";
+import { invitePackageChoices, loadTiers, tierNames } from "@/lib/package-names";
+import { invitePackageLabel, inviteStatusLabel, isInviteStatus } from "@/lib/invitation-plan";
 import { fillTemplate, firstName, siteLinks } from "@/lib/merge-fields";
 import { normalizePhone } from "@/lib/phone";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -46,7 +46,9 @@ export async function sendHostInvitation(pilotRequestId: string | null, _prev: A
   if (name.length < 2) fieldErrors.name = "Enter the host's name.";
   const phone = phoneInput ? normalizePhone(phoneInput) : null;
   if (phoneInput && !phone) fieldErrors.phone = "Enter a 10-digit phone number, or leave it blank.";
-  if (!isInvitePackage(pkg)) fieldErrors.package = "Pick a package.";
+  // A package retired since this invitation or lead was saved stays allowed for it (it was promised then).
+  if (!invitePackageChoices(await loadTiers(), await savedInvitePackage(email, pilotRequestId)).some((p) => p.value === pkg))
+    fieldErrors.package = "Pick a package.";
   if (!isInviteStatus(status)) fieldErrors.status = "Pick a free pilot or a trial.";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(freeUntil)) fieldErrors.freeUntil = "Pick the last day of the free period.";
   if (Object.keys(fieldErrors).length) return fieldErrorState(fieldErrors);
@@ -145,4 +147,14 @@ export async function sendHostInvitation(pilotRequestId: string | null, _prev: A
       ? `Invited ${email} on ${plan}. They'll get the email now.`
       : `Invited ${email} on ${plan}, but the email couldn't be sent. Tell them to sign in with that address.`,
   };
+}
+
+/** The package already saved on this person's invitation, or on their lead card: kept even if retired since. */
+async function savedInvitePackage(email: string, pilotRequestId: string | null): Promise<string | null> {
+  const admin = createAdminClient();
+  const [{ data: inv }, { data: lead }] = await Promise.all([
+    admin.from("host_invitations").select("package").eq("email", email).maybeSingle(),
+    pilotRequestId ? admin.from("pilot_requests").select("planned_package").eq("id", pilotRequestId).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
+  return (inv?.package as string | null) ?? (lead?.planned_package as string | null) ?? null;
 }

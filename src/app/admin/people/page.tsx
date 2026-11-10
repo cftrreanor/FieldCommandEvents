@@ -29,16 +29,23 @@ export default async function PeoplePage({ searchParams }: PageProps<"/admin/peo
   const role = str(sp.role);
   const sort = str(sp.sort) || "signin";
   const dir = str(sp.dir) || "desc";
+  // Demo mode's role-play accounts (demo_accounts) are hidden unless asked for, so real people stand out (issue #346).
+  const showDemo = str(sp.demo) === "show";
 
-  const [{ data }, logins] = await Promise.all([
-    createAdminClient()
+  const admin = createAdminClient();
+  const [{ data }, logins, { data: demoRows }] = await Promise.all([
+    admin
       .from("profiles")
       .select("id, full_name, email, phone, created_at, organization_members(role), event_staff(role), bands!bands_director_user_id_fkey(id)")
       .order("created_at", { ascending: false })
       .limit(2000),
     signIns(),
+    admin.from("demo_accounts").select("user_id"),
   ]);
-  const all = (data ?? []) as unknown as Person[];
+  const demo = new Set(((demoRows ?? []) as { user_id: string }[]).map((d) => d.user_id));
+  const everyone = (data ?? []) as unknown as Person[];
+  const all = showDemo ? everyone : everyone.filter((p) => !demo.has(p.id));
+  const hiddenDemo = everyone.length - all.length;
   const rows = all
     .map((p) => ({ ...p, roles: personRoles(p), login: logins.get(p.id)?.last_sign_in_at ?? null }))
     .filter((p) => !q || p.email.toLowerCase().includes(q) || p.full_name.toLowerCase().includes(q) || (p.phone ?? "").includes(q))
@@ -49,12 +56,17 @@ export default async function PeoplePage({ searchParams }: PageProps<"/admin/peo
     signin: (p) => p.login,
     joined: (p) => p.created_at,
   });
-  const params = Object.fromEntries(Object.entries({ q, role }).filter(([, v]) => v));
+  const params = Object.fromEntries(Object.entries({ q, role, demo: showDemo ? "show" : "" }).filter(([, v]) => v));
   const th = { sort, dir, params };
 
   return (
     <div>
-      <PageHeader title="People" sub={`${all.length} account${all.length === 1 ? "" : "s"}. Volunteers and parents don't have accounts; search their email in the top bar to see what we've sent them.`} />
+      <PageHeader
+        title="People"
+        sub={`${all.length} account${all.length === 1 ? "" : "s"}${
+          hiddenDemo ? ` (${hiddenDemo} demo account${hiddenDemo === 1 ? "" : "s"} hidden)` : ""
+        }. Volunteers and parents don't have accounts; search their email in the top bar to see what we've sent them.`}
+      />
       <FilterBar>
         <input name="q" defaultValue={q} placeholder="Name, email, or phone" aria-label="Search people" className={`${smallInput} w-56`} />
         <select name="role" defaultValue={role} aria-label="Role" className={smallInput}>
@@ -64,6 +76,10 @@ export default async function PeoplePage({ searchParams }: PageProps<"/admin/peo
               {r.label}
             </option>
           ))}
+        </select>
+        <select name="demo" defaultValue={showDemo ? "show" : ""} aria-label="Demo accounts" className={smallInput}>
+          <option value="">Hide demo accounts</option>
+          <option value="show">Show demo accounts</option>
         </select>
       </FilterBar>
       <Table>
@@ -81,6 +97,11 @@ export default async function PeoplePage({ searchParams }: PageProps<"/admin/peo
             <Tr key={p.id}>
               <Td>
                 <RecordLink href={`/admin/people/${p.id}`}>{p.full_name || "No name"}</RecordLink>
+                {demo.has(p.id) && (
+                  <span className="ml-1.5 align-middle">
+                    <Tag tone="warning">Demo</Tag>
+                  </span>
+                )}
               </Td>
               <Td className="text-muted">{p.email}</Td>
               <Td>

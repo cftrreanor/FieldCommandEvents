@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { friendlyDbError, type ActionState } from "@/lib/action-state";
 import { isFreePlan, PLANS, planLabel, requirePlatformAdmin } from "@/lib/admin";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/time";
-import { tierNames } from "@/lib/package-names";
-import { dollars, isFreePackage, isPackage, isRate, packageLabel, passFor, rateLabel } from "@/lib/plan";
+import { isPickablePackage, tierNames } from "@/lib/package-names";
+import { dollars, isFreePackage, isRate, packageLabel, passFor, rateLabel } from "@/lib/plan";
 
 /** Change an organization's plan. The database checks it's an admin and logs it. */
 export async function setPlan(orgId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -57,7 +57,7 @@ export async function reopenAccount(orgId: string, _prev: ActionState, formData:
 export async function upgradeTeacher(orgId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
   await requirePlatformAdmin();
   const pkg = String(formData.get("package") ?? "");
-  if (!isPackage(pkg) || isFreePackage(pkg)) return { error: "Pick a package." };
+  if (!(await isPickablePackage(pkg)) || isFreePackage(pkg)) return { error: "Pick a package." };
   const note = String(formData.get("note") ?? "").trim().slice(0, 500);
   const supabase = await createClient();
   const { error } = await supabase.rpc("admin_upgrade_teacher", { p_org: orgId, p_package: pkg, p_note: note || null });
@@ -72,7 +72,9 @@ export async function setPackage(orgId: string, _prev: ActionState, formData: Fo
   await requirePlatformAdmin();
   const pkg = String(formData.get("package") ?? "");
   const rate = String(formData.get("rate") ?? "");
-  if (!isPackage(pkg)) return { error: "Pick a package." };
+  // The account's own package stays pickable even once retired (to change only its rate).
+  const { data: org } = await createAdminClient().from("organizations").select("package").eq("id", orgId).maybeSingle();
+  if (!(await isPickablePackage(pkg, org?.package))) return { error: "Pick a package." };
   if (!isRate(rate)) return { error: "Pick a rate." };
   const note = String(formData.get("note") ?? "").trim().slice(0, 500);
   const supabase = await createClient();

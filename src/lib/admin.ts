@@ -58,7 +58,8 @@ export type AdminLogRow = {
   details: {
     // plan_changed: status and free_until; package_changed: package and rate.
     // package_details_changed: name and prices; pass_price_changed: cents.
-    from?: { status?: string; free_until?: string | null; package?: string; rate?: string; name?: string } | number;
+    // package_created: the code of the package it was copied from.
+    from?: { status?: string; free_until?: string | null; package?: string; rate?: string; name?: string } | number | string;
     to?: { status?: string; free_until?: string | null; package?: string; rate?: string; name?: string } | number;
     package?: string;
     event_type?: string;
@@ -70,8 +71,10 @@ export type AdminLogRow = {
     email?: string;
     unpublished?: number;
     key?: string;
-    /** package_edited, package_details_changed, pass_price_changed: the package or pass. */
+    /** package_edited, package_details_changed, pass_price_changed, package_created/retired/restored: the package or pass. */
     code?: string;
+    /** package_created, package_retired, package_restored: the package's name at the time. */
+    name?: string;
   };
   created_at: string;
   admin: { full_name: string; email: string } | null;
@@ -115,6 +118,10 @@ export function describeAdminLog(r: AdminLogRow, names?: Record<string, string>)
     return `Suspended the account${r.details.unpublished ? ` (${r.details.unpublished} event${r.details.unpublished === 1 ? "" : "s"} taken offline)` : ""}`;
   if (r.action === "account_unsuspended") return "Lifted the suspension";
   if (r.action === "package_edited") return `Changed what ${packageLabel(r.details.code ?? "?", names)} includes`;
+  if (r.action === "package_created")
+    return `Created ${r.details.name ?? packageLabel(r.details.code ?? "?", names)}${typeof r.details.from === "string" ? `, copied from ${packageLabel(r.details.from, names)}` : ""}`;
+  if (r.action === "package_retired") return `Retired ${r.details.name ?? packageLabel(r.details.code ?? "?", names)}`;
+  if (r.action === "package_restored") return `Brought back ${r.details.name ?? packageLabel(r.details.code ?? "?", names)}`;
   if (r.action === "package_details_changed") {
     const from = typeof r.details.from === "object" ? r.details.from : undefined;
     const to = typeof r.details.to === "object" ? r.details.to : undefined;

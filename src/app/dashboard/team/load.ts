@@ -416,7 +416,8 @@ async function loadHostView(org: { id: string; name: string; timezone: string },
   const upcoming = [...events.values()].filter((e) => !e.ended);
   const jobs = await loadJobs(upcoming.map((e) => e.id));
   const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const packages = (await loadTiers()).filter((t) => t.kind === "package");
+  // Upgrade hints name only packages that can still be given (not retired).
+  const packages = (await loadTiers()).filter((t) => t.kind === "package" && !t.retired_at);
   type OfferRow = {
     to_user: string;
     offered_by: string | null;

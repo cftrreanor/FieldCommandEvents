@@ -50,7 +50,7 @@ export default async function VolunteerTrackingPage({ searchParams }: PageProps<
   if (error && !preview) console.error("volunteer_report failed", error);
   const rows = ((data ?? []) as HistoryRow[]).map((r) => ({ ...r, email: r.email.toLowerCase() }));
   // The smallest package that includes tracking, by its name on the Packages page.
-  const withTracking = preview ? (await loadTiers()).find((t) => t.kind === "package" && t.volunteer_history)?.name ?? "a bigger plan" : "";
+  const withTracking = preview ? (await loadTiers()).find((t) => t.kind === "package" && t.volunteer_history && !t.retired_at)?.name ?? "a bigger plan" : "";
 
   return (
     <div className="mx-auto max-w-5xl">

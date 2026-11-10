@@ -32,6 +32,7 @@ export function InviteHostPanel({
   label,
   buttonClassName,
   names,
+  packages,
 }: {
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
   templates: { id: string; name: string }[];
@@ -42,6 +43,8 @@ export function InviteHostPanel({
   buttonClassName: string;
   /** Package names as stored (Packages page); the invite list's own names otherwise. */
   names?: Record<string, string>;
+  /** The packages to offer (new ones included, retired ones left out); the fixed list otherwise. */
+  packages?: { value: string; label: string }[];
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const close = () => dialog.current?.close();
@@ -77,7 +80,7 @@ export function InviteHostPanel({
             </button>
           </div>
           <ActionForm action={action} resetOnSuccess={false} onSuccess={close} className="flex min-h-0 flex-1 flex-col">
-            <InviteFields templates={templates} defaults={defaults} names={names} />
+            <InviteFields templates={templates} defaults={defaults} names={names} packages={packages} />
             <div className="space-y-2 border-t border-border px-5 py-4">
               <SubmitButton name="intent" value="send" className="w-full" pendingText="Sending…">
                 {waiting ? "Send the invitation again" : "Send invitation"}
@@ -103,10 +106,12 @@ function InviteFields({
   templates,
   defaults,
   names,
+  packages,
 }: {
   templates: { id: string; name: string }[];
   defaults: InviteDefaults;
   names?: Record<string, string>;
+  packages?: { value: string; label: string }[];
 }) {
   const errors = useFieldErrors();
   return (
@@ -125,7 +130,7 @@ function InviteFields({
       </Field>
       <Field label="Package" error={errors.package}>
         <Select name="package" defaultValue={defaults.package}>
-          {INVITE_PACKAGES.map((p) => (
+          {(packages ?? INVITE_PACKAGES).map((p) => (
             <option key={p.value} value={p.value}>
               {names?.[p.value] ?? p.label}
             </option>

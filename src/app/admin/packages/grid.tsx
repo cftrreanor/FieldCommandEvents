@@ -6,8 +6,18 @@ import { NumberInput } from "@/components/number-input";
 import { Field, Input } from "@/components/ui";
 import { EVENT_TYPES } from "@/lib/event-types";
 import type { Tier } from "@/lib/package-names";
-import { dollars } from "@/lib/plan";
-import { packageImpact, savePackage, savePackageDetails, savePassPrice, type Impact, type PackageDetails, type PackageValues } from "./actions";
+import { dollars, PACKAGES } from "@/lib/plan";
+import {
+  createPackage,
+  packageImpact,
+  savePackage,
+  savePackageDetails,
+  savePassPrice,
+  setPackageRetired,
+  type Impact,
+  type PackageDetails,
+  type PackageValues,
+} from "./actions";
 
 type Setting = "yes" | "one" | "no";
 type Editing =
@@ -41,10 +51,16 @@ const withType = (v: PackageValues, type: string, s: Setting): PackageValues => 
 const money = (cents: number | null | undefined) => (cents == null ? "Not set" : dollars(cents));
 const priceClass = (cents: number | null | undefined) => (cents == null ? "border border-border font-normal text-muted" : "border border-border");
 const toDollars = (cents: number | null | undefined) => (cents == null ? "" : String(Math.round(cents / 100)));
+// The packages that came with the product: never tagged "New".
+const BUILT_IN: string[] = PACKAGES.map((p) => p.value);
+// New accounts and teachers start on these, so they can't be retired (20270127000000_package_create_retire.sql).
+const CANT_RETIRE = ["free_teacher", "free", "event"];
+const tagClass = "mx-auto mt-1 block w-fit rounded-sm px-1.5 py-px text-xs font-semibold text-foreground ring-1";
 
 /** The packages as a grid: a column each, a row for each thing they include. Selecting a box opens its editor. */
 export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; passes: Tier[]; counts: Record<string, number> }) {
   const [editing, setEditingState] = useState<Editing | null>(null);
+  const [creating, setCreating] = useState(false);
   // The box that opened the editor, to put focus back on when it closes.
   const [opener, setOpener] = useState<HTMLElement | null>(null);
   const setEditing = (e: Editing | null) => {
@@ -89,7 +105,16 @@ export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; p
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted lg:hidden">Scroll sideways to see every package →</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted lg:hidden">Scroll sideways to see every package →</p>
+        <button
+          type="button"
+          onClick={() => setCreating(true)}
+          className="ml-auto inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:bg-background"
+        >
+          + New package
+        </button>
+      </div>
       <div className="overflow-x-auto rounded-md border border-border bg-surface">
         <table className="w-full min-w-[820px] border-collapse text-sm">
           <thead>
@@ -109,6 +134,12 @@ export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; p
                   </button>
                   <span className="block text-xs font-normal text-muted">
                     {counts[p.code] ?? 0} account{(counts[p.code] ?? 0) === 1 ? "" : "s"}
+                    {/* "New" until its first account joins; "Retired" while it isn't offered. */}
+                    {p.retired_at ? (
+                      <span className={`${tagClass} bg-warning-soft ring-warning/50`}>Retired</span>
+                    ) : (
+                      !BUILT_IN.includes(p.code) && !counts[p.code] && <span className={`${tagClass} bg-success-soft ring-success/50`}>New</span>
+                    )}
                   </span>
                 </th>
               ))}
@@ -205,6 +236,18 @@ export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; p
           </div>
         )}
       </div>
+
+      {creating && (
+        <NewPackage
+          packages={packages.filter((p) => !p.retired_at)}
+          onClose={() => setCreating(false)}
+          onCreated={(message) => {
+            setCreating(false);
+            setSaved({ message });
+            router.refresh();
+          }}
+        />
+      )}
 
       {editing && (
         <Editor
@@ -373,7 +416,9 @@ function Editor({
           : editing.kind === "team"
             ? `Team spots on ${pkg?.name}`
             : editing.kind === "details"
-              ? `${pkg?.name}: name and prices`
+              ? pkg && !CANT_RETIRE.includes(pkg.code)
+                ? `${pkg.name}: name, prices, and retiring`
+                : `${pkg?.name}: name and prices`
               : `${pass?.name}: price`;
   const options: { value: Setting; hint: string }[] =
     editing.kind === "type"
@@ -525,6 +570,143 @@ function Editor({
           className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground disabled:cursor-not-allowed disabled:border disabled:border-field-border disabled:bg-transparent disabled:text-disabled"
         >
           {saving ? "Saving…" : checking ? "Checking…" : "Save change"}
+        </button>
+      </div>
+
+      {editing.kind === "details" && pkg && !CANT_RETIRE.includes(pkg.code) && <RetireSection pkg={pkg} note={note} onSaved={onSaved} />}
+    </dialog>
+  );
+}
+
+/** Retire a package, or bring it back: at the bottom of its name-and-prices window. */
+function RetireSection({
+  pkg,
+  note,
+  onSaved,
+}: {
+  pkg: Tier;
+  note: string;
+  onSaved: (message: string, undo?: () => Promise<{ ok: true } | { error: string }>) => void;
+}) {
+  const [busy, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const retired = !!pkg.retired_at;
+  const toggle = () =>
+    start(async () => {
+      setError(null);
+      const r = await setPackageRetired(pkg.code, !retired, note);
+      if ("error" in r) return setError(r.error);
+      onSaved(
+        retired ? `${pkg.name} can be picked again.` : `${pkg.name} is retired. Accounts on it keep it.`,
+        () => setPackageRetired(pkg.code, retired, "Undo"),
+      );
+    });
+  return (
+    <div className="mt-5 space-y-2 border-t border-border pt-4">
+      <p className="font-semibold">{retired ? "Bring this package back" : "Retire this package"}</p>
+      <p className="text-sm text-muted">
+        {retired
+          ? "It can be picked for new accounts and invitations again."
+          : "The accounts on it keep it. It can't be picked for new accounts or invitations. You can bring it back any time."}
+      </p>
+      {error && (
+        <p role="alert" className="text-sm font-semibold text-danger">
+          {error}
+        </p>
+      )}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={toggle}
+        className="inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4 disabled:opacity-60"
+      >
+        {busy ? "Saving…" : retired ? `Bring back ${pkg.name}` : `Retire ${pkg.name}`}
+      </button>
+    </div>
+  );
+}
+
+/** A new package: a name, and the package it copies. Prices start "Not set"; no account is moved onto it. */
+function NewPackage({
+  packages,
+  onClose,
+  onCreated,
+}: {
+  packages: Tier[];
+  onClose: () => void;
+  onCreated: (message: string) => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  const [name, setName] = useState("");
+  const [from, setFrom] = useState(packages.find((p) => p.code === "event")?.code ?? packages[0]?.code ?? "");
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, startSave] = useTransition();
+  const fromName = packages.find((p) => p.code === from)?.name ?? "";
+  const tooShort = name.trim().length < 2;
+  const create = () =>
+    startSave(async () => {
+      setError(null);
+      const r = await createPackage(name, from, note);
+      if ("error" in r) return setError(r.error);
+      onCreated(`${name.trim()} is created, copied from ${fromName}. Set its prices by selecting its name.`);
+    });
+  return (
+    <dialog
+      ref={dialog}
+      aria-labelledby="new-package-title"
+      onClose={onClose}
+      className="m-auto w-[min(560px,calc(100vw-2rem))] rounded-lg border border-field-border bg-surface p-5 text-foreground shadow-elevated backdrop:bg-[#071a31]/55"
+    >
+      <h2 id="new-package-title" className="text-lg font-semibold">
+        New package
+      </h2>
+      <div className="mt-3 space-y-3">
+        <Field label="Name" hint="The name accounts and invitations will show. You can change it later.">
+          <Input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} autoFocus />
+        </Field>
+        <Field label="Start from" hint="It starts with everything this package includes. Change any of it in the grid after.">
+          <select
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            className="min-h-11 w-full rounded-sm border border-field-border bg-surface px-3 text-base"
+          >
+            {packages.map((p) => (
+              <option key={p.code} value={p.code}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <p className="text-sm text-muted">Prices start as &ldquo;Not set&rdquo;. No accounts are moved onto it: you still choose each account&apos;s package yourself.</p>
+        <Field label="Note for the activity log (optional)">
+          <Input value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} />
+        </Field>
+      </div>
+      {tooShort && name.length > 0 && <p className="mt-3 text-sm font-semibold text-danger">Give the package a name of 2 or more characters.</p>}
+      {error && (
+        <p role="alert" className="mt-3 text-sm font-semibold text-danger">
+          {error}
+        </p>
+      )}
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => dialog.current?.close()}
+          className="inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={tooShort || !from || saving}
+          onClick={create}
+          className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground disabled:cursor-not-allowed disabled:border disabled:border-field-border disabled:bg-transparent disabled:text-disabled"
+        >
+          {saving ? "Creating…" : "Create package"}
         </button>
       </div>
     </dialog>
