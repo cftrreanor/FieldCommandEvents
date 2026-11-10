@@ -12,6 +12,7 @@ import { DigestCard } from "./digest-card";
 import { getEventAccess, getOrigin } from "@/lib/data";
 import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
+import { loadAccountPlan } from "@/lib/plan";
 import { eachDate, formatDate, formatTimeRange, utcToZonedDate, utcToZonedTime } from "@/lib/time";
 import { importVolunteers } from "@/app/dashboard/import-actions";
 import { SpreadsheetImport } from "@/components/spreadsheet-import";
@@ -55,6 +56,14 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
     .eq("id", eventId)
     .maybeSingle();
   if (!event) missing();
+  // Only packages with volunteer tracking keep the 2-year history (20270125000000_volunteer_history_addon_only.sql).
+  const keepsHistory = (await loadAccountPlan(supabase, event.organization_id))?.volunteer_history;
+  const historyNote =
+    keepsHistory === true
+      ? " Adults' names, emails, and how many shifts they kept stay in your Volunteer tracking until 2 years after their last event."
+      : keepsHistory === false
+        ? ""
+        : " Packages with volunteer tracking also keep adults' names, emails, and shift counts until 2 years after their last event.";
   // Group events: the rooms, suggested as station locations.
   const { data: roomData } = hasRooms(event.event_type)
     ? await supabase.from("rooms").select("name, note").eq("event_id", eventId).order("name")
@@ -286,8 +295,7 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
       {/* Volunteer events keep this note at the end, so the jobs come first. */}
       {!jobsHere && (
       <p className="mt-1 text-sm text-muted">
-        <LineIcon name="lock" inline />Volunteers&apos; phone numbers (and volunteers under 18) are deleted 10 days after the event. Adults&apos; names, emails, and
-        how many shifts they kept stay in your Volunteer tracking for 2 years after their last event.
+        <LineIcon name="lock" inline />Volunteers&apos; details are deleted 10 days after the event.{historyNote}
       </p>
       )}
 
@@ -648,8 +656,7 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
       )}
       {jobsHere && (
         <p className="mt-6 text-sm text-muted">
-          <LineIcon name="lock" inline />Volunteers&apos; phone numbers, and everything about helpers under 18, are deleted 10 days after the event. Adults&apos;
-          names, emails, and how many shifts they kept stay in your Volunteer tracking for 2 years after their last event.
+          <LineIcon name="lock" inline />Volunteers&apos; details are deleted 10 days after the event.{historyNote}
         </p>
       )}
     </div>

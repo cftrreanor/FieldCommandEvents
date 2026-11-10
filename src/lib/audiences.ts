@@ -1,9 +1,11 @@
 import type { HowStep } from "@/components/how-it-works";
 import { brand } from "@/lib/brand";
+import { PILOT_END_LABEL } from "@/lib/pilot";
+import { MAX_OTHERS } from "@/lib/group-signup";
 import type { IconName } from "./icons";
 
 /**
- * The pages for each kind of school event (/band-contests, /choir-festivals…),
+ * The pages for each kind of event (/volunteer-events, /band-contests, /choir-festivals…),
  * written for the people who run them and the words they search for.
  * Every claim here must match what the product really does: no payments,
  * texting, ticketing, waitlists or exports.
@@ -27,7 +29,8 @@ export type Audience = {
   steps: HowStep[];
   /** Each with an optional phone screenshot of it (public/screens/, sample data only). */
   sections: { title: string; body: string; points: string[]; screen?: { src: string; alt: string } }[];
-  privacy: string[];
+  /** The "Who sees what" box: a short title and a sentence each, like the home page's. */
+  privacy: { title: string; body: string }[];
   faqs: { q: string; a: string }[];
 };
 
@@ -138,10 +141,10 @@ export const audiences = {
       },
     ],
     privacy: [
-      "Only your organizers and each band's own director see that band's contact details.",
-      "Coordinators see each band's name, school, and progress. Volunteer Leads also see headcounts and vehicles.",
-      "Directors' personal details are removed 2 years after the contest. The band, school, and headcounts stay for your records.",
-      "Volunteers' phone numbers are deleted 10 days after the contest.",
+      { title: "Directors' contact details", body: "Only your organizers and each band's own director see that band's contact details." },
+      { title: "Your team", body: "Coordinators see each band's name, school, and progress. Volunteer Leads also see headcounts and vehicles." },
+      { title: "Gone when it's over", body: "Directors' personal details are removed 2 years after the contest. The band, school, and headcounts stay for your records." },
+      { title: "Volunteers", body: "Volunteers' phone numbers are deleted 10 days after the contest." },
     ],
     faqs: [
       {
@@ -175,7 +178,7 @@ export const audiences = {
     path: "/choir-festivals",
     eventType: "group_event",
     icon: "group",
-    name: "Choir & group festivals",
+    name: "Choir and group festivals",
     metaTitle: "Choir, Orchestra & Group Festival Scheduling Software",
     metaDescription:
       "Run a choir or orchestra festival, theater, or speech and debate event: groups register online and move through your rooms on a schedule built for you, while directors and families follow every room live.",
@@ -277,10 +280,10 @@ export const audiences = {
       },
     ],
     privacy: [
-      "Only your organizers and each group's own director see that group's contact details.",
-      "Families see room times, never contact details or headcounts.",
-      "Directors' personal details are removed 2 years after the festival. The group, school, and headcounts stay for your records.",
-      "Volunteers' phone numbers are deleted 10 days after the festival.",
+      { title: "Directors' contact details", body: "Only your organizers and each group's own director see that group's contact details." },
+      { title: "Families", body: "Families see room times, never contact details or headcounts." },
+      { title: "Gone when it's over", body: "Directors' personal details are removed 2 years after the festival. The group, school, and headcounts stay for your records." },
+      { title: "Volunteers", body: "Volunteers' phone numbers are deleted 10 days after the festival." },
     ],
     faqs: [
       {
@@ -314,7 +317,7 @@ export const audiences = {
     path: "/school-fairs",
     eventType: "fair",
     icon: "fair",
-    name: "School fairs & fundraisers",
+    name: "School fairs and fundraisers",
     metaTitle: "School Fair, Carnival & Fundraiser Planning Software for PTOs",
     metaDescription:
       "Plan a fall festival, carnival, or PTO fundraiser: organize booths and community partners by zone, staff every booth with volunteers, check partners in on the day, and share a public page of everything at the event.",
@@ -406,10 +409,9 @@ export const audiences = {
       },
     ],
     privacy: [
-      "Partners' contact details never appear on the public page and are removed 15 months after the event.",
-      "Volunteers' phone numbers are deleted 10 days after the event.",
-      "Student volunteers under 18 are stored by first name and last initial, with their parent's contact details.",
-      "Coordinators see their volunteers' phone numbers only on event day.",
+      { title: "Partners", body: "Partners' contact details never appear on the public page and are removed 15 months after the event." },
+      { title: "Volunteers", body: "Volunteers' phone numbers are deleted 10 days after the event, and Coordinators see them only on event day." },
+      { title: "Under 18", body: "Student volunteers under 18 are stored by first name and last initial, with their parent's contact details." },
     ],
     faqs: [
       {
@@ -443,42 +445,47 @@ export const audiences = {
     path: "/volunteer-events",
     eventType: "volunteer",
     icon: "volunteer",
-    name: "Volunteer events",
-    metaTitle: "Volunteer Sign-up, Scheduling & Check-in Software",
+    name: "Volunteers and sign-ups",
+    metaTitle: "Online Sign-up Sheets & Volunteer Scheduling, No Ads",
     metaDescription:
-      "Volunteer management for nonprofits, clubs, congregations, and community groups. Volunteers sign up for shifts without an account and get confirmations, calendar invites, and day-before reminders. Check them in with one tap on any device.",
-    eyebrow: "For nonprofits, clubs, and community groups",
-    headline: "Volunteer sign-ups and check-in in one place",
+      "Online sign-up sheets and volunteer scheduling for schools, PTOs, congregations, clubs, nonprofits, and community groups. Organizers sign in to run their events. Volunteers, families, and guests join from the organizer's link and are never asked to make an account or shown ads.",
+    eyebrow: "For volunteer shifts, potlucks, and anything with spots to fill",
+    headline: "Sign-up sheets and volunteer shifts without the ads",
     intro:
-      "For cleanups, food drives, races, and potlucks, volunteers sign up for shifts and things to bring on their own phones. Confirmations, calendar invites, and reminders go out on their own, so you know who's coming and who's here.",
+      `You set it up from your organizer account. Volunteers, families, and guests sign up from your link, for themselves and up to ${MAX_OTHERS} others, with no account to make and no ads.`,
     replaces: [
-      "Paper sign-up sheets and shared spreadsheets",
-      "Reminder emails sent one at a time the night before",
-      "Group texts to fill a last-minute gap",
+      "Sign-up sites covered in ads",
+      "Making everyone who signs up create an account",
+      "Paper sheets on a clipboard and shared spreadsheets",
+      "Sending reminders one by one the night before",
       "Guessing who actually showed up",
     ],
     sections: [
       {
-        title: "Sign-ups and shifts that fill evenly",
-        body: "Set up each sign-up, its shifts, and how many people each shift needs. Sign-ups stop when a shift is full, so you never end up with ten people at one table and nobody at the next.",
+        title: "Shifts and things to bring that fill evenly",
+        body: "Set how many people each shift needs, or how many of each thing to bring. Sign-ups stop when a spot is covered, so you never end up with ten desserts and no main dish.",
         points: [
+          "Make any sign-up a list of things to bring, like sides, desserts, and drinks for a potluck, and everyone sees what's still needed",
           "Build a day of equal shifts in one step, or add each shift by hand",
           "Add where volunteers should report, any instructions, and who's leading each sign-up",
           "Mark sign-ups as adults only, and open or close sign-ups whenever you're ready",
-          "Make any sign-up a list of things to bring, like sides, desserts, and drinks for a potluck, with how many of each you need",
         ],
+        screen: {
+          src: "/screens/potluck-items.webp",
+          alt: "Picking what you'll do on a phone: main dishes, sides and salads, desserts, and drinks with how many are still needed, then setup and cleanup shifts with spots left.",
+        },
       },
       {
         title: "Sign-ups and reminders, without accounts",
         body: "Share one link or QR code. Volunteers pick one shift or several on their phone and see how many spots are left, with no account to make and nothing to download.",
         points: [
-          "Sign up with up to four others, and volunteers under 18 use a guardian's contact details",
-          "A confirmation with a calendar invite, an update if their shift changes, and a reminder the day before with their sign-up, time, where to report, and their lead's name and phone",
+          `Sign up with up to ${MAX_OTHERS} others, and volunteers under 18 use a guardian's contact details`,
+          "A confirmation with a calendar invite, an update if their shift changes, and a reminder the day before with their sign-up, time, where to report, and their Coordinator's name and phone",
           "A private link lets each volunteer see their shifts, sign up for more, or cancel",
         ],
         screen: {
-          src: "/screens/volunteer-shift-picker.webp",
-          alt: "The volunteer sign-up page on a phone in the organizer's colors: sign-ups with their shifts and how many spots are left.",
+          src: "/screens/potluck-review.webp",
+          alt: "The last step of signing up on a phone: Alex Morgan bringing desserts, a button to add another person, and Confirm sign-up.",
         },
       },
       {
@@ -492,7 +499,7 @@ export const audiences = {
         ],
         screen: {
           src: "/screens/volunteer-my-shifts.webp",
-          alt: "A volunteer's own page on a phone: their shift, where to report, their lead's contact details, and the volunteer packet.",
+          alt: "A volunteer's own page on a phone: what they're bringing to the Fall Potluck, their setup shift, and calendar links, with no account.",
         },
       },
       {
@@ -510,26 +517,26 @@ export const audiences = {
         },
       },
       {
-        title: "Leads for every sign-up",
-        body: "Invite Volunteer Leads to run the desk and Coordinators to run a sign-up. Each sees what their role needs, and nothing they don't.",
+        title: "Help running the desk and each sign-up",
+        body: "Invite Volunteer Leads to run the check-in desk and Coordinators to each run one sign-up. Each sees what their role needs, and nothing they don't.",
         points: [
           "Coordinators see their volunteers' phone numbers only on event day",
-          "Volunteers see their lead's contact details, so they know who to find",
+          "Volunteers see their Coordinator's contact details, so they know who to find",
         ],
       },
     ],
     steps: [
       {
         title: "Set up sign-ups and shifts",
-        body: "Add sign-ups with their leads, then fill the day with shifts.",
-        screen: "/screens/set-up-shifts-blue.webp",
-        alt: "Setting up a sign-up with its morning and late-morning volunteer shifts.",
+        body: "Add shifts or things to bring, and how many of each you need.",
+        screen: "/screens/potluck-setup.webp",
+        alt: "Setting up a potluck's things to bring: main dishes, sides and salads, desserts, and drinks, with how many of each are needed.",
       },
       {
         title: "Share a link or QR code",
         body: "Volunteers pick their own shifts and get a confirmation, calendar invite, and reminder.",
-        screen: "/screens/volunteer-signup-blue.webp",
-        alt: "A volunteer picking a shift on the event's sign-up page.",
+        screen: "/screens/potluck-signup.webp",
+        alt: "The Fall Potluck sign-up page on a phone: the date, the place, and the first things to bring.",
       },
       {
         title: "Check volunteers in",
@@ -539,15 +546,28 @@ export const audiences = {
       },
     ],
     privacy: [
-      "Volunteers never make an account, and their phone numbers are deleted 10 days after the event.",
-      "Volunteers under 18 are stored by first name and last initial, with a guardian's contact details.",
-      "Coordinators see their volunteers' contact details only on event day.",
-      "No ads, no spam, and emails used only for your event",
+      { title: "No accounts, no ads", body: "Volunteers never make an account or see ads, and emails go out only for your event." },
+      { title: "Your team", body: "Your organizers and Volunteer Leads (who run the check-in desk) see volunteers' names, emails, and phone numbers. Coordinators (who each run one sign-up) see them only on event day." },
+      { title: "Things to bring", body: "Other people signing up see what each person is bringing and the first names of adults, never the names of volunteers under 18." },
+      { title: "Under 18", body: "Volunteers under 18 are stored by first name and last initial, with a guardian's contact details. A record of the guardian's OK is kept." },
+      { title: "Gone when it's over", body: "Volunteers' details are deleted 10 days after the event. With volunteer tracking (available in the pilot), adults' names, emails, and shift counts are kept until 2 years after their last event, so you can invite them back." },
     ],
     faqs: [
       {
+        q: "Who needs an account, and what does it cost?",
+        a: `Only the organizer. Your events live in your account, free during the pilot until ${PILOT_END_LABEL}. After the pilot, organizers pay to use ${brand.name}, and we'll talk with you before anything changes. Nothing renews or charges on its own. Everyone signing up uses your link at no charge, and is never asked to make an account.`,
+      },
+      {
         q: "Do volunteers need to create an account?",
         a: "No. Volunteers sign up from a link or QR code with just their name and contact details. Their confirmation email includes a private link to see their shifts, sign up for more, or cancel.",
+      },
+      {
+        q: "Will people see ads?",
+        a: `No. There are no ads anywhere in ${brand.name}, and we only email people about the event they signed up for.`,
+      },
+      {
+        q: "Can I make a potluck sign-up?",
+        a: "Yes. Make any sign-up a list of things to bring, like sides, desserts, and drinks, with how many of each you need. People pick what they'll bring, and the list shows what's still needed.",
       },
       {
         q: "Do volunteers get reminders?",
@@ -559,7 +579,7 @@ export const audiences = {
       },
       {
         q: "Can people sign up together?",
-        a: "Yes. One person can sign up with up to four others, and the whole group takes the same shifts. Volunteers under 18 use a guardian's contact details, and sign-ups can be marked adults only.",
+        a: `Yes. One person can sign up with up to ${MAX_OTHERS} others, who take the same shifts or pick their own. Volunteers under 18 use a guardian's contact details, and sign-ups can be marked adults only.`,
       },
       {
         q: "Can we use it for volunteers at other kinds of events too?",
@@ -572,8 +592,8 @@ export const audiences = {
     path: "/parent-check-in",
     eventType: "school_visit",
     icon: "school",
-    name: "Parent & visitor check-in",
-    metaTitle: "Parent & Visitor Check-in for School Events",
+    name: "Visitor registration and check-in",
+    metaTitle: "Visitor Registration & Check-in for School Events",
     metaDescription:
       "Parent registration and visitor check-in for family lunches, open houses, performances, and award days. Parents register each child, teacher, and grade, get a photo ID reminder, and are checked in at the door on any device.",
     eyebrow: "For school front offices and administrators",
@@ -672,10 +692,9 @@ export const audiences = {
       },
     ],
     privacy: [
-      "Only your event team sees children's names, teachers, and grades, and Coordinators see them only on event day.",
-      "Every registration, including children's details, is deleted 30 days after the event.",
-      "Parents never make an account.",
-      "No ads, no spam, and emails used only for your event",
+      { title: "Children's details", body: "Only your event team sees children's names, teachers, and grades, and Coordinators see them only on event day." },
+      { title: "Gone when it's over", body: "Every registration, including children's details, is deleted 30 days after the event." },
+      { title: "No accounts, no ads", body: "Parents never make an account, there are no ads or spam, and emails go out only for your event." },
     ],
     faqs: [
       {
@@ -723,4 +742,4 @@ export const CONFERENCES_PAGE = { path: "/parent-teacher-conferences", name: "Pa
 /** Meetings: office hours and appointments anyone can book (not a school-event audience, so its own page). */
 export const MEETINGS_PAGE = { path: "/meetings", name: "Meetings", icon: "calendar" } as const;
 
-export const AUDIENCES: Audience[] = [audiences.bands, audiences.groups, audiences.fairs, audiences.volunteers, audiences.parents];
+export const AUDIENCES: Audience[] = [audiences.volunteers, audiences.bands, audiences.groups, audiences.fairs, audiences.parents];

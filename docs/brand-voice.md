@@ -41,6 +41,14 @@ Use these rules for all website and in-app copy.
 
 The core voice never changes. Only the leading details shift.
 
+The site speaks to any group running events (owner, 2026-11-10, issue #235): schools stay the core, with
+their own pages, but the home page, site title, and sign-up pages also welcome congregations, clubs,
+nonprofits, and community groups. Keep "school" where the page is about schools.
+
+- **Organizers of any group** (sign-up sheets, volunteer events, meetings): plain and reassuring. Be clear
+  that organizers have an account and, after the pilot, pay to use it, while everyone joining from their
+  link is never asked to make an account or shown ads
+
 - **Band and choir directors:** practical and specific, proving it works on contest day
 - **Teachers running specialized events** (theater, UIL academics, fairs): welcoming and jargon-free, showing it fits their event
 - **Classroom teachers** (parties, parent-teacher conferences, campus visits): quick and light, focused on time saved and ease for parents
@@ -67,7 +75,9 @@ The core voice never changes. Only the leading details shift.
 - Never promise "always," "24/7," or "anytime" support
 - Avoid "privacy protected" until data practices are confirmed
 - Use "no ads, no spam, emails used only for your event" instead
-- Name frustrations with other tools, never the competitors themselves
+- Name frustrations with other tools, never the competitors themselves. This holds for search pages too:
+  the Volunteers and sign-ups page answers "alternative to [tool]" searches by naming what people dislike (ads,
+  accounts, one person at a time), not the tool (owner, 2026-11-10)
 
 ## Navigation and structure
 
@@ -79,17 +89,18 @@ The core voice never changes. Only the leading details shift.
 ## Homepage structure
 
 1. **Hero**
-   - Headline: *Every detail organized. Every organizer supported.*
-   - Supporting line: *Contests, school events, and simple sign-ups for a whole family or group at once*
+   - Headline: *Events without the clipboards* (owner, 2026-11-10, issue #238)
+   - Supporting line: *Volunteer and meeting sign-ups, contest registration, and community events, on public links, with no account needed to sign up* (owner, 2026-11-10)
    - Primary button: *Join the pilot*
 
-2. **Router: "What are you organizing?"** (four cards, each linking to its page)
+2. **Router: "What are you organizing?"** (a card for each kind of event, each linking to its page, with
+   Volunteers and sign-ups first: sign-up sheets are volunteer events, one kind with one page)
    - **Contests and festivals:** Schedules, rooms, judges, and buses in one place
    - **School events:** Theater, UIL academics, fairs, and more
    - **Classroom sign-ups:** Parties, conferences, and visits, ready in minutes
    - **For administrators:** Reliable events with less strain on your staff
 
-3. **Built for the people running school events** (three points)
+3. **Built for the people running events** (three points)
    - **Organized:** sign-ups, schedules, and check-in in one place
    - **Supported:** guided setup, and real people, not bots, for the rest
    - **Respectful:** no account for families, volunteers, or visitors, and no ads or spam

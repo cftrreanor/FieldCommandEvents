@@ -8,12 +8,13 @@ import { JumpLink } from "@/components/jump-link";
 import { PhoneFrame } from "@/components/phone-frame";
 import { HeaderBar, headerLinkClass } from "@/components/logo";
 import { SiteFooter } from "@/components/site-footer";
-import { AUDIENCES, CONFERENCES_PAGE, MEETINGS_PAGE, type Audience } from "@/lib/audiences";
+import { AUDIENCES, CONFERENCES_PAGE, MEETINGS_PAGE, STUDENT_PRIVACY_PAGE, type Audience } from "@/lib/audiences";
 import { brand } from "@/lib/brand";
 import { SITE_URL } from "@/lib/site-url";
-import { PILOT_END_LABEL } from "@/lib/pilot";
+import { PILOT_END_LABEL, PILOT_NOTE } from "@/lib/pilot";
 import { SUPPORT_POINTS } from "@/lib/support";
 import { LineIcon } from "@/components/line-icon";
+import { PublicMenu } from "@/components/public-menu";
 
 const CTA = "Join the pilot";
 
@@ -38,7 +39,7 @@ export function audienceMetadata(a: Audience): Metadata {
   };
 }
 
-/** One kind of school event, for the people who run it, with its own FAQ and the pilot form. */
+/** One kind of event, for the people who run it, with its own FAQ and the pilot form. */
 export function AudiencePage({ audience: a }: { audience: Audience }) {
   const url = `${SITE_URL}${a.path}`;
   const jsonLd = {
@@ -73,6 +74,14 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
         <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
           All event types
         </Link>
+        <PublicMenu
+          links={[
+            { href: "/#organizing", label: "All kinds of events" },
+            { href: "#how", label: "How it works" },
+            { href: "#faq", label: "Questions" },
+            { href: "/#pilot", label: "Pilot details" },
+          ]}
+        />
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>
@@ -91,22 +100,23 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
               <LineIcon name={a.icon} className="size-4" />
               {a.eyebrow}
             </p>
-            <h1 className="mt-6 max-w-3xl text-4xl font-medium leading-[0.96] sm:text-6xl">{a.headline}</h1>
+            <h1 className="mt-6 max-w-3xl text-4xl font-medium leading-[0.96] text-balance sm:text-6xl">{a.headline}</h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-on-dark-mute">{a.intro}</p>
             <div className="mt-8 flex flex-wrap gap-3">
               <JumpLink href="#join" className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
                 {CTA}
               </JumpLink>
-              <JumpLink href="#how" className="rounded-md px-5 py-3 font-medium text-white ring-1 ring-white/30 hover:bg-white/10">
+              <JumpLink href="#how" className="rounded-full px-5 py-3 font-medium text-white ring-1 ring-white/50 hover:bg-white/10">
                 See how it works
               </JumpLink>
             </div>
+            <p className="mt-4 text-sm text-on-dark-mute">{PILOT_NOTE}</p>
           </div>
         </section>
 
         <section className="border-b border-border bg-surface">
           <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-            <h2 className="text-xl font-semibold">What it replaces</h2>
+            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">What it replaces</h2>
             <ul className="mt-5 grid list-disc gap-x-10 gap-y-3 pl-5 leading-7 text-muted marker:text-muted sm:grid-cols-2">
               {a.replaces.map((r) => (
                 <li key={r}>{r}</li>
@@ -120,15 +130,19 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
         <FeatureSections sections={a.sections} />
 
         <section className="mx-auto max-w-6xl px-4 pb-16 pt-4 sm:px-6">
-          <div className={`rounded-lg p-8 sm:p-12 ${infoBox}`}>
+          <div className={`rounded-lg p-5 sm:p-12 ${infoBox}`}>
             <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">Who sees what</h2>
-            <ul className="mt-6 grid max-w-5xl gap-4 leading-7 sm:grid-cols-2">
+            <dl className="mt-6 grid max-w-5xl gap-6 leading-7 sm:grid-cols-2 sm:[&>*:last-child:nth-child(odd)]:col-span-2">
               {a.privacy.map((p) => (
-                <li key={p} className="opacity-90">
-                  {p}
-                </li>
+                <div key={p.title}>
+                  <dt className="font-semibold">{p.title}</dt>
+                  <dd className="mt-1 opacity-90">{p.body}</dd>
+                </div>
               ))}
-            </ul>
+            </dl>
+            <Link href={STUDENT_PRIVACY_PAGE.path} className="mt-6 inline-block font-semibold underline">
+              How we handle everyone&apos;s data
+            </Link>
           </div>
         </section>
 
@@ -136,14 +150,14 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
 
         <section id="faq" tabIndex={-1} className="scroll-mt-20 border-t border-border outline-none">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-5xl">Common questions</h2>
+            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">Common questions</h2>
             <FaqList faqs={a.faqs} />
           </div>
         </section>
 
         <section className="border-t border-border">
           <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-            <h2 className="text-xl font-semibold">One account for every school event</h2>
+            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">One account for every event</h2>
             <p className="mt-2 max-w-2xl leading-7 text-muted">
               The same {brand.name} account runs every kind of event, all year.
             </p>
@@ -155,7 +169,10 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
                     className="flex min-h-11 items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 font-medium hover:border-brand"
                   >
                     <LineIcon name={o.icon} className="size-5 text-brand dark:text-foreground" />
-                    {o.name}
+                    <span className="flex-1">{o.name}</span>
+                    <span aria-hidden className="text-brand dark:text-foreground">
+                      →
+                    </span>
                   </Link>
                 </li>
               ))}
@@ -164,19 +181,22 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
         </section>
 
         <section id="join" tabIndex={-1} className="scroll-mt-20 border-t border-border bg-surface outline-none">
-          <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
-            <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
-            <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-5xl">{CTA}</h2>
-            <p className="mt-3 leading-7 text-muted">
-              Your pilot is free, and the pilot ends {PILOT_END_LABEL}. Volunteers, families, and visiting groups
-              never pay a platform fee.{" "}
-              <Link href="/#pilot" className="text-brand underline">
-                See the pilot details
-              </Link>
-              .
-            </p>
-            <div className="mt-8">
-              <PilotForm action={requestPilot} defaultEventTypes={[a.eventType]} />
+          {/* On the page's left edge like every other section; only the text and form stay narrow. */}
+          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
+            <div className="max-w-3xl">
+              <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
+              <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{CTA}</h2>
+              <p className="mt-3 leading-7 text-muted">
+                It&apos;s free for organizers through {PILOT_END_LABEL}, when the pilot ends, and we&apos;ll talk with you before
+                anything changes. Volunteers, families, and visiting groups never pay.{" "}
+                <Link href="/#pilot" className="text-brand underline">
+                  See the pilot details
+                </Link>
+                .
+              </p>
+              <div className="mt-8">
+                <PilotForm action={requestPilot} defaultEventTypes={[a.eventType]} />
+              </div>
             </div>
           </div>
         </section>
@@ -184,14 +204,14 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
         <section className="bg-teal-deep text-white">
           <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-20">
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">Every detail organized. Every organizer supported.</h2>
-            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free until {PILOT_END_LABEL}. Spots are limited.</p>
+            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free for organizers through {PILOT_END_LABEL}. Spots are limited.</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <JumpLink href="#join" className="inline-flex rounded-md bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
+              <JumpLink href="#join" className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
                 {CTA}
               </JumpLink>
               <a
                 href={`mailto:${brand.supportEmail}`}
-                className="inline-flex rounded-md px-6 py-3 font-semibold text-white ring-1 ring-white/40 hover:bg-white/10"
+                className="inline-flex rounded-full px-6 py-3 font-semibold text-white ring-1 ring-white/60 hover:bg-white/10"
               >
                 Talk with us
               </a>
@@ -212,10 +232,12 @@ export function FeatureSections({ sections }: { sections: Audience["sections"] }
       {sections.map((s) => (
         <section
           key={s.title}
-          className={`grid gap-4 py-12 md:gap-10 ${s.screen ? "md:grid-cols-[2fr_3fr_auto]" : "md:grid-cols-[2fr_3fr]"}`}
+          // One grid for every section, picture or not, so the words always start in the same place.
+          className="grid gap-4 py-12 md:grid-cols-[2fr_3fr_240px] md:gap-10"
         >
-          <h2 className="text-2xl font-medium leading-tight tracking-tight sm:text-3xl">{s.title}</h2>
-          <div>
+          <h2 className="text-2xl font-medium leading-tight tracking-tight">{s.title}</h2>
+          {/* With no picture, the words take the picture's column too, so no empty space is left. */}
+          <div className={s.screen ? undefined : "md:col-span-2"}>
             <p className="leading-7">{s.body}</p>
             {s.points.length > 0 && (
               <ul className="mt-4 space-y-2 leading-7 text-muted">
@@ -230,7 +252,7 @@ export function FeatureSections({ sections }: { sections: Audience["sections"] }
               </ul>
             )}
           </div>
-          {s.screen && <PhoneFrame src={s.screen.src} alt={s.screen.alt} className="mx-auto mt-2 w-full max-w-[240px] md:mt-0 md:w-[240px]" sizes="228px" />}
+          {s.screen && <PhoneFrame src={s.screen.src} alt={s.screen.alt} className="mx-auto mt-2 w-full max-w-[240px] md:mt-0 md:w-[240px] md:self-start" sizes="228px" />}
         </section>
       ))}
     </div>
@@ -254,6 +276,11 @@ export function SupportSection() {
             </div>
           ))}
         </dl>
+        <p className="mt-8 leading-7">
+          <a href={`mailto:${brand.supportEmail}`} className="font-medium text-brand underline">
+            {brand.supportEmail}
+          </a>
+        </p>
       </div>
     </section>
   );

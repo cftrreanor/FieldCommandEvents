@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PublicMenu } from "@/components/public-menu";
 import Link from "next/link";
 import { requestPilot } from "@/app/pilot-actions";
 import { PilotForm } from "@/app/pilot-form";
@@ -123,7 +124,7 @@ const sections: Audience["sections"] = [
 
 const privacy = [
   "We ask for only what each event needs: headcounts instead of student names for contests, and no accounts for families or spectators.",
-  "Children's details from school visitor events and conferences are deleted 30 days after the event, volunteers' phone numbers 10 days after (organizers keep a 2-year count of each adult's shifts), fair partners' contact details 15 months after, and visiting directors' personal details 2 years after.",
+  "Children's details from school visitor events and conferences are deleted 30 days after the event, volunteers' details 10 days after (packages with volunteer tracking keep a count of each adult's shifts until 2 years after their last event), fair partners' contact details 15 months after, and visiting directors' personal details 2 years after.",
   "Information families and volunteers give is your school's or organization's. We store it for you, and copies your staff print or download are your records.",
   "No ads, no spam, and emails used only for your event.",
 ];
@@ -164,6 +165,14 @@ export default function AdministratorsPage() {
         <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
           All event types
         </Link>
+        <PublicMenu
+          links={[
+            { href: "/#organizing", label: "All kinds of events" },
+            { href: "#how", label: "How it works" },
+            { href: "#faq", label: "Questions" },
+            { href: "/#pilot", label: "Pilot details" },
+          ]}
+        />
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>
@@ -191,7 +200,7 @@ export default function AdministratorsPage() {
               <JumpLink href="#join" className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
                 {CTA}
               </JumpLink>
-              <a href={`mailto:${brand.supportEmail}`} className="rounded-md px-5 py-3 font-medium text-white ring-1 ring-white/30 hover:bg-white/10">
+              <a href={`mailto:${brand.supportEmail}`} className="rounded-full px-5 py-3 font-medium text-white ring-1 ring-white/50 hover:bg-white/10">
                 Talk with us
               </a>
             </div>
@@ -233,7 +242,7 @@ export default function AdministratorsPage() {
 
         <section id="faq" tabIndex={-1} className="scroll-mt-20 border-t border-border outline-none">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-5xl">Common questions</h2>
+            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">Common questions</h2>
             <FaqList faqs={faqs} />
           </div>
         </section>
@@ -260,9 +269,9 @@ export default function AdministratorsPage() {
         <section id="join" tabIndex={-1} className="scroll-mt-20 border-t border-border bg-surface outline-none">
           <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
             <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
-            <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-5xl">{CTA}</h2>
+            <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{CTA}</h2>
             <p className="mt-3 leading-7 text-muted">
-              Your pilot is free, and the pilot ends {PILOT_END_LABEL}. Tick the kinds of events your campus runs.{" "}
+              It&apos;s free through {PILOT_END_LABEL}, when the pilot ends. Tick the kinds of events your campus runs.{" "}
               <Link href="/#pilot" className="text-brand underline">
                 See the pilot details
               </Link>
@@ -277,14 +286,14 @@ export default function AdministratorsPage() {
         <section className="bg-teal-deep text-white">
           <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-20">
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">Every detail organized. Every organizer supported.</h2>
-            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free until {PILOT_END_LABEL}. Spots are limited.</p>
+            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free for organizers through {PILOT_END_LABEL}. Spots are limited.</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <JumpLink href="#join" className="inline-flex rounded-md bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
+              <JumpLink href="#join" className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
                 {CTA}
               </JumpLink>
               <a
                 href={`mailto:${brand.supportEmail}`}
-                className="inline-flex rounded-md px-6 py-3 font-semibold text-white ring-1 ring-white/40 hover:bg-white/10"
+                className="inline-flex rounded-full px-6 py-3 font-semibold text-white ring-1 ring-white/60 hover:bg-white/10"
               >
                 Talk with us
               </a>

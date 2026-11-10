@@ -18,12 +18,12 @@ const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
 const jetbrainsMono = JetBrains_Mono({ variable: "--font-jetbrains-mono", subsets: ["latin"], preload: false });
 
 const DESCRIPTION =
-  "Every detail organized. Every organizer supported. Band contests, choir festivals, school fairs and fundraisers, volunteer events, parent check-in, and parent-teacher conferences, with registration, volunteer sign-ups, and check-in on any phone.";
+  "Every detail organized. Every organizer supported. Sign-up sheets, volunteer shifts, registration, bookings, and check-in on any phone, for schools, PTOs, clubs, congregations, and community groups. Organizers sign in to run their events. Volunteers, families, and guests join from the organizer's link and are never asked to make an account or shown ads.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${brand.name}: Event Management Software for Schools, PTOs & Booster Clubs`,
+    default: `${brand.name}: Event Sign-ups, Registration & Check-in for Schools, Clubs & Community Groups`,
     template: `%s · ${brand.name}`,
   },
   description: DESCRIPTION,

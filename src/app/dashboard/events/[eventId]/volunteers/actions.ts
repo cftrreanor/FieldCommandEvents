@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { friendlyDbError, type ActionState } from "@/lib/action-state";
 import { requireUser } from "@/lib/auth";
 import { normalizePhone } from "@/lib/phone";
+import { MAX_OTHERS } from "@/lib/group-signup";
 import { createClient } from "@/lib/supabase/server";
 
 export async function setCheckedIn(eventId: string, assignmentId: string, checkedIn: boolean): Promise<ActionState> {
@@ -35,7 +36,7 @@ export async function addWalkUp(
   } catch {
     return { error: "Something went wrong. Please try again." };
   }
-  if (!Array.isArray(companions) || companions.length > 4) return { error: "You can add up to 4 other people." };
+  if (!Array.isArray(companions) || companions.length > MAX_OTHERS) return { error: `You can add up to ${MAX_OTHERS} other people.` };
   if (companions.some((c) => !String(c?.name ?? "").trim())) return { error: "Please enter a name for everyone you're adding." };
 
   const supabase = await createClient();

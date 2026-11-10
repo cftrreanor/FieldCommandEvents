@@ -9,6 +9,7 @@ import { confirmDialog } from "@/components/confirm-dialog";
 import { VolunteerTags } from "@/components/volunteer-tags";
 import { folderTab, folderTabNote, folderTabRow } from "@/components/folder-tabs";
 import { BinIcon } from "../forms";
+import { MAX_OTHERS } from "@/lib/group-signup";
 
 // The shared buttons: blue for the one main action, an outline for the rest, a plain link for small
 // moves, and red text with a bin for taking something off a list. 44px tall, 14px words.
@@ -438,7 +439,7 @@ function WalkUpForm({
           </button>
         </div>
       ))}
-      {others.length < 4 && (
+      {others.length < MAX_OTHERS && (
         <button
           type="button"
           className={LINK}

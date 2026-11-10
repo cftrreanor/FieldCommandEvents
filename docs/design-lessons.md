@@ -84,6 +84,8 @@ a word for two things on one screen.
   ("Volunteer Lead", "Coordinator"), "sign-up" vs "job" on volunteer events.
 - **Before naming:** check `docs/brand-voice.md` and grep the app for the word.
 - **Again in:** band PR 4 ("Check-in" for volunteers and for bands on one screen, 4 of 4 reviewers).
+- **Again in:** positioning pages, 2026-11-10 (one kind called "Family visitor days", "Family visitor day", and
+  "Parent & visitor check-in"; "leads", "Volunteer Leads", "Coordinators", and "event team" undefined; 5 of 8).
   Name each side by who it's for: "Volunteer check-in", "Band check-in stop".
 - **Also seen in:** band PR 1 built ("Publish and open registration" next to a checklist step
   "Open band registration"; "emailed when you publish" meaning the *schedule*). When one button
@@ -132,6 +134,10 @@ tap", "directions", "in one step", "the order is filled in", "add a plan", "last
 - **Why:** a broken promise costs more trust than a modest one earns.
 - **Seen in:** setup redesign v1 (plan words), My events ("free" claim), band contest v1 and v2.
 - **Check:** for each promise, find the code that keeps it.
+- **Again in:** positioning pages, 2026-11-10 (website said "up to four others" when the product allows six; "leads
+  see contact details only on event day" when Volunteer Leads always do; "children's names stay with your team"
+  while the public bring list showed under-18 first names; a 2-year history promised on every package). Promises
+  that depend on a package or role must say so, or be read from the code.
 - **Again in:** My team built ("can't see those events anymore" and "only hosts see these details"
   were both untrue in the database). A privacy sentence gets the same check as a feature claim:
   find the policy that keeps it.
@@ -284,6 +290,7 @@ before the panel sees it.
 - [ ] **L17** A ready step's action is at the top; a blocked one names its fix there
 - [ ] **L18** Sibling steps save the same way, with Next in the same place
 - [ ] **L19** Every date-based state (opens later, scheduled) shows on every badge, button, and job; a timer that ends refreshes the page
+- [ ] **L25** Every screenshot matches its words, is seen as its people see it, and is cropped on white space
 - [ ] `npm run lint` passes (includes the automatic checks)
 
 ## L22. Nothing is red until someone has had a go
@@ -305,3 +312,13 @@ and a settings menu is a plain menu (no done circles, no "Optional" under items)
 forward: during setup the step bar is the way around, so step pages don't carry "Back to [event]".
 - **Seen in:** setup alignment (Event setup checklist beside the step bar; Event settings' circles read as a
   second checklist and hid the open section on phones, 6 of 8; "Back to [event]" on step 1 opened step 3).
+
+## L25. Product pictures match the words beside them
+Every screenshot on the website shows what its words describe, in the audience's own world (a potluck page
+for potlucks, not a band contest), as the people it describes really see it (a volunteer's view never shows an
+organizer's "Sign out"), and is cropped on white space, never through a button, a word, or a list.
+- **Why:** a picture that contradicts the copy, or looks broken, undoes the promise next to it.
+- **Seen in:** positioning pages, 2026-11-10 (band and school screens on the sign-up sheets page, 6 of 8;
+  "Sign out" on a page promising no accounts, half-cut buttons and an empty phone outline, 4 of 4 in the light
+  check).
+- **Check:** open each screenshot at phone width next to its section, top and bottom edges included.

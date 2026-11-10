@@ -5698,6 +5698,33 @@ begin
 end $$;
 delete from public.events where id in ('1d000000-0000-0000-0000-000000000001', '1d000000-0000-0000-0000-000000000002');
 delete from public.volunteer_history where email = 'bob@example.com';
+-- Without volunteer tracking in the package, nothing is kept: volunteers are simply deleted.
+select set_config('app.package_change', 'on', false);
+update public.organizations set package = 'schedule' where id = :'org_id';
+select set_config('app.package_change', '', false);
+insert into public.events (id, organization_id, name, slug, status, event_type, timezone, starts_on, ends_on, window_start, window_end, venue_address)
+values ('1d000000-0000-0000-0000-000000000003', :'org_id', 'Bake Sale', 'vh-nopkg', 'published', 'volunteer', 'America/Chicago',
+        current_date - 20, current_date - 20, now() - interval '20 days', now() - interval '20 days' + interval '4 hours', '1 Main St');
+insert into public.stations (id, event_id, name, station_type) values
+  ('1d000000-0000-0000-0000-0000000000a3', '1d000000-0000-0000-0000-000000000003', 'Table', 'passive');
+insert into public.shifts (id, station_id, event_id, title, starts_at, ends_at, max_capacity) values
+  ('1d000000-0000-0000-0000-0000000000b4', '1d000000-0000-0000-0000-0000000000a3', '1d000000-0000-0000-0000-000000000003', 'Morning',
+   now() - interval '20 days', now() - interval '20 days' + interval '2 hours', 10);
+insert into public.volunteers (id, event_id, full_name, email, phone, minor) values
+  ('1d000000-0000-0000-0000-0000000000c5', '1d000000-0000-0000-0000-000000000003', 'Cal Cook', 'cal@example.com', '+15125550005', false);
+insert into public.volunteer_assignments (shift_id, volunteer_id, checked_in_at) values
+  ('1d000000-0000-0000-0000-0000000000b4', '1d000000-0000-0000-0000-0000000000c5', now() - interval '20 days');
+select public.purge_volunteers();
+do $$
+begin
+  assert not exists (select 1 from public.volunteers where event_id = '1d000000-0000-0000-0000-000000000003'), 'the volunteer is deleted';
+  assert not exists (select 1 from public.volunteer_history where email = 'cal@example.com'),
+         'and without volunteer tracking in the package, no history is kept';
+end $$;
+delete from public.events where id = '1d000000-0000-0000-0000-000000000003';
+select set_config('app.package_change', 'on', false);
+update public.organizations set package = 'event' where id = :'org_id';
+select set_config('app.package_change', '', false);
 delete from public.volunteer_history_removed where email = 'ann@example.com';
 
 -- ---------------------------------------------------------------------------
@@ -6759,6 +6786,25 @@ begin
   delete from public.station_items where id = '7e1d0000-0000-0000-0000-000000000003';
 end $$;
 reset role;
+
+-- A volunteer under 18 bringing something: the public board shows what, never their name.
+insert into public.volunteers (id, event_id, full_name, email, phone, minor)
+values ('7e1d0000-0000-0000-0000-0000000000f9', '10000000-0000-0000-0000-00000000000a', 'Kit Y.', 'kit@example.com', '+15125550188', true);
+insert into public.station_items (id, station_id, event_id, name, needed)
+select '7e1d0000-0000-0000-0000-0000000000f8', station_id, event_id, 'Cookies for the bake table', 5
+  from public.station_items where event_id = '10000000-0000-0000-0000-00000000000a' limit 1;
+insert into public.item_signups (item_id, event_id, volunteer_id, note)
+values ('7e1d0000-0000-0000-0000-0000000000f8', '10000000-0000-0000-0000-00000000000a', '7e1d0000-0000-0000-0000-0000000000f9', 'Cookies');
+set role anon;
+do $$ begin
+  assert (select first_name is null from public.public_item_board('10000000-0000-0000-0000-00000000000a') where note = 'Cookies'),
+         'the public never sees the name of a volunteer under 18 on the bring list';
+  assert not exists (select 1 from public.public_item_board('10000000-0000-0000-0000-00000000000a') where first_name in ('Kit', 'Kit Y.')),
+         'not even their first name';
+end $$;
+reset role;
+delete from public.volunteers where id = '7e1d0000-0000-0000-0000-0000000000f9';
+delete from public.station_items where id = '7e1d0000-0000-0000-0000-0000000000f8';
 
 -- The board shows first names and notes, never emails or phones; not for drafts.
 set role anon;

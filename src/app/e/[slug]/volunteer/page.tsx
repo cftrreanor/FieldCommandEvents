@@ -4,7 +4,7 @@ import { loadEventBrand } from "@/lib/event-brand";
 import Link from "next/link";
 import { Card } from "@/components/ui";
 import { missing } from "@/lib/schema-check";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { formatDate, formatDateRange, formatTimeRange, utcToZonedDate, zoneName } from "@/lib/time";
 import { currentSpots, signUpVolunteer } from "./actions";
 import { eventPhase, sortStations } from "@/lib/contest-day";
@@ -21,6 +21,17 @@ async function loadEvent(slug: string) {
     .eq("slug", slug)
     .maybeSingle();
   return data;
+}
+
+/** Whether this event's account keeps a 2-year volunteer history (only packages with volunteer tracking do). */
+async function keepsVolunteerHistory(eventId: string) {
+  const { data } = await createAdminClient()
+    .from("events")
+    .select("organizations(plan_tiers(volunteer_history))")
+    .eq("id", eventId)
+    .maybeSingle();
+  const org = data?.organizations as { plan_tiers?: { volunteer_history?: boolean } | null } | null | undefined;
+  return org?.plan_tiers?.volunteer_history === true;
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
@@ -53,7 +64,11 @@ export default async function VolunteerSignupPage({ params }: Params) {
     // Who's bringing what: first names and notes only.
     supabase.rpc("public_item_board", { p_event_id: event.id }),
   ]);
-  const coming = (board ?? []) as { item_id: string; first_name: string; note: string | null }[];
+  // Volunteers under 18 come back without a name (20270126000000_item_board_hides_minors.sql).
+  const coming = ((board ?? []) as { item_id: string; first_name: string | null; note: string | null }[]).map((c) => ({
+    ...c,
+    first_name: c.first_name ?? "someone",
+  }));
   // Only jobs volunteers can sign up for. (Every job shows now; this keeps out any left hidden from before.)
   const showing = (stations ?? []).filter((st) => (st as { showing?: boolean }).showing !== false);
 
@@ -163,6 +178,7 @@ export default async function VolunteerSignupPage({ params }: Params) {
             stations={publicStations}
             disabled={!isOpen}
             lead={leadWords(event.event_type).one}
+            keepsHistory={await keepsVolunteerHistory(event.id)}
           />
         )}
       </div>
