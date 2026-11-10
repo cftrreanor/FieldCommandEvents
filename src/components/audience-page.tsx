@@ -14,6 +14,7 @@ import { SITE_URL } from "@/lib/site-url";
 import { PILOT_END_LABEL, PILOT_NOTE } from "@/lib/pilot";
 import { SUPPORT_POINTS } from "@/lib/support";
 import { LineIcon } from "@/components/line-icon";
+import { PublicMenu } from "@/components/public-menu";
 
 const CTA = "Join the pilot";
 
@@ -73,6 +74,14 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
         <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
           All event types
         </Link>
+        <PublicMenu
+          links={[
+            { href: "/#organizing", label: "All kinds of events" },
+            { href: "#how", label: "How it works" },
+            { href: "#faq", label: "Questions" },
+            { href: "/#pilot", label: "Pilot details" },
+          ]}
+        />
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>
@@ -107,7 +116,7 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
 
         <section className="border-b border-border bg-surface">
           <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-            <h2 className="text-xl font-semibold">What it replaces</h2>
+            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">What it replaces</h2>
             <ul className="mt-5 grid list-disc gap-x-10 gap-y-3 pl-5 leading-7 text-muted marker:text-muted sm:grid-cols-2">
               {a.replaces.map((r) => (
                 <li key={r}>{r}</li>
@@ -121,9 +130,9 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
         <FeatureSections sections={a.sections} />
 
         <section className="mx-auto max-w-6xl px-4 pb-16 pt-4 sm:px-6">
-          <div className={`rounded-lg p-8 sm:p-12 ${infoBox}`}>
+          <div className={`rounded-lg p-5 sm:p-12 ${infoBox}`}>
             <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">Who sees what</h2>
-            <dl className="mt-6 grid max-w-5xl gap-6 leading-7 sm:grid-cols-2">
+            <dl className="mt-6 grid max-w-5xl gap-6 leading-7 sm:grid-cols-2 sm:[&>*:last-child:nth-child(odd)]:col-span-2">
               {a.privacy.map((p) => (
                 <div key={p.title}>
                   <dt className="font-semibold">{p.title}</dt>
@@ -148,7 +157,7 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
 
         <section className="border-t border-border">
           <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-            <h2 className="text-xl font-semibold">One account for every event</h2>
+            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">One account for every event</h2>
             <p className="mt-2 max-w-2xl leading-7 text-muted">
               The same {brand.name} account runs every kind of event, all year.
             </p>
@@ -227,7 +236,8 @@ export function FeatureSections({ sections }: { sections: Audience["sections"] }
           className="grid gap-4 py-12 md:grid-cols-[2fr_3fr_240px] md:gap-10"
         >
           <h2 className="text-2xl font-medium leading-tight tracking-tight">{s.title}</h2>
-          <div>
+          {/* With no picture, the words take the picture's column too, so no empty space is left. */}
+          <div className={s.screen ? undefined : "md:col-span-2"}>
             <p className="leading-7">{s.body}</p>
             {s.points.length > 0 && (
               <ul className="mt-4 space-y-2 leading-7 text-muted">

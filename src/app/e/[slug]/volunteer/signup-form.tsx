@@ -464,7 +464,7 @@ export function SignupForm({
             <p className="text-center text-sm text-muted">Tick the box above to confirm.</p>
           ) : null}
           <p className="text-center text-xs text-muted">
-            Contact details are shared only with the event team.{hasItems ? " If you bring something, others see your first name and what you're bringing." : ""}{" "}
+            Contact details are shared only with the event team.{hasItems ? " If you bring something, others see your first name (never for anyone under 18) and what you're bringing." : ""}{" "}
             {keepsHistory
               ? "Phone numbers are deleted 10 days after the event; the organizer keeps adults' names, emails, and how many shifts each person volunteered until 2 years after their last event, to thank and invite back returning volunteers."
               : "Everyone's details are deleted 10 days after the event."}

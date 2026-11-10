@@ -17,10 +17,10 @@ const KINDS = [
 const OPEN_EVENT = "open-feedback";
 
 /**
- * Feedback from every page. On wider screens: a small tab on the right edge
- * (clear of the save bars pinned to the bottom of setup pages). On phones, where
- * a tab would cover times and buttons: a "Send feedback" line at the very end of
- * the page, and a menu item (FeedbackLink). Both open the same short form.
+ * Feedback from every page. On wide screens (1280 px and up, where it sits in the margin): a small tab on the
+ * right edge, clear of the save bars pinned to the bottom of setup pages. On phones and tablets, where a tab
+ * would cover content (panel, 2026-11-10): a "Send feedback" line at the very end of the page, and a menu item
+ * (FeedbackLink). Both open the same short form.
  */
 export function FeedbackButton() {
   const pathname = usePathname();
@@ -47,13 +47,13 @@ export function FeedbackButton() {
       <button
         type="button"
         onClick={open}
-        className="fixed right-0 bottom-1/3 z-30 hidden origin-bottom-right translate-x-0 -rotate-90 rounded-t-md bg-brand px-3 py-1.5 text-xs font-semibold text-brand-foreground shadow-elevated hover:bg-brand-hover sm:block print:hidden"
+        className="fixed right-0 bottom-1/3 z-30 hidden origin-bottom-right translate-x-0 -rotate-90 rounded-t-md bg-brand px-3 py-1.5 text-xs font-semibold text-brand-foreground shadow-elevated hover:bg-brand-hover xl:block print:hidden"
         style={{ marginRight: "env(safe-area-inset-right, 0px)" }}
       >
         Feedback
       </button>
       {/* Phones: in the page, after everything else, above the event-day tab bar when it's showing. */}
-      <p className="px-4 pt-2 pb-6 text-center text-sm text-muted sm:hidden print:hidden" style={{ marginBottom: "var(--day-bar, 0px)" }}>
+      <p className="px-4 pt-2 pb-6 text-center text-sm text-muted xl:hidden print:hidden" style={{ marginBottom: "var(--day-bar, 0px)" }}>
         Spotted a problem or have an idea?{" "}
         <button type="button" onClick={open} className="inline-flex min-h-11 items-center font-medium text-brand underline underline-offset-4">
           Send feedback

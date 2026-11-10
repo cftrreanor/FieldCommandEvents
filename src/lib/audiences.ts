@@ -480,7 +480,7 @@ export const audiences = {
         body: "Share one link or QR code. Volunteers pick one shift or several on their phone and see how many spots are left, with no account to make and nothing to download.",
         points: [
           `Sign up with up to ${MAX_OTHERS} others, and volunteers under 18 use a guardian's contact details`,
-          "A confirmation with a calendar invite, an update if their shift changes, and a reminder the day before with their sign-up, time, where to report, and their lead's name and phone",
+          "A confirmation with a calendar invite, an update if their shift changes, and a reminder the day before with their sign-up, time, where to report, and their Coordinator's name and phone",
           "A private link lets each volunteer see their shifts, sign up for more, or cancel",
         ],
         screen: {
@@ -518,10 +518,10 @@ export const audiences = {
       },
       {
         title: "Help running the desk and each sign-up",
-        body: "Invite Volunteer Leads to run the desk and Coordinators to run a sign-up. Each sees what their role needs, and nothing they don't.",
+        body: "Invite Volunteer Leads to run the check-in desk and Coordinators to each run one sign-up. Each sees what their role needs, and nothing they don't.",
         points: [
           "Coordinators see their volunteers' phone numbers only on event day",
-          "Volunteers see their lead's contact details, so they know who to find",
+          "Volunteers see their Coordinator's contact details, so they know who to find",
         ],
       },
     ],
@@ -547,10 +547,10 @@ export const audiences = {
     ],
     privacy: [
       { title: "No accounts, no ads", body: "Volunteers never make an account or see ads, and emails go out only for your event." },
-      { title: "Your team", body: "Your event team and Volunteer Leads see volunteers' names, emails, and phone numbers. Coordinators see them only on event day." },
-      { title: "Things to bring", body: "Other people signing up see only the first name of anyone bringing something, and what they're bringing." },
+      { title: "Your team", body: "Your organizers and Volunteer Leads (who run the check-in desk) see volunteers' names, emails, and phone numbers. Coordinators (who each run one sign-up) see them only on event day." },
+      { title: "Things to bring", body: "Other people signing up see what each person is bringing and the first names of adults, never the names of volunteers under 18." },
       { title: "Under 18", body: "Volunteers under 18 are stored by first name and last initial, with a guardian's contact details. A record of the guardian's OK is kept." },
-      { title: "Gone when it's over", body: "Volunteers' details are deleted 10 days after the event. On packages with volunteer tracking, adults' names, emails, and shift counts are kept until 2 years after their last event, so you can invite them back." },
+      { title: "Gone when it's over", body: "Volunteers' details are deleted 10 days after the event. With volunteer tracking (available in the pilot), adults' names, emails, and shift counts are kept until 2 years after their last event, so you can invite them back." },
     ],
     faqs: [
       {

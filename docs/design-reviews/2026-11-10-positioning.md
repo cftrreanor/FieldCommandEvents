@@ -97,3 +97,22 @@ The one change that would help most: say the pilot and the cost in plain words n
 
 This is an AI review, not testing with real people. For the two severity 3 findings, try the volunteers page
 with two or three organizers from outside schools before launch.
+
+## Follow-up light checks
+
+**Round 1** (Content, UI, Product Owner, consultant), on `2026-11-10-positioning-fixes/`, after the owner's
+decisions. One severity 3: the home page said leads see contact details only on event day (Volunteer Leads always
+do). Severity 2s: "through" vs "until" for the pilot date, the add-on wording, a permanently kept guardian record
+nobody mentioned, unreadable How it works pictures on phones, tablet picture frames with empty space, the two
+"Who sees what" boxes looking different, names that differed between cards and the form, and the pilot form
+speaking only to schools. All fixed as the owner decided.
+
+**Round 2** (same four), on `2026-11-10-positioning-final/`. One severity 3: the public bring list showed the
+first names of volunteers under 18, against the home page's promise; fixed in the database (migration 20270126)
+with a security test. Severity 2s: undefined role names, the volunteer tracking wording versus "Every feature",
+no menu on phones, and card links breaking at the hyphen in "sign-ups". All fixed as the owner decided, with the
+polish (button colors, heading sizes, phone padding, single items in two-column grids, the Feedback tab on
+tablets, the check-in screenshot crop, and "For administrators" as its own line). A typo the fixes introduced
+("throughJanuary") was caught here and fixed.
+
+The last round of fixes was checked against fresh screenshots by the builder, not by the panel again.

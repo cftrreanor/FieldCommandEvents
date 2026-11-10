@@ -64,7 +64,11 @@ export default async function VolunteerSignupPage({ params }: Params) {
     // Who's bringing what: first names and notes only.
     supabase.rpc("public_item_board", { p_event_id: event.id }),
   ]);
-  const coming = (board ?? []) as { item_id: string; first_name: string; note: string | null }[];
+  // Volunteers under 18 come back without a name (20270126000000_item_board_hides_minors.sql).
+  const coming = ((board ?? []) as { item_id: string; first_name: string | null; note: string | null }[]).map((c) => ({
+    ...c,
+    first_name: c.first_name ?? "someone",
+  }));
   // Only jobs volunteers can sign up for. (Every job shows now; this keeps out any left hidden from before.)
   const showing = (stations ?? []).filter((st) => (st as { showing?: boolean }).showing !== false);
 

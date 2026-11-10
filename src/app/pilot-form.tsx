@@ -68,7 +68,7 @@ export function PilotForm({
         </div>
         <Fields onEmail={setEmail} defaultEventTypes={defaultEventTypes} defaultEmail={defaultEmail} defaultName={defaultName} />
         <BotCheck />
-        <SubmitButton pendingText="Sending…" className="w-full rounded-full! px-6 sm:w-auto">
+        <SubmitButton pendingText="Sending…" className="w-full rounded-full! bg-violet! px-6 text-header! hover:brightness-90 sm:w-auto">
           Join the pilot
         </SubmitButton>
       </div>

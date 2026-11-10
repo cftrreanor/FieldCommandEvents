@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PublicMenu } from "@/components/public-menu";
 import Link from "next/link";
 import { requestPilot } from "@/app/pilot-actions";
 import { PilotForm } from "@/app/pilot-form";
@@ -164,6 +165,14 @@ export default function AdministratorsPage() {
         <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
           All event types
         </Link>
+        <PublicMenu
+          links={[
+            { href: "/#organizing", label: "All kinds of events" },
+            { href: "#how", label: "How it works" },
+            { href: "#faq", label: "Questions" },
+            { href: "/#pilot", label: "Pilot details" },
+          ]}
+        />
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PublicMenu } from "@/components/public-menu";
 import Link from "next/link";
 import { HeaderBar, headerLinkClass } from "@/components/logo";
 import { FeatureSections, infoBox, SupportSection } from "@/components/audience-page";
@@ -197,6 +198,14 @@ export default async function ConferencesPage() {
         <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
           All event types
         </Link>
+        <PublicMenu
+          links={[
+            { href: "/#organizing", label: "All kinds of events" },
+            { href: "#how", label: "How it works" },
+            { href: "#faq", label: "Questions" },
+            { href: "/#pilot", label: "Pilot details" },
+          ]}
+        />
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>

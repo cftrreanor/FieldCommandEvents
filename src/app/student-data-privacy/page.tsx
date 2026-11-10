@@ -67,7 +67,7 @@ const deleted = [
   { what: "Parent-teacher conference bookings", when: "30 days after the conference, or for weekly hours, 30 days after each meeting" },
   { what: "Volunteers' details, phone numbers, and check-in times, and volunteers under 18", when: "10 days after the event" },
   {
-    what: "Only for organizers with the volunteer tracking add-on: adult volunteers' names, email addresses, and how many shifts they signed up for and checked in to (the organizer's volunteer history)",
+    what: "Only for organizers with volunteer tracking: adult volunteers' names, email addresses, and how many shifts they signed up for and checked in to (the organizer's volunteer history)",
     when: "2 years after their last event, or right away when the organizer removes them",
   },
   { what: "Files shared with an event", when: "30 days after the event" },

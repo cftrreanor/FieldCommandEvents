@@ -16,6 +16,7 @@ import { requestPilot } from "./pilot-actions";
 import { PilotForm } from "./pilot-form";
 import { PILOT_END_LABEL, PILOT_NOTE } from "@/lib/pilot";
 import { IconTile } from "@/components/line-icon";
+import { PublicMenu } from "@/components/public-menu";
 
 // Copy follows docs/brand-voice.md. Each event card links to its own page,
 // and those pages carry the How it works steps.
@@ -67,13 +68,6 @@ const kinds = [
     summary: "Office hours, advising, and appointments",
     href: MEETINGS_PAGE.path,
   },
-  {
-    icon: ADMINISTRATORS_PAGE.icon,
-    title: "For administrators",
-    summary: "Contests, fairs, conferences, and visits across your campus",
-    href: ADMINISTRATORS_PAGE.path,
-    link: "More for administrators",
-  },
 ];
 
 // Beside the headline: the product as spectators, volunteers, and the front office see it.
@@ -102,11 +96,11 @@ const privacy = [
   },
   {
     title: "Only who needs it",
-    body: "Organizers, leads, and volunteers each see what their role requires. Volunteer Leads see volunteers' contact details, Coordinators see them only on event day, and children's names stay with your event team.",
+    body: "Each person sees only what their role needs. Volunteer Leads (who run the check-in desk) see volunteers' contact details, Coordinators (who each run one sign-up) see them only on event day, and children's names stay with your event team.",
   },
   {
     title: "Gone when it's over",
-    body: "Personal details are deleted on a set schedule after each event, from 10 days for volunteers' details to 2 years for directors' contact details. A guardian's OK for each volunteer under 18 is kept as a record. Our privacy page lists each one.",
+    body: "Personal details are deleted on a set schedule after each event, from 10 days for volunteers' details to 2 years for directors' contact details. With volunteer tracking, adult volunteers' names and shift counts are kept until 2 years after their last event. A guardian's OK for each volunteer under 18 is kept as a record. Our privacy page lists each one.",
   },
   {
     title: "No ads, no spam",
@@ -253,6 +247,13 @@ export default async function Home() {
         <JumpLink href="#pilot" className={`hidden sm:block ${headerLinkClass}`}>
           Pilot details
         </JumpLink>
+        <PublicMenu
+          links={[
+            { href: "#organizing", label: "Kinds of events" },
+            { href: "#faq", label: "Questions" },
+            { href: "#pilot", label: "Pilot details" },
+          ]}
+        />
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>
@@ -311,33 +312,37 @@ export default async function Home() {
               Choose your kind of event, and {brand.name} gives you the tools it needs.
             </p>
             {/* The same card at every width, all in view: no sideways row to swipe through. On phones the icon sits
-                beside the name so the list stays short. "For administrators" is a reader, not a kind of event, so
-                its card is tinted to set it apart. */}
+                beside the name so the list stays short. The first, broadest kind spans two columns so seven cards
+                fill the grid evenly. */}
             <ul className="mt-8 grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
-              {kinds.map((k) => {
-                const forReader = "link" in k;
-                return (
-                  <li key={k.title}>
-                    <Link
-                      href={k.href}
-                      className={`group grid h-full grid-cols-[auto_1fr] gap-x-3 rounded-lg border p-4 transition hover:border-brand sm:flex sm:flex-col sm:p-5 ${
-                        forReader ? "border-brand/30 bg-accent-soft" : "border-border bg-background"
-                      }`}
-                    >
-                      <IconTile name={k.icon} />
-                      <span className="min-w-0 sm:contents">
-                        <span className="block font-semibold sm:mt-2">{k.title}</span>
-                        <span className="mt-1 block text-sm leading-6 text-muted">{k.summary}</span>
-                        <span className="mt-2 block text-sm font-medium text-brand group-hover:underline sm:mt-auto sm:pt-3">
-                          {forReader ? k.link : `More about ${k.title.toLowerCase()}`}
-                          <span aria-hidden> →</span>
-                        </span>
+              {kinds.map((k, i) => (
+                <li key={k.title} className={i === 0 ? "sm:col-span-2" : undefined}>
+                  <Link
+                    href={k.href}
+                    className="group grid h-full grid-cols-[auto_1fr] gap-x-3 rounded-lg border border-border bg-background p-4 transition hover:border-brand sm:flex sm:flex-col sm:p-5"
+                  >
+                    <IconTile name={k.icon} />
+                    <span className="min-w-0 sm:contents">
+                      <span className="block font-semibold sm:mt-2">{k.title}</span>
+                      <span className="mt-1 block text-sm leading-6 text-muted">{k.summary}</span>
+                      <span className="mt-2 block text-sm font-medium text-brand group-hover:underline sm:mt-auto sm:pt-3">
+                        {/* A non-breaking hyphen, so "sign-ups" never splits across lines. */}
+                        More about {k.title.toLowerCase().replace(/-/g, "\u2011")}
+                        <span aria-hidden>{"\u00a0"}→</span>
                       </span>
-                    </Link>
-                  </li>
-                );
-              })}
+                    </span>
+                  </Link>
+                </li>
+              ))}
             </ul>
+            {/* Administrators are readers, not a kind of event: a line of their own under the grid. */}
+            <p className="mt-6 leading-7">
+              Running events across a campus or district?{" "}
+              <Link href={ADMINISTRATORS_PAGE.path} className="font-medium text-brand underline">
+                More for administrators
+              </Link>
+              <span aria-hidden className="text-brand"> →</span>
+            </p>
           </div>
         </section>
 
@@ -378,9 +383,9 @@ export default async function Home() {
         </section>
 
         <section className="mx-auto max-w-6xl px-4 pb-16 sm:px-6">
-          <div className={`rounded-lg p-8 sm:p-12 ${infoBox}`}>
+          <div className={`rounded-lg p-5 sm:p-12 ${infoBox}`}>
             <h2 className={sectionTitle}>Who sees what</h2>
-            <dl className="mt-6 grid max-w-5xl gap-6 leading-7 sm:grid-cols-2">
+            <dl className="mt-6 grid max-w-5xl gap-6 leading-7 sm:grid-cols-2 sm:[&>*:last-child:nth-child(odd)]:col-span-2">
               {privacy.map((p) => (
                 <div key={p.title}>
                   <dt className="font-semibold">{p.title}</dt>

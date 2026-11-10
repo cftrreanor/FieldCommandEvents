@@ -6787,6 +6787,25 @@ begin
 end $$;
 reset role;
 
+-- A volunteer under 18 bringing something: the public board shows what, never their name.
+insert into public.volunteers (id, event_id, full_name, email, phone, minor)
+values ('7e1d0000-0000-0000-0000-0000000000f9', '10000000-0000-0000-0000-00000000000a', 'Kit Y.', 'kit@example.com', '+15125550188', true);
+insert into public.station_items (id, station_id, event_id, name, needed)
+select '7e1d0000-0000-0000-0000-0000000000f8', station_id, event_id, 'Cookies for the bake table', 5
+  from public.station_items where event_id = '10000000-0000-0000-0000-00000000000a' limit 1;
+insert into public.item_signups (item_id, event_id, volunteer_id, note)
+values ('7e1d0000-0000-0000-0000-0000000000f8', '10000000-0000-0000-0000-00000000000a', '7e1d0000-0000-0000-0000-0000000000f9', 'Cookies');
+set role anon;
+do $$ begin
+  assert (select first_name is null from public.public_item_board('10000000-0000-0000-0000-00000000000a') where note = 'Cookies'),
+         'the public never sees the name of a volunteer under 18 on the bring list';
+  assert not exists (select 1 from public.public_item_board('10000000-0000-0000-0000-00000000000a') where first_name in ('Kit', 'Kit Y.')),
+         'not even their first name';
+end $$;
+reset role;
+delete from public.volunteers where id = '7e1d0000-0000-0000-0000-0000000000f9';
+delete from public.station_items where id = '7e1d0000-0000-0000-0000-0000000000f8';
+
 -- The board shows first names and notes, never emails or phones; not for drafts.
 set role anon;
 do $$ begin
