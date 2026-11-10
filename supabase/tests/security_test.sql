@@ -8660,4 +8660,94 @@ end $$;
 reset role;
 delete from public.platform_admins where user_id = '00000000-0000-0000-0000-000000000006';
 
+-- New packages and retiring them (20270127000000_package_create_retire.sql).
+insert into public.platform_admins (user_id) values ('00000000-0000-0000-0000-000000000006') on conflict do nothing;
+set role authenticated;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.admin_create_package('Sneaky Command', 'event', null);
+  exception when sqlstate '42501' then ok := true;
+  end;
+  assert ok, 'a host can''t create a package';
+end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000006","email":"stranger@example.com"}';
+do $$
+declare
+  made text;
+  ok boolean := false;
+begin
+  made := public.admin_create_package('Booster Command', 'event', 'test');
+  assert made = 'booster_command', 'the code comes from the name';
+  assert (select n.event_types = t.event_types and n.max_team is not distinct from t.max_team and n.volunteer_history = t.volunteer_history
+                 and n.price_month_cents is null and n.price_year_cents is null and n.retired_at is null
+            from public.plan_tiers n, public.plan_tiers t where n.code = 'booster_command' and t.code = 'event'),
+         'a new package copies what its starting package includes, with prices not set';
+  begin
+    perform public.admin_create_package('booster command', 'event', null);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'two packages can''t share a name';
+  ok := false;
+  begin
+    perform public.admin_create_package('Pass Copy', 'pass_fair', null);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'a package starts from a package, not a pass';
+  ok := false;
+  begin
+    perform public.admin_set_package_retired('free', true, null);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'Free, Free Teacher, and Event Command can''t be retired';
+end $$;
+reset role;
+-- An account on the package before it's retired keeps it.
+select set_config('app.package_change', 'on', false);
+update public.organizations set package = 'booster_command' where id = :'org_id';
+select set_config('app.package_change', '', false);
+set role authenticated;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000006","email":"stranger@example.com"}';
+select public.admin_set_package_retired('booster_command', true, 'test');
+reset role;
+do $$
+declare ok boolean := false;
+begin
+  assert (select retired_at is not null from public.plan_tiers where code = 'booster_command'), 'retired';
+  assert (select count(*) from public.organizations where package = 'booster_command') = 1, 'the account on it keeps it';
+  perform set_config('app.package_change', 'on', false);
+  update public.organizations set rate = rate where package = 'booster_command';
+  begin
+    update public.organizations set package = 'booster_command'
+     where id = (select id from public.organizations where package <> 'booster_command' limit 1);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  perform set_config('app.package_change', '', false);
+  assert ok, 'a retired package can''t be given to another account';
+  ok := false;
+  begin
+    insert into public.host_invitations (email, package) values ('retired-pkg@example.com', 'booster_command');
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'or to an invitation';
+end $$;
+set role authenticated;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000006","email":"stranger@example.com"}';
+select public.admin_set_package_retired('booster_command', false, 'test');
+reset role;
+do $$ begin
+  assert (select retired_at is null from public.plan_tiers where code = 'booster_command'), 'and it can be brought back';
+  assert exists (select 1 from public.admin_log where action = 'package_created' and details ->> 'code' = 'booster_command'),
+         'creating is logged';
+  assert exists (select 1 from public.admin_log where action = 'package_retired' and details ->> 'code' = 'booster_command'),
+         'retiring is logged';
+end $$;
+select set_config('app.package_change', 'on', false);
+update public.organizations set package = 'event' where id = :'org_id';
+select set_config('app.package_change', '', false);
+delete from public.plan_tiers where code = 'booster_command';
+delete from public.platform_admins where user_id = '00000000-0000-0000-0000-000000000006';
+
 \echo 'All database security tests passed.'

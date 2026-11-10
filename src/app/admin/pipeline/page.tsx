@@ -7,7 +7,7 @@ import { loadTemplates } from "../data";
 import { PageHeader, primarySmall } from "../kit";
 import { moveStage } from "../notes-actions";
 import { sendHostInvitation } from "./actions";
-import { tierNames } from "@/lib/package-names";
+import { invitePackageChoices, loadTiers, tierNames } from "@/lib/package-names";
 import { InviteHostPanel } from "./invite-host-panel";
 import { PipelineBoard, type BoardCard } from "./board";
 
@@ -36,6 +36,7 @@ function inStage(iso: string) {
 /** Pilot requests from the home page, as a board: new → contacted → invited → set up → active. */
 export default async function PipelinePage() {
   const names = await tierNames();
+  const invitePackages = invitePackageChoices(await loadTiers());
   await requirePlatformAdmin();
   const admin = createAdminClient();
   const [{ data }, { data: noteData }, templates] = await Promise.all([
@@ -78,6 +79,7 @@ export default async function PipelinePage() {
         actions={
           <InviteHostPanel
             names={names}
+                  packages={invitePackages}
             action={sendHostInvitation.bind(null, null)}
             templates={templates.map((t) => ({ id: t.id, name: t.name }))}
             defaults={{ email: "", name: "", organization: "", phone: "", package: "event", status: "comped", freeUntil: DEFAULT_PILOT_END, template: "" }}

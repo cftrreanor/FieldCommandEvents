@@ -91,3 +91,31 @@ export async function savePackageDetails(code: string, d: PackageDetails, note: 
   revalidatePath("/dashboard", "layout");
   return { ok: true };
 }
+
+/** A new package, copied from an existing one, prices not set (admin_create_package checks and logs it). */
+export async function createPackage(name: string, from: string, note: string): Promise<{ ok: true; code: string } | { error: string }> {
+  await requirePlatformAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_create_package", {
+    p_name: name.trim(),
+    p_from: from,
+    p_note: note.trim().slice(0, 500) || null,
+  });
+  if (error) return { error: friendlyDbError(error) };
+  revalidatePath("/admin", "layout");
+  return { ok: true, code: String(data) };
+}
+
+/** Retire a package (it stays on its accounts, but isn't offered) or bring it back (admin_set_package_retired logs it). */
+export async function setPackageRetired(code: string, retired: boolean, note: string): Promise<{ ok: true } | { error: string }> {
+  await requirePlatformAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("admin_set_package_retired", {
+    p_code: code,
+    p_retired: retired,
+    p_note: note.trim().slice(0, 500) || null,
+  });
+  if (error) return { error: friendlyDbError(error) };
+  revalidatePath("/admin", "layout");
+  return { ok: true };
+}

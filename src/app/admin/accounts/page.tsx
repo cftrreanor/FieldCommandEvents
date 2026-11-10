@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { freeStatus, isFreePlan, PLANS, planLabel, requirePlatformAdmin } from "@/lib/admin";
-import { tierNames } from "@/lib/package-names";
-import { PACKAGES, packageLabel } from "@/lib/plan";
+import { loadTiers } from "@/lib/package-names";
+import { packageLabel } from "@/lib/plan";
 import { ADMIN_TZ, ago, HEALTH_LABEL, HEALTH_ORDER, sortBy, type HealthLevel } from "@/lib/admin-crm";
 import { formatDate, utcToZonedDate } from "@/lib/time";
 import Link from "next/link";
@@ -20,7 +20,10 @@ export default async function AccountsPage({ searchParams }: PageProps<"/admin/a
   const sp = await searchParams;
   const q = str(sp.q).trim().toLowerCase();
   const plan = str(sp.plan);
-  const packages = list(sp.package).filter((p) => PACKAGES.some((k) => k.value === p));
+  // Every package as stored, new and retired ones included (an account can still be on a retired one).
+  const tiers = (await loadTiers()).filter((t) => t.kind === "package");
+  const codes = tiers.map((t) => t.code);
+  const packages = list(sp.package).filter((p) => codes.includes(p));
   const health = str(sp.health);
   const kind = str(sp.kind);
   const teachers = kind === "teacher";
@@ -28,7 +31,8 @@ export default async function AccountsPage({ searchParams }: PageProps<"/admin/a
   const dir = str(sp.dir) || "asc";
   const today = utcToZonedDate(new Date().toISOString(), ADMIN_TZ);
 
-  const [all, names] = await Promise.all([loadAccounts(), tierNames()]);
+  const all = await loadAccounts();
+  const names = Object.fromEntries(tiers.map((t) => [t.code, t.name]));
   const isTeacher = (a: { account_kind?: string }) => a.account_kind === "teacher";
   const rows = all
     .filter((a) => !kind || (kind === "teacher") === isTeacher(a))
@@ -54,7 +58,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/admin/a
     // The person first, like the Pipeline (issue #337): sort by the host's name, else the organization's.
     name: (a) => (a.owner?.full_name || a.name).toLowerCase(),
     plan: (a) => planLabel(a.subscription_status),
-    package: (a) => (a.package ? PACKAGES.findIndex((p) => p.value === a.package) : null),
+    package: (a) => (a.package ? codes.indexOf(a.package) : null),
     health: (a) => HEALTH_ORDER[a.health.level],
     events: (a) => a.events.length,
     next: (a) => a.next?.starts_on ?? null,
@@ -93,7 +97,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/admin/a
             </option>
           ))}
         </select>
-        <PackagePicker selected={packages} names={names} />
+        <PackagePicker selected={packages} names={names} codes={codes} />
         <select name="health" defaultValue={health} aria-label="Health" className={smallInput}>
           <option value="">Any health</option>
           {(Object.keys(HEALTH_LABEL) as HealthLevel[]).map((h) => (
@@ -216,7 +220,7 @@ function KindTags({ account, hideTeacher = false }: { account: { account_kind?: 
 }
 
 /** Packages to show, as checkboxes in a drop-down: none ticked shows every package. */
-function PackagePicker({ selected, names }: { selected: string[]; names: Record<string, string> }) {
+function PackagePicker({ selected, names, codes }: { selected: string[]; names: Record<string, string>; codes: string[] }) {
   const label =
     selected.length === 0 ? "All packages" : selected.length <= 2 ? selected.map((p) => packageLabel(p, names)).join(", ") : `${selected.length} packages`;
   return (
@@ -230,10 +234,10 @@ function PackagePicker({ selected, names }: { selected: string[]; names: Record<
       </summary>
       <fieldset className="absolute left-0 z-20 mt-1 w-60 rounded-md border border-border bg-surface p-2 shadow-elevated">
         <legend className="sr-only">Packages to show</legend>
-        {PACKAGES.map((p) => (
-          <label key={p.value} className="flex min-h-8 cursor-pointer items-center gap-2 rounded-sm px-2 text-sm hover:bg-background">
-            <input type="checkbox" name="package" value={p.value} defaultChecked={selected.includes(p.value)} className="size-4 accent-[var(--brand)]" />
-            {packageLabel(p.value, names)}
+        {codes.map((code) => (
+          <label key={code} className="flex min-h-8 cursor-pointer items-center gap-2 rounded-sm px-2 text-sm hover:bg-background">
+            <input type="checkbox" name="package" value={code} defaultChecked={selected.includes(code)} className="size-4 accent-[var(--brand)]" />
+            {packageLabel(code, names)}
           </label>
         ))}
         <p className="mt-1 px-2 text-xs text-muted">Tick none for every package. Then select Apply.</p>
