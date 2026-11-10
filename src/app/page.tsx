@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { infoBox } from "@/components/audience-page";
-import { CardCarousel } from "@/components/card-carousel";
 import { FaqList } from "@/components/faq-list";
 import { JumpLink } from "@/components/jump-link";
 import { PhoneFrame } from "@/components/phone-frame";
@@ -31,88 +30,48 @@ const kinds = [
     title: "Volunteers and sign-ups",
     summary: "Sign-up sheets, potlucks, cleanups, and volunteer shifts",
     href: audiences.volunteers.path,
-    points: [
-      "Shifts and things to bring that fill evenly, with spots left shown",
-      "No account and no ads for anyone signing up",
-      "Check-in on any device, with walk-ups and printable badges",
-    ],
   },
   {
     icon: CONFERENCES_PAGE.icon,
     title: "Parent-teacher conferences",
     summary: "Fall and spring conferences, in person or on video",
     href: CONFERENCES_PAGE.path,
-    points: [
-      "Families book their own meeting time from one link",
-      "Calendar invites for families and the teacher, a reminder the day before, and easy changes",
-      "Only the teacher and their co-hosts see children's names",
-    ],
   },
   {
     icon: "band" as const,
     title: "Band contests",
     summary: "Marching invitationals, jazz festivals, and solo & ensemble",
     href: audiences.bands.path,
-    points: [
-      "Directors fill in the form and confirm with an emailed code, and returning directors register in one tap",
-      "Performance schedule, finals, and a live order for directors and spectators",
-      "Check every band through parking, check-in, and the gate on any phone",
-    ],
   },
   {
     icon: "group" as const,
-    title: "Choir & group festivals",
+    title: "Choir and group festivals",
     summary: "Choir and orchestra festivals, theater, and UIL academics",
     href: audiences.groups.path,
-    points: [
-      "Groups register, then move through your rooms on a schedule built for you",
-      "Arrived and Done taps keep every room on time",
-      "Directors and families can follow each room live on their phones",
-    ],
   },
   {
     icon: "fair" as const,
-    title: "School fairs & fundraisers",
+    title: "School fairs and fundraisers",
     summary: "Fall festivals, carnivals, and fundraisers",
     href: audiences.fairs.path,
-    points: [
-      "Booths and community partners organized by zone",
-      "Partner check-in on the day, with who's still on the way",
-      "A public “What's at the event” page that thanks your partners",
-    ],
   },
   {
     icon: "school" as const,
     title: "Visitor registration and check-in",
     summary: "Open houses, family lunches, performances, and award days",
     href: audiences.parents.path,
-    points: [
-      "Parents register ahead with each child, teacher, and grade",
-      "Reminders to bring a photo ID, and a calendar invite",
-      "See how many families are coming, then check each adult in at the door",
-    ],
   },
   {
     icon: MEETINGS_PAGE.icon,
     title: "Meetings",
     summary: "Office hours, advising, and appointments",
     href: MEETINGS_PAGE.path,
-    points: [
-      "Set one day or weekly hours, and people book from one link",
-      "In person, on video, or by phone, with calendar invites and a reminder",
-      "Only you and your co-hosts see who booked and their notes",
-    ],
   },
   {
     icon: ADMINISTRATORS_PAGE.icon,
     title: "For administrators",
     summary: "Contests, fairs, conferences, and visits across your campus",
     href: ADMINISTRATORS_PAGE.path,
-    points: [
-      "Every kind of school event in one place, all year",
-      "Confirmations and reminders sent for you, and check-in on any phone",
-      "Families' details deleted on a set schedule",
-    ],
     link: "More for administrators",
   },
 ];
@@ -124,8 +83,6 @@ const heroScreens = [
   { src: "/screens/parent-door-search.webp", alt: "Door check-in on a phone for a school visit: a search, the family's children, and a Check in button for each adult." },
 ];
 
-// Each event-type card in the sideways row (phones and tablets): most of a phone screen.
-const carouselCard = "w-[85%] shrink-0 snap-start sm:w-[60%] md:w-[44%]";
 
 const different = [
   { title: "Organized", body: "Sign-ups, schedules, and check-in are all in one place." },
@@ -145,11 +102,11 @@ const privacy = [
   },
   {
     title: "Only who needs it",
-    body: "Organizers, leads, and volunteers each see what their role requires. Contact details unlock for leads on event day, and children's names stay with your event team.",
+    body: "Organizers, leads, and volunteers each see what their role requires. Volunteer Leads see volunteers' contact details, Coordinators see them only on event day, and children's names stay with your event team.",
   },
   {
     title: "Gone when it's over",
-    body: "Personal details are deleted on a set schedule after each event, from 10 days for volunteers' phone numbers to 2 years for directors' contact details. Our privacy page lists each one.",
+    body: "Personal details are deleted on a set schedule after each event, from 10 days for volunteers' details to 2 years for directors' contact details. A guardian's OK for each volunteer under 18 is kept as a record. Our privacy page lists each one.",
   },
   {
     title: "No ads, no spam",
@@ -165,7 +122,7 @@ const faqs = [
     a: "Anyone running an event with sign-ups, registration, or check-in: PTO and PTA leaders, booster clubs, band and choir directors, teachers and school offices, churches and other congregations, clubs, nonprofits, and community groups.",
   },
   {
-    q: "Can churches, clubs, and community groups use it?",
+    q: "Can congregations, clubs, and community groups use it?",
     a: "Yes. Any group can run sign-up sheets, volunteer events, and meetings. Organizers sign in to run their events. Volunteers, families, and guests join from the organizer's link and are never asked to make an account or shown ads.",
   },
   {
@@ -198,8 +155,8 @@ const pilot = [
   {
     title: "What you get",
     items: [
-      `Every feature, free until the pilot ends ${PILOT_END_LABEL}`,
-      "Unlimited events of every kind, volunteers, and registrations",
+      `Every feature, free through ${PILOT_END_LABEL}, when the pilot ends`,
+      "Unlimited events, volunteers, and registrations",
       "Help setting up your first event",
       "Direct support from the people building it",
     ],
@@ -353,50 +310,34 @@ export default async function Home() {
             <p className="mt-3 max-w-2xl leading-7 text-muted">
               Choose your kind of event, and {brand.name} gives you the tools it needs.
             </p>
-            {/* Wide screens: compact tiles, all at once. The details are on each event's own page. */}
-            <ul className="mt-8 hidden gap-4 lg:grid lg:grid-cols-4">
-              {kinds.map((k) => (
-                <li key={k.title}>
-                  <Link
-                    href={k.href}
-                    className="group flex h-full flex-col rounded-lg border border-border bg-background p-5 transition hover:border-brand"
-                  >
-                    <IconTile name={k.icon} />
-                    <span className="mt-2 font-semibold">{k.title}</span>
-                    <span className="mt-1 text-sm leading-6 text-muted">{k.summary}</span>
-                    <span className="mt-auto pt-3 text-sm font-medium text-brand group-hover:underline">
-                      {"link" in k ? k.link : `More about ${k.title.toLowerCase()}`}<span aria-hidden> →</span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            {/* Phones and tablets: the swipeable row with each event's highlights. */}
-            <div className="lg:hidden">
-            <CardCarousel label="Kinds of event" itemName="event types">
-              {kinds.map((k) => (
-                <li key={k.title} className={`${carouselCard} flex flex-col rounded-lg border border-border bg-background p-6 sm:p-8`}>
-                  <IconTile name={k.icon} />
-                  <h3 className="mt-3 text-lg font-semibold">{k.title}</h3>
-                  <p className="mt-1 text-sm text-muted">{k.summary}</p>
-                  <ul className="mt-4 space-y-2 leading-7">
-                    {k.points.map((point) => (
-                      <li key={point} className="flex gap-2">
-                        <span aria-hidden className="text-success">
-                          ✓
+            {/* The same card at every width, all in view: no sideways row to swipe through. On phones the icon sits
+                beside the name so the list stays short. "For administrators" is a reader, not a kind of event, so
+                its card is tinted to set it apart. */}
+            <ul className="mt-8 grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
+              {kinds.map((k) => {
+                const forReader = "link" in k;
+                return (
+                  <li key={k.title}>
+                    <Link
+                      href={k.href}
+                      className={`group grid h-full grid-cols-[auto_1fr] gap-x-3 rounded-lg border p-4 transition hover:border-brand sm:flex sm:flex-col sm:p-5 ${
+                        forReader ? "border-brand/30 bg-accent-soft" : "border-border bg-background"
+                      }`}
+                    >
+                      <IconTile name={k.icon} />
+                      <span className="min-w-0 sm:contents">
+                        <span className="block font-semibold sm:mt-2">{k.title}</span>
+                        <span className="mt-1 block text-sm leading-6 text-muted">{k.summary}</span>
+                        <span className="mt-2 block text-sm font-medium text-brand group-hover:underline sm:mt-auto sm:pt-3">
+                          {forReader ? k.link : `More about ${k.title.toLowerCase()}`}
+                          <span aria-hidden> →</span>
                         </span>
-                        <span>{point}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <Link href={k.href} className="mt-auto pt-6 font-medium text-brand underline">
-                    {"link" in k ? k.link : `More about ${k.title.toLowerCase()}`}
-                    <span aria-hidden> →</span>
-                  </Link>
-                </li>
-              ))}
-            </CardCarousel>
-            </div>
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         </section>
 
@@ -466,8 +407,8 @@ export default async function Home() {
             <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
             <h2 className={`mt-4 ${sectionTitle}`}>Join the pilot</h2>
             <p className="mt-3 max-w-2xl leading-7 text-muted">
-              We&apos;re working closely with a small group of organizers, from schools and booster clubs to community groups. It&apos;s free until
-              the pilot ends {PILOT_END_LABEL}, and we keep the group small so we can support every organizer.
+              We&apos;re working closely with a small group of organizers, from schools and booster clubs to community groups. It&apos;s free through
+              {PILOT_END_LABEL}, when the pilot ends, and we keep the group small so we can support every organizer.
             </p>
             <div className="mt-10 grid gap-6 md:grid-cols-3">
               {pilot.map((col) => (
@@ -488,7 +429,7 @@ export default async function Home() {
             </div>
 
             <div id="join" tabIndex={-1} className="mt-12 max-w-3xl scroll-mt-20 outline-none">
-              <h3 className="text-xl font-semibold">{CTA}</h3>
+              <h3 className="text-xl font-semibold">Tell us about your events</h3>
               <p className="mt-1 text-muted">It takes a minute, and a person on our team will reply by email.</p>
               <div className="mt-6">
                 <PilotForm action={requestPilot} />
@@ -501,7 +442,7 @@ export default async function Home() {
         <section className="bg-teal-deep text-white">
           <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-24">
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">{TAGLINE}</h2>
-            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free until {PILOT_END_LABEL}. Spots are limited.</p>
+            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free through {PILOT_END_LABEL}. Spots are limited.</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <JumpLink href={JOIN} className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
                 {CTA}

@@ -8,7 +8,7 @@ import { JumpLink } from "@/components/jump-link";
 import { PhoneFrame } from "@/components/phone-frame";
 import { HeaderBar, headerLinkClass } from "@/components/logo";
 import { SiteFooter } from "@/components/site-footer";
-import { AUDIENCES, CONFERENCES_PAGE, MEETINGS_PAGE, type Audience } from "@/lib/audiences";
+import { AUDIENCES, CONFERENCES_PAGE, MEETINGS_PAGE, STUDENT_PRIVACY_PAGE, type Audience } from "@/lib/audiences";
 import { brand } from "@/lib/brand";
 import { SITE_URL } from "@/lib/site-url";
 import { PILOT_END_LABEL, PILOT_NOTE } from "@/lib/pilot";
@@ -123,13 +123,17 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
         <section className="mx-auto max-w-6xl px-4 pb-16 pt-4 sm:px-6">
           <div className={`rounded-lg p-8 sm:p-12 ${infoBox}`}>
             <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">Who sees what</h2>
-            <ul className="mt-6 grid max-w-5xl gap-4 leading-7 sm:grid-cols-2">
+            <dl className="mt-6 grid max-w-5xl gap-6 leading-7 sm:grid-cols-2">
               {a.privacy.map((p) => (
-                <li key={p} className="opacity-90">
-                  {p}
-                </li>
+                <div key={p.title}>
+                  <dt className="font-semibold">{p.title}</dt>
+                  <dd className="mt-1 opacity-90">{p.body}</dd>
+                </div>
               ))}
-            </ul>
+            </dl>
+            <Link href={STUDENT_PRIVACY_PAGE.path} className="mt-6 inline-block font-semibold underline">
+              How we handle everyone&apos;s data
+            </Link>
           </div>
         </section>
 
@@ -156,7 +160,10 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
                     className="flex min-h-11 items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 font-medium hover:border-brand"
                   >
                     <LineIcon name={o.icon} className="size-5 text-brand dark:text-foreground" />
-                    {o.name}
+                    <span className="flex-1">{o.name}</span>
+                    <span aria-hidden className="text-brand dark:text-foreground">
+                      →
+                    </span>
                   </Link>
                 </li>
               ))}
@@ -165,19 +172,22 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
         </section>
 
         <section id="join" tabIndex={-1} className="scroll-mt-20 border-t border-border bg-surface outline-none">
-          <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
-            <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
-            <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{CTA}</h2>
-            <p className="mt-3 leading-7 text-muted">
-              It&apos;s free for organizers until the pilot ends {PILOT_END_LABEL}, and we&apos;ll talk with you before
-              anything changes. Volunteers, families, and visiting groups never pay.{" "}
-              <Link href="/#pilot" className="text-brand underline">
-                See the pilot details
-              </Link>
-              .
-            </p>
-            <div className="mt-8">
-              <PilotForm action={requestPilot} defaultEventTypes={[a.eventType]} />
+          {/* On the page's left edge like every other section; only the text and form stay narrow. */}
+          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
+            <div className="max-w-3xl">
+              <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
+              <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{CTA}</h2>
+              <p className="mt-3 leading-7 text-muted">
+                It&apos;s free for organizers through {PILOT_END_LABEL}, when the pilot ends, and we&apos;ll talk with you before
+                anything changes. Volunteers, families, and visiting groups never pay.{" "}
+                <Link href="/#pilot" className="text-brand underline">
+                  See the pilot details
+                </Link>
+                .
+              </p>
+              <div className="mt-8">
+                <PilotForm action={requestPilot} defaultEventTypes={[a.eventType]} />
+              </div>
             </div>
           </div>
         </section>
@@ -185,7 +195,7 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
         <section className="bg-teal-deep text-white">
           <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-20">
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">Every detail organized. Every organizer supported.</h2>
-            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free until {PILOT_END_LABEL}. Spots are limited.</p>
+            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free through {PILOT_END_LABEL}. Spots are limited.</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <JumpLink href="#join" className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
                 {CTA}
@@ -232,7 +242,7 @@ export function FeatureSections({ sections }: { sections: Audience["sections"] }
               </ul>
             )}
           </div>
-          {s.screen && <PhoneFrame src={s.screen.src} alt={s.screen.alt} className="mx-auto mt-2 w-full max-w-[240px] md:mt-0 md:w-[240px]" sizes="228px" />}
+          {s.screen && <PhoneFrame src={s.screen.src} alt={s.screen.alt} className="mx-auto mt-2 w-full max-w-[240px] md:mt-0 md:w-[240px] md:self-start" sizes="228px" />}
         </section>
       ))}
     </div>
@@ -256,6 +266,11 @@ export function SupportSection() {
             </div>
           ))}
         </dl>
+        <p className="mt-8 leading-7">
+          <a href={`mailto:${brand.supportEmail}`} className="font-medium text-brand underline">
+            {brand.supportEmail}
+          </a>
+        </p>
       </div>
     </section>
   );

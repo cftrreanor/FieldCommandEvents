@@ -29,7 +29,8 @@ export type Audience = {
   steps: HowStep[];
   /** Each with an optional phone screenshot of it (public/screens/, sample data only). */
   sections: { title: string; body: string; points: string[]; screen?: { src: string; alt: string } }[];
-  privacy: string[];
+  /** The "Who sees what" box: a short title and a sentence each, like the home page's. */
+  privacy: { title: string; body: string }[];
   faqs: { q: string; a: string }[];
 };
 
@@ -140,10 +141,10 @@ export const audiences = {
       },
     ],
     privacy: [
-      "Only your organizers and each band's own director see that band's contact details.",
-      "Coordinators see each band's name, school, and progress. Volunteer Leads also see headcounts and vehicles.",
-      "Directors' personal details are removed 2 years after the contest. The band, school, and headcounts stay for your records.",
-      "Volunteers' phone numbers are deleted 10 days after the contest.",
+      { title: "Directors' contact details", body: "Only your organizers and each band's own director see that band's contact details." },
+      { title: "Your team", body: "Coordinators see each band's name, school, and progress. Volunteer Leads also see headcounts and vehicles." },
+      { title: "Gone when it's over", body: "Directors' personal details are removed 2 years after the contest. The band, school, and headcounts stay for your records." },
+      { title: "Volunteers", body: "Volunteers' phone numbers are deleted 10 days after the contest." },
     ],
     faqs: [
       {
@@ -177,7 +178,7 @@ export const audiences = {
     path: "/choir-festivals",
     eventType: "group_event",
     icon: "group",
-    name: "Choir & group festivals",
+    name: "Choir and group festivals",
     metaTitle: "Choir, Orchestra & Group Festival Scheduling Software",
     metaDescription:
       "Run a choir or orchestra festival, theater, or speech and debate event: groups register online and move through your rooms on a schedule built for you, while directors and families follow every room live.",
@@ -279,10 +280,10 @@ export const audiences = {
       },
     ],
     privacy: [
-      "Only your organizers and each group's own director see that group's contact details.",
-      "Families see room times, never contact details or headcounts.",
-      "Directors' personal details are removed 2 years after the festival. The group, school, and headcounts stay for your records.",
-      "Volunteers' phone numbers are deleted 10 days after the festival.",
+      { title: "Directors' contact details", body: "Only your organizers and each group's own director see that group's contact details." },
+      { title: "Families", body: "Families see room times, never contact details or headcounts." },
+      { title: "Gone when it's over", body: "Directors' personal details are removed 2 years after the festival. The group, school, and headcounts stay for your records." },
+      { title: "Volunteers", body: "Volunteers' phone numbers are deleted 10 days after the festival." },
     ],
     faqs: [
       {
@@ -316,7 +317,7 @@ export const audiences = {
     path: "/school-fairs",
     eventType: "fair",
     icon: "fair",
-    name: "School fairs & fundraisers",
+    name: "School fairs and fundraisers",
     metaTitle: "School Fair, Carnival & Fundraiser Planning Software for PTOs",
     metaDescription:
       "Plan a fall festival, carnival, or PTO fundraiser: organize booths and community partners by zone, staff every booth with volunteers, check partners in on the day, and share a public page of everything at the event.",
@@ -408,10 +409,9 @@ export const audiences = {
       },
     ],
     privacy: [
-      "Partners' contact details never appear on the public page and are removed 15 months after the event.",
-      "Volunteers' phone numbers are deleted 10 days after the event.",
-      "Student volunteers under 18 are stored by first name and last initial, with their parent's contact details.",
-      "Coordinators see their volunteers' phone numbers only on event day.",
+      { title: "Partners", body: "Partners' contact details never appear on the public page and are removed 15 months after the event." },
+      { title: "Volunteers", body: "Volunteers' phone numbers are deleted 10 days after the event, and Coordinators see them only on event day." },
+      { title: "Under 18", body: "Student volunteers under 18 are stored by first name and last initial, with their parent's contact details." },
     ],
     faqs: [
       {
@@ -452,7 +452,7 @@ export const audiences = {
     eyebrow: "For volunteer shifts, potlucks, and anything with spots to fill",
     headline: "Sign-up sheets and volunteer shifts without the ads",
     intro:
-      `You set it up from your organizer account. Volunteers, families, and guests sign up from your link, as many as ${MAX_OTHERS + 1} at once, with no ads.`,
+      `You set it up from your organizer account. Volunteers, families, and guests sign up from your link, for themselves and up to ${MAX_OTHERS} others, with no account to make and no ads.`,
     replaces: [
       "Sign-up sites covered in ads",
       "Making everyone who signs up create an account",
@@ -472,7 +472,7 @@ export const audiences = {
         ],
         screen: {
           src: "/screens/potluck-items.webp",
-          alt: "Things to bring on a phone: main dishes, sides and salads, desserts, and drinks, each with how many are still needed and who's coming with what.",
+          alt: "Picking what you'll do on a phone: main dishes, sides and salads, desserts, and drinks with how many are still needed, then setup and cleanup shifts with spots left.",
         },
       },
       {
@@ -484,8 +484,8 @@ export const audiences = {
           "A private link lets each volunteer see their shifts, sign up for more, or cancel",
         ],
         screen: {
-          src: "/screens/potluck-shifts.webp",
-          alt: "A sign-up page on a phone: setup and cleanup shifts at a fall potluck, with how many spots are left on each.",
+          src: "/screens/potluck-review.webp",
+          alt: "The last step of signing up on a phone: Alex Morgan bringing desserts, a button to add another person, and Confirm sign-up.",
         },
       },
       {
@@ -499,7 +499,7 @@ export const audiences = {
         ],
         screen: {
           src: "/screens/volunteer-my-shifts.webp",
-          alt: "A volunteer's own page on a phone: their shift, where to report, their lead's contact details, and the volunteer packet.",
+          alt: "A volunteer's own page on a phone: what they're bringing to the Fall Potluck, their setup shift, and calendar links, with no account.",
         },
       },
       {
@@ -517,7 +517,7 @@ export const audiences = {
         },
       },
       {
-        title: "Leads for every sign-up",
+        title: "Help running the desk and each sign-up",
         body: "Invite Volunteer Leads to run the desk and Coordinators to run a sign-up. Each sees what their role needs, and nothing they don't.",
         points: [
           "Coordinators see their volunteers' phone numbers only on event day",
@@ -546,12 +546,11 @@ export const audiences = {
       },
     ],
     privacy: [
-      "Volunteers never make an account.",
-      "Your event team sees volunteers' names, emails, and phone numbers. Coordinators see them only on event day.",
-      "Other people signing up see only the first name of anyone bringing something, and what they're bringing.",
-      "Volunteers under 18 are stored by first name and last initial, with a guardian's contact details.",
-      "Volunteers' details are deleted 10 days after the event. With the volunteer tracking add-on, adults' names, emails, and shift counts are kept for 2 years so you can invite them back.",
-      "There are no ads or spam, and emails go out only for your event.",
+      { title: "No accounts, no ads", body: "Volunteers never make an account or see ads, and emails go out only for your event." },
+      { title: "Your team", body: "Your event team and Volunteer Leads see volunteers' names, emails, and phone numbers. Coordinators see them only on event day." },
+      { title: "Things to bring", body: "Other people signing up see only the first name of anyone bringing something, and what they're bringing." },
+      { title: "Under 18", body: "Volunteers under 18 are stored by first name and last initial, with a guardian's contact details. A record of the guardian's OK is kept." },
+      { title: "Gone when it's over", body: "Volunteers' details are deleted 10 days after the event. On packages with volunteer tracking, adults' names, emails, and shift counts are kept until 2 years after their last event, so you can invite them back." },
     ],
     faqs: [
       {
@@ -693,10 +692,9 @@ export const audiences = {
       },
     ],
     privacy: [
-      "Only your event team sees children's names, teachers, and grades, and Coordinators see them only on event day.",
-      "Every registration, including children's details, is deleted 30 days after the event.",
-      "Parents never make an account.",
-      "No ads, no spam, and emails used only for your event",
+      { title: "Children's details", body: "Only your event team sees children's names, teachers, and grades, and Coordinators see them only on event day." },
+      { title: "Gone when it's over", body: "Every registration, including children's details, is deleted 30 days after the event." },
+      { title: "No accounts, no ads", body: "Parents never make an account, there are no ads or spam, and emails go out only for your event." },
     ],
     faqs: [
       {

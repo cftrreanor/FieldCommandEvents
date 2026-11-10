@@ -44,7 +44,7 @@
   --danger-foreground: #ffffff;
   --focus: #0b3558;
   /* Secondary text on deep blue and navy. */
-  --on-dark-mute: #c8d4e0;
+  --on-dark-mute: #e2e9f1; /* 4.8:1 even at the brightest spot of the hero glow (panel, 2026-11-10) */
   /* Header bar: always dark, so the white logo reads in light and dark mode. */
   --header: #0b3558;
   --header-foreground: #ffffff;

@@ -64,6 +64,7 @@ export function SignupForm({
   stations,
   disabled,
   lead = "Coordinator",
+  keepsHistory = false,
 }: {
   action: (prev: SignupState, formData: FormData) => Promise<SignupState>;
   /** Spots left on each shift right now (checked again on the review screen). */
@@ -72,6 +73,8 @@ export function SignupForm({
   disabled?: boolean;
   /** Who sees volunteers' phone numbers on the day. */
   lead?: string;
+  /** The account keeps a 2-year volunteer history (packages with volunteer tracking). */
+  keepsHistory?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(action, {});
   const pathname = usePathname();
@@ -461,9 +464,10 @@ export function SignupForm({
             <p className="text-center text-sm text-muted">Tick the box above to confirm.</p>
           ) : null}
           <p className="text-center text-xs text-muted">
-            Contact details are shared only with the event team.{hasItems ? " If you bring something, others see your first name and what you're bringing." : ""} Phone
-            numbers are deleted 10 days after the event; the organizer keeps names, emails, and how many shifts each person volunteered for 2 years, to
-            thank and invite back returning volunteers.
+            Contact details are shared only with the event team.{hasItems ? " If you bring something, others see your first name and what you're bringing." : ""}{" "}
+            {keepsHistory
+              ? "Phone numbers are deleted 10 days after the event; the organizer keeps adults' names, emails, and how many shifts each person volunteered until 2 years after their last event, to thank and invite back returning volunteers."
+              : "Everyone's details are deleted 10 days after the event."}
           </p>
         </ActionPendingContext>
       </form>

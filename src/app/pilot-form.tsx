@@ -68,7 +68,7 @@ export function PilotForm({
         </div>
         <Fields onEmail={setEmail} defaultEventTypes={defaultEventTypes} defaultEmail={defaultEmail} defaultName={defaultName} />
         <BotCheck />
-        <SubmitButton pendingText="Sending…" className="w-full sm:w-auto">
+        <SubmitButton pendingText="Sending…" className="w-full rounded-full! px-6 sm:w-auto">
           Join the pilot
         </SubmitButton>
       </div>
@@ -118,13 +118,13 @@ function Fields({
         <Field label="Phone" hint="10 digits, with area code. We'll use it to set up a short call." {...problem("phone")}>
           <Input name="phone" type="tel" required maxLength={30} autoComplete="tel" {...describe("phone")} />
         </Field>
-        <Field label="School, PTO/PTA, booster club, or other organization" {...problem("organization")}>
+        <Field label="Your school or group" {...problem("organization")}>
           <Input
             name="organization"
             required
             maxLength={200}
             autoComplete="organization"
-            placeholder="e.g. Oak Elementary PTA"
+            placeholder="e.g. Oak Elementary PTA or Grace Church choir"
             {...describe("organization")}
           />
         </Field>

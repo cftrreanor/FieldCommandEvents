@@ -123,7 +123,7 @@ const sections: Audience["sections"] = [
 
 const privacy = [
   "We ask for only what each event needs: headcounts instead of student names for contests, and no accounts for families or spectators.",
-  "Children's details from school visitor events and conferences are deleted 30 days after the event, volunteers' phone numbers 10 days after (organizers keep a 2-year count of each adult's shifts), fair partners' contact details 15 months after, and visiting directors' personal details 2 years after.",
+  "Children's details from school visitor events and conferences are deleted 30 days after the event, volunteers' details 10 days after (packages with volunteer tracking keep a count of each adult's shifts until 2 years after their last event), fair partners' contact details 15 months after, and visiting directors' personal details 2 years after.",
   "Information families and volunteers give is your school's or organization's. We store it for you, and copies your staff print or download are your records.",
   "No ads, no spam, and emails used only for your event.",
 ];
@@ -262,7 +262,7 @@ export default function AdministratorsPage() {
             <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
             <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{CTA}</h2>
             <p className="mt-3 leading-7 text-muted">
-              It&apos;s free until the pilot ends {PILOT_END_LABEL}. Tick the kinds of events your campus runs.{" "}
+              It&apos;s free through {PILOT_END_LABEL}, when the pilot ends. Tick the kinds of events your campus runs.{" "}
               <Link href="/#pilot" className="text-brand underline">
                 See the pilot details
               </Link>
@@ -277,7 +277,7 @@ export default function AdministratorsPage() {
         <section className="bg-teal-deep text-white">
           <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-20">
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">Every detail organized. Every organizer supported.</h2>
-            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free until {PILOT_END_LABEL}. Spots are limited.</p>
+            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free through {PILOT_END_LABEL}. Spots are limited.</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <JumpLink href="#join" className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
                 {CTA}
