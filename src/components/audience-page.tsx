@@ -38,7 +38,7 @@ export function audienceMetadata(a: Audience): Metadata {
   };
 }
 
-/** One kind of school event, for the people who run it, with its own FAQ and the pilot form. */
+/** One kind of event, for the people who run it, with its own FAQ and the pilot form. */
 export function AudiencePage({ audience: a }: { audience: Audience }) {
   const url = `${SITE_URL}${a.path}`;
   const jsonLd = {
@@ -91,7 +91,7 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
               <LineIcon name={a.icon} className="size-4" />
               {a.eyebrow}
             </p>
-            <h1 className="mt-6 max-w-3xl text-4xl font-medium leading-[0.96] sm:text-6xl">{a.headline}</h1>
+            <h1 className="mt-6 max-w-3xl text-4xl font-medium leading-[0.96] text-balance sm:text-6xl">{a.headline}</h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-on-dark-mute">{a.intro}</p>
             <div className="mt-8 flex flex-wrap gap-3">
               <JumpLink href="#join" className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
@@ -143,7 +143,7 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
 
         <section className="border-t border-border">
           <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-            <h2 className="text-xl font-semibold">One account for every school event</h2>
+            <h2 className="text-xl font-semibold">One account for every event</h2>
             <p className="mt-2 max-w-2xl leading-7 text-muted">
               The same {brand.name} account runs every kind of event, all year.
             </p>

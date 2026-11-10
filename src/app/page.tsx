@@ -27,6 +27,18 @@ const CONTACT = `mailto:${brand.supportEmail}`;
 // The kinds of event (src/lib/event-types.ts), as the page's main pitch.
 const kinds = [
   {
+    icon: audiences.signups.icon,
+    title: "Sign-up sheets",
+    summary: "Potlucks, class parties, and anything with spots to fill",
+    href: audiences.signups.path,
+    examples: "Potlucks, class parties, group outings, and anything with spots to fill",
+    points: [
+      "One link for shifts and things to bring",
+      "Nobody signing up is asked to make an account or shown ads",
+      "Sign up with up to four others at once",
+    ],
+  },
+  {
     icon: CONFERENCES_PAGE.icon,
     title: "Parent-teacher conferences",
     summary: "Fall and spring conferences, in person or on video",
@@ -194,7 +206,11 @@ const faqs = [
   },
   {
     q: "Who is it for?",
-    a: "PTO and PTA leaders, band and choir booster clubs, fine arts directors, band and choir directors, teachers, school front offices, and administrators: anyone running a school event with volunteers, registrations, or check-in.",
+    a: "Anyone running an event with sign-ups, registration, or check-in: PTO and PTA leaders, booster clubs, band and choir directors, teachers and school offices, congregations, clubs, nonprofits, and community groups.",
+  },
+  {
+    q: "Can churches, clubs, and community groups use it?",
+    a: "Yes. Any group can run sign-up sheets, volunteer events, and meetings. Organizers sign in to run their events. Volunteers, families, and guests join from the organizer's link and are never asked to make an account or shown ads.",
   },
 ];
 
@@ -252,11 +268,11 @@ const jsonLd = {
       applicationCategory: "BusinessApplication",
       operatingSystem: "Web",
       description:
-        "Event organizing for schools: band contests, choir and group festivals, school fairs and fundraisers, volunteer events, school visitor days, and parent-teacher conferences, with registration, volunteer sign-ups, and check-in on any phone.",
+        "Event organizing for schools, clubs, congregations, and community groups: sign-up sheets, volunteer events, band contests, choir and group festivals, school fairs and fundraisers, school visitor days, meetings, and parent-teacher conferences, with registration, sign-ups, and check-in on any phone.",
       audience: {
         "@type": "Audience",
         audienceType:
-          "PTO and PTA leaders, band and choir booster clubs, fine arts directors, band and choir directors, teachers, school front offices, and administrators",
+          "PTO and PTA leaders, booster clubs, band and choir directors, teachers, school offices, administrators, congregations, clubs, nonprofits, and community groups",
       },
       offers: {
         "@type": "Offer",
@@ -320,9 +336,9 @@ export default async function Home() {
         <section className={`hero-sky text-white ${banners.length ? "mt-4" : ""}`}>
           <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 pb-20 pt-16 sm:px-6 sm:pb-24 sm:pt-20 lg:grid-cols-[1fr_auto]">
             <div>
-              <h1 className="max-w-3xl text-4xl font-medium leading-[0.96] sm:text-6xl">School events without the clipboards</h1>
+              <h1 className="max-w-3xl text-4xl font-medium leading-[0.96] sm:text-6xl">Events without the clipboards</h1>
               <p className="mt-6 max-w-2xl text-lg leading-8 text-balance text-on-dark-mute">
-                Contests, school events, and simple <span className="whitespace-nowrap">sign-ups</span> for a whole family or group <span className="whitespace-nowrap">at once</span>
+                Volunteer and meeting sign-ups, contest registration, and community events, on free links anyone <span className="whitespace-nowrap">can open</span>
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <JumpLink href={JOIN} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
@@ -359,7 +375,7 @@ export default async function Home() {
               Choose your kind of event, and {brand.name} gives you the tools it needs.
             </p>
             {/* Wide screens: compact tiles, all at once. The details are on each event's own page. */}
-            <ul className="mt-8 hidden gap-4 lg:grid lg:grid-cols-4">
+            <ul className="mt-8 hidden gap-4 lg:grid lg:grid-cols-3">
               {kinds.map((k) => (
                 <li key={k.title}>
                   <Link
@@ -378,7 +394,7 @@ export default async function Home() {
             </ul>
             {/* Phones and tablets: the swipeable row with each event's highlights. */}
             <div className="lg:hidden">
-            <CardCarousel label="Kinds of school event" itemName="event types">
+            <CardCarousel label="Kinds of event" itemName="event types">
               {kinds.map((k) => (
                 <li key={k.title} className={`${carouselCard} flex flex-col rounded-lg border border-border bg-background p-6 sm:p-8`}>
                   <IconTile name={k.icon} />
@@ -407,7 +423,7 @@ export default async function Home() {
 
         {/* 3. Why it's different */}
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-          <h2 className={sectionTitle}>Built for the people running school events</h2>
+          <h2 className={sectionTitle}>Built for the people running events</h2>
           <dl className="mt-10 grid gap-8 sm:grid-cols-3">
             {different.map((d) => (
               <div key={d.title}>
@@ -460,7 +476,7 @@ export default async function Home() {
 
         <section id="faq" className="scroll-mt-20 border-t border-border">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-            <h2 className={sectionTitle}>Questions schools ask</h2>
+            <h2 className={sectionTitle}>Questions organizers ask</h2>
             <FaqList faqs={faqs} />
           </div>
         </section>
@@ -471,7 +487,7 @@ export default async function Home() {
             <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
             <h2 className={`mt-4 ${sectionTitle}`}>Join the pilot</h2>
             <p className="mt-3 max-w-2xl leading-7 text-muted">
-              We&apos;re working closely with a small group of schools, PTOs, and booster clubs. Your pilot is free until
+              We&apos;re working closely with a small group of organizers, from schools and booster clubs to community groups. Your pilot is free until
               the pilot ends {PILOT_END_LABEL}, and we keep the group small so we can support every organizer.
             </p>
             <div className="mt-10 grid gap-6 md:grid-cols-3">
