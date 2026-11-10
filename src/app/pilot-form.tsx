@@ -124,7 +124,7 @@ function Fields({
             required
             maxLength={200}
             autoComplete="organization"
-            placeholder="e.g. Oak Elementary PTA or Grace Church choir"
+            placeholder="Like Oak Elementary PTA or Grace Church"
             {...describe("organization")}
           />
         </Field>

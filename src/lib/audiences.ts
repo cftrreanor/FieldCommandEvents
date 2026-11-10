@@ -528,7 +528,7 @@ export const audiences = {
     steps: [
       {
         title: "Set up sign-ups and shifts",
-        body: "Add shifts, or things to bring with how many of each you need.",
+        body: "Add shifts or things to bring, and how many of each you need.",
         screen: "/screens/potluck-setup.webp",
         alt: "Setting up a potluck's things to bring: main dishes, sides and salads, desserts, and drinks, with how many of each are needed.",
       },

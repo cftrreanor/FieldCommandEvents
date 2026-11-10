@@ -407,8 +407,8 @@ export default async function Home() {
             <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
             <h2 className={`mt-4 ${sectionTitle}`}>Join the pilot</h2>
             <p className="mt-3 max-w-2xl leading-7 text-muted">
-              We&apos;re working closely with a small group of organizers, from schools and booster clubs to community groups. It&apos;s free through
-              {PILOT_END_LABEL}, when the pilot ends, and we keep the group small so we can support every organizer.
+              We&apos;re working closely with a small group of organizers, from schools and booster clubs to community groups. It&apos;s free through {PILOT_END_LABEL},
+              when the pilot ends. We keep the group small so we can support every organizer.
             </p>
             <div className="mt-10 grid gap-6 md:grid-cols-3">
               {pilot.map((col) => (
@@ -442,7 +442,7 @@ export default async function Home() {
         <section className="bg-teal-deep text-white">
           <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-24">
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">{TAGLINE}</h2>
-            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free through {PILOT_END_LABEL}. Spots are limited.</p>
+            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free for organizers through {PILOT_END_LABEL}. Spots are limited.</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <JumpLink href={JOIN} className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
                 {CTA}
