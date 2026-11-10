@@ -90,7 +90,7 @@ nonprofits, and community groups. Keep "school" where the page is about schools.
 
 1. **Hero**
    - Headline: *Events without the clipboards* (owner, 2026-11-10, issue #238)
-   - Supporting line: *Volunteer and meeting sign-ups, contest registration, and community events, on free links anyone can open*
+   - Supporting line: *Volunteer and meeting sign-ups, contest registration, and community events, on public links, with no account needed to sign up* (owner, 2026-11-10)
    - Primary button: *Join the pilot*
 
 2. **Router: "What are you organizing?"** (a card for each kind of event, each linking to its page, with

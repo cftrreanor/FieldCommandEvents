@@ -316,7 +316,7 @@ export default async function Home() {
             <div>
               <h1 className="max-w-3xl text-4xl font-medium leading-[0.96] sm:text-6xl">Events without the clipboards</h1>
               <p className="mt-6 max-w-2xl text-lg leading-8 text-balance text-on-dark-mute">
-                Volunteer and meeting sign-ups, contest registration, and community events, on public links, with no account needed <span className="whitespace-nowrap">to sign up</span>
+                Volunteer and meeting <span className="whitespace-nowrap">sign-ups</span>, contest registration, and community events, on public links, with no account needed <span className="whitespace-nowrap">to sign up</span>
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <JumpLink href={JOIN} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
