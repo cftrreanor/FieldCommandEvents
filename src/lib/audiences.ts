@@ -1,6 +1,7 @@
 import type { HowStep } from "@/components/how-it-works";
 import { brand } from "@/lib/brand";
 import { PILOT_END_LABEL } from "@/lib/pilot";
+import { MAX_OTHERS } from "@/lib/group-signup";
 import type { IconName } from "./icons";
 
 /**
@@ -451,7 +452,7 @@ export const audiences = {
     eyebrow: "For volunteer shifts, potlucks, and anything with spots to fill",
     headline: "Sign-up sheets and volunteer shifts without the ads",
     intro:
-      "You set it up from your organizer account. Volunteers, families, and guests sign up from your link, with up to four others at once, and are never asked to make an account or shown ads.",
+      `You set it up from your organizer account. Volunteers, families, and guests sign up from your link, as many as ${MAX_OTHERS + 1} at once, with no ads.`,
     replaces: [
       "Sign-up sites covered in ads",
       "Making everyone who signs up create an account",
@@ -474,7 +475,7 @@ export const audiences = {
         title: "Sign-ups and reminders, without accounts",
         body: "Share one link or QR code. Volunteers pick one shift or several on their phone and see how many spots are left, with no account to make and nothing to download.",
         points: [
-          "Sign up with up to four others, and volunteers under 18 use a guardian's contact details",
+          `Sign up with up to ${MAX_OTHERS} others, and volunteers under 18 use a guardian's contact details`,
           "A confirmation with a calendar invite, an update if their shift changes, and a reminder the day before with their sign-up, time, where to report, and their lead's name and phone",
           "A private link lets each volunteer see their shifts, sign up for more, or cancel",
         ],
@@ -541,10 +542,12 @@ export const audiences = {
       },
     ],
     privacy: [
-      "Volunteers never make an account, and their phone numbers are deleted 10 days after the event.",
+      "Volunteers never make an account.",
+      "Your event team sees volunteers' names, emails, and phone numbers. Coordinators see them only on event day.",
+      "Other people signing up see only the first name of anyone bringing something, and what they're bringing.",
       "Volunteers under 18 are stored by first name and last initial, with a guardian's contact details.",
-      "Coordinators see their volunteers' contact details only on event day.",
-      "No ads, no spam, and emails used only for your event",
+      "Volunteers' details are deleted 10 days after the event. With the volunteer tracking add-on, adults' names, emails, and shift counts are kept for 2 years so you can invite them back.",
+      "There are no ads or spam, and emails go out only for your event.",
     ],
     faqs: [
       {
@@ -573,7 +576,7 @@ export const audiences = {
       },
       {
         q: "Can people sign up together?",
-        a: "Yes. One person can sign up with up to four others, who take the same shifts or pick their own. Volunteers under 18 use a guardian's contact details, and sign-ups can be marked adults only.",
+        a: `Yes. One person can sign up with up to ${MAX_OTHERS} others, who take the same shifts or pick their own. Volunteers under 18 use a guardian's contact details, and sign-ups can be marked adults only.`,
       },
       {
         q: "Can we use it for volunteers at other kinds of events too?",
@@ -586,8 +589,8 @@ export const audiences = {
     path: "/parent-check-in",
     eventType: "school_visit",
     icon: "school",
-    name: "Parent & visitor check-in",
-    metaTitle: "Parent & Visitor Check-in for School Events",
+    name: "Visitor registration and check-in",
+    metaTitle: "Visitor Registration & Check-in for School Events",
     metaDescription:
       "Parent registration and visitor check-in for family lunches, open houses, performances, and award days. Parents register each child, teacher, and grade, get a photo ID reminder, and are checked in at the door on any device.",
     eyebrow: "For school front offices and administrators",

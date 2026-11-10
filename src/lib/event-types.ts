@@ -22,7 +22,7 @@ export const EVENT_TYPES = [
   },
   {
     value: "school_visit",
-    label: "Family visitor day",
+    label: "Visitor registration and check-in",
     icon: "school",
     blurb: "Parents register ahead (child, teacher, and grade), are reminded to bring a photo ID, and are checked in at the door. Student details are deleted 30 days after the visit.",
   },

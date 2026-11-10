@@ -22,7 +22,7 @@ export default function Image() {
         }}
       >
         <div style={{ fontSize: 34, fontWeight: 700, letterSpacing: 2, textTransform: "uppercase", opacity: 0.85 }}>{brand.name}</div>
-        <div style={{ marginTop: 28, fontSize: 76, fontWeight: 600, lineHeight: 1.05 }}>Events, without the clipboards.</div>
+        <div style={{ marginTop: 28, fontSize: 76, fontWeight: 600, lineHeight: 1.05 }}>Events without the clipboards</div>
         <div style={{ marginTop: 32, fontSize: 27, opacity: 0.8 }}>
           Sign-up sheets · contests · festivals · volunteers · check-in
         </div>

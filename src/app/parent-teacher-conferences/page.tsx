@@ -252,7 +252,7 @@ export default async function ConferencesPage() {
 
         <section id="faq" className="scroll-mt-20 border-t border-border">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-5xl">Common questions</h2>
+            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">Common questions</h2>
             <FaqList faqs={faqs(offer.faq)} />
           </div>
         </section>
@@ -262,7 +262,7 @@ export default async function ConferencesPage() {
             <h2 className="text-2xl font-semibold">What&apos;s free</h2>
             <p className="mt-3 leading-7 text-muted">
               {offer.whatsFree} Planning a band contest,
-              school fair, volunteer event, or family visitor day too? Pick those on the form, and we&apos;ll set up {brand.name} for your school.
+              school fair, volunteer sign-ups, or visitor registration and check-in too? Pick those on the form, and we&apos;ll set up {brand.name} for your school.
             </p>
           </div>
         </section>
@@ -270,7 +270,7 @@ export default async function ConferencesPage() {
         <section id="join" tabIndex={-1} className="scroll-mt-20 border-t border-border bg-surface outline-none">
           <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
             <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Free during the pilot</p>
-            <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-5xl">Join the pilot</h2>
+            <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">Join the pilot</h2>
             <p className="mt-3 leading-7 text-muted">
               Tell us about your school, and we&apos;ll set up your account and email you when it&apos;s ready. The pilot ends {PILOT_END_LABEL}.
             </p>

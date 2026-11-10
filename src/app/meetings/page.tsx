@@ -10,7 +10,7 @@ import { PilotForm } from "@/app/pilot-form";
 import { requestPilot } from "@/app/pilot-actions";
 import { MEETINGS_PAGE, type Audience } from "@/lib/audiences";
 import { brand } from "@/lib/brand";
-import { PILOT_END_LABEL } from "@/lib/pilot";
+import { PILOT_NOTE } from "@/lib/pilot";
 import { LineIcon } from "@/components/line-icon";
 
 // Copy follows docs/brand-voice.md.
@@ -158,7 +158,7 @@ export default function MeetingsPage() {
                 Join the pilot
               </JumpLink>
             </div>
-            <p className="mt-4 text-sm text-on-dark-mute">Your pilot is free, and the pilot ends {PILOT_END_LABEL}. No credit card.</p>
+            <p className="mt-4 text-sm text-on-dark-mute">{PILOT_NOTE} No credit card.</p>
           </div>
         </section>
 
@@ -183,7 +183,7 @@ export default function MeetingsPage() {
 
         <section id="faq" className="scroll-mt-20 border-t border-border">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-5xl">Common questions</h2>
+            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">Common questions</h2>
             <FaqList faqs={faqs} />
           </div>
         </section>
@@ -191,7 +191,7 @@ export default function MeetingsPage() {
         <section id="join" tabIndex={-1} className="scroll-mt-20 border-t border-border bg-surface outline-none">
           <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
             <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Free during the pilot</p>
-            <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-5xl">Join the pilot</h2>
+            <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">Join the pilot</h2>
             <p className="mt-3 leading-7 text-muted">
               Tell us about your school or group, and we&apos;ll set up your account and email you when it&apos;s ready. Planning other
               events too? Pick them on the form, and they&apos;re part of the same account with {brand.name}.

@@ -6,8 +6,11 @@ import type { IconName } from "./icons";
 export const PILOT_END = "2027-01-01";
 export const PILOT_END_LABEL = "January 1, 2027";
 
+/** Under the first "Join the pilot" button on the website: what joining means, said gently (owner, 2026-11-10). */
+export const PILOT_NOTE = `Free for organizers through ${PILOT_END_LABEL}. A person on our team replies within a day to help you get set up.`;
+
 // The order of the event-type cards on the home page, so the form matches them; conferences and meetings last.
-const HOME_ORDER = ["band_contest", "group_event", "fair", "volunteer", "school_visit", "conference", "meeting"];
+const HOME_ORDER = ["volunteer", "band_contest", "group_event", "fair", "school_visit", "conference", "meeting"];
 
 /** The event types a pilot request can ask about (every kind, plus "something else"). */
 export const PILOT_EVENT_TYPES: { value: string; label: string; icon: IconName }[] = [

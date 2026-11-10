@@ -11,7 +11,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { AUDIENCES, CONFERENCES_PAGE, MEETINGS_PAGE, type Audience } from "@/lib/audiences";
 import { brand } from "@/lib/brand";
 import { SITE_URL } from "@/lib/site-url";
-import { PILOT_END_LABEL } from "@/lib/pilot";
+import { PILOT_END_LABEL, PILOT_NOTE } from "@/lib/pilot";
 import { SUPPORT_POINTS } from "@/lib/support";
 import { LineIcon } from "@/components/line-icon";
 
@@ -97,10 +97,11 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
               <JumpLink href="#join" className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
                 {CTA}
               </JumpLink>
-              <JumpLink href="#how" className="rounded-md px-5 py-3 font-medium text-white ring-1 ring-white/30 hover:bg-white/10">
+              <JumpLink href="#how" className="rounded-full px-5 py-3 font-medium text-white ring-1 ring-white/50 hover:bg-white/10">
                 See how it works
               </JumpLink>
             </div>
+            <p className="mt-4 text-sm text-on-dark-mute">{PILOT_NOTE}</p>
           </div>
         </section>
 
@@ -136,7 +137,7 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
 
         <section id="faq" tabIndex={-1} className="scroll-mt-20 border-t border-border outline-none">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-5xl">Common questions</h2>
+            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">Common questions</h2>
             <FaqList faqs={a.faqs} />
           </div>
         </section>
@@ -166,10 +167,10 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
         <section id="join" tabIndex={-1} className="scroll-mt-20 border-t border-border bg-surface outline-none">
           <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
             <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
-            <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-5xl">{CTA}</h2>
+            <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{CTA}</h2>
             <p className="mt-3 leading-7 text-muted">
-              Your pilot is free, and the pilot ends {PILOT_END_LABEL}. Volunteers, families, and visiting groups
-              never pay a platform fee.{" "}
+              It&apos;s free for organizers until the pilot ends {PILOT_END_LABEL}, and we&apos;ll talk with you before
+              anything changes. Volunteers, families, and visiting groups never pay.{" "}
               <Link href="/#pilot" className="text-brand underline">
                 See the pilot details
               </Link>
@@ -186,12 +187,12 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">Every detail organized. Every organizer supported.</h2>
             <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free until {PILOT_END_LABEL}. Spots are limited.</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <JumpLink href="#join" className="inline-flex rounded-md bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
+              <JumpLink href="#join" className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
                 {CTA}
               </JumpLink>
               <a
                 href={`mailto:${brand.supportEmail}`}
-                className="inline-flex rounded-md px-6 py-3 font-semibold text-white ring-1 ring-white/40 hover:bg-white/10"
+                className="inline-flex rounded-full px-6 py-3 font-semibold text-white ring-1 ring-white/60 hover:bg-white/10"
               >
                 Talk with us
               </a>
@@ -212,9 +213,10 @@ export function FeatureSections({ sections }: { sections: Audience["sections"] }
       {sections.map((s) => (
         <section
           key={s.title}
-          className={`grid gap-4 py-12 md:gap-10 ${s.screen ? "md:grid-cols-[2fr_3fr_auto]" : "md:grid-cols-[2fr_3fr]"}`}
+          // One grid for every section, picture or not, so the words always start in the same place.
+          className="grid gap-4 py-12 md:grid-cols-[2fr_3fr_240px] md:gap-10"
         >
-          <h2 className="text-2xl font-medium leading-tight tracking-tight sm:text-3xl">{s.title}</h2>
+          <h2 className="text-2xl font-medium leading-tight tracking-tight">{s.title}</h2>
           <div>
             <p className="leading-7">{s.body}</p>
             {s.points.length > 0 && (

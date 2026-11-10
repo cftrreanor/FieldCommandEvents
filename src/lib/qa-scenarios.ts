@@ -84,7 +84,7 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     id: "visit",
-    label: "Family visitor day",
+    label: "Visitor registration and check-in",
     hint: "In 5 days. Families register and check in at the door.",
     type: "school_visit",
     name: "Thanksgiving Lunch with Families",

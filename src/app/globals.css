@@ -401,12 +401,52 @@ html:has(.sticky[class*="bottom-[var(--day-bar"]) {
   background: var(--surface);
 }
 /* Dark mode: the browser's own checkboxes and radio buttons draw a gray filled box with a faint edge, so
-   empty ones read as half-checked. Give them the light look (an empty white box with a clear edge, brand
-   color when checked), which stands out on the dark cards (light check, 2026-11-08). */
+   empty ones read as half-checked (light check, 2026-11-08), and white ones glare (panel, 2026-11-10).
+   Draw our own: empty is see-through with a clear light edge; checked is filled in the brand color. */
 @media (prefers-color-scheme: dark) {
   input[type="checkbox"]:not(.team-radio),
   input[type="radio"]:not(.team-radio) {
-    color-scheme: light;
+    appearance: none;
+    display: inline-grid;
+    place-content: center;
+    flex-shrink: 0;
+    min-width: 1rem;
+    min-height: 1rem;
+    margin: 0.15em 0 0;
+    border: 2px solid color-mix(in srgb, var(--foreground) 72%, transparent);
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type="checkbox"]:not(.team-radio) {
+    border-radius: 0.25rem;
+  }
+  input[type="radio"]:not(.team-radio) {
+    border-radius: 9999px;
+  }
+  input[type="checkbox"]:not(.team-radio):checked,
+  input[type="radio"]:not(.team-radio):checked {
+    border-color: var(--brand);
+    background: var(--brand);
+  }
+  input[type="checkbox"]:not(.team-radio):checked::before {
+    content: "";
+    width: 0.55rem;
+    height: 0.3rem;
+    border-left: 2px solid var(--brand-foreground);
+    border-bottom: 2px solid var(--brand-foreground);
+    transform: translateY(-1px) rotate(-45deg);
+  }
+  input[type="radio"]:not(.team-radio):checked::before {
+    content: "";
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 9999px;
+    background: var(--brand-foreground);
+  }
+  input[type="checkbox"]:not(.team-radio):disabled,
+  input[type="radio"]:not(.team-radio):disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 }
 

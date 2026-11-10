@@ -50,7 +50,7 @@ const collected = [
   },
   { event: "School fairs", students: "None", adults: "Booth partners' contact name, email address, and phone number" },
   {
-    event: "Family visitor days",
+    event: "Visitor registration and check-in",
     students: "Each child's name, teacher, and grade",
     adults: "Parent's name, email address, and optional phone number, other adults' names, and door check-in times",
   },
@@ -63,11 +63,11 @@ const collected = [
 ];
 
 const deleted = [
-  { what: "Children's details from family visitor days", when: "30 days after the event" },
+  { what: "Children's details from visitor registration and check-in", when: "30 days after the event" },
   { what: "Parent-teacher conference bookings", when: "30 days after the conference, or for weekly hours, 30 days after each meeting" },
-  { what: "Volunteers' phone numbers and check-in times, and volunteers under 18", when: "10 days after the event" },
+  { what: "Volunteers' details, phone numbers, and check-in times, and volunteers under 18", when: "10 days after the event" },
   {
-    what: "Adult volunteers' names, email addresses, and how many shifts they signed up for and checked in to (the organizer's volunteer history)",
+    what: "Only for organizers with the volunteer tracking add-on: adult volunteers' names, email addresses, and how many shifts they signed up for and checked in to (the organizer's volunteer history)",
     when: "2 years after their last event, or right away when the organizer removes them",
   },
   { what: "Files shared with an event", when: "30 days after the event" },
@@ -105,7 +105,7 @@ export default function StudentDataPrivacyPage() {
         <p className="text-sm font-medium text-muted">{STUDENT_PRIVACY_PAGE.name}</p>
         <h1 className="mt-2 text-4xl font-medium leading-tight tracking-tight sm:text-5xl">Only what each event needs</h1>
         <p className="mt-4 max-w-2xl text-lg leading-8 text-muted">
-          Most events collect no student information at all. Where an event needs it, it&apos;s limited to a name, and for family visitor days
+          Most events collect no student information at all. Where an event needs it, it&apos;s limited to a name, and for visitor registration and check-in
           the child&apos;s teacher and grade, and it&apos;s deleted 30 days after the event.
         </p>
         <p className="mt-3 text-sm text-muted">Last updated {UPDATED}</p>
