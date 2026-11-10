@@ -463,13 +463,17 @@ export const audiences = {
     sections: [
       {
         title: "Shifts and things to bring that fill evenly",
-        body: "Set up each sign-up, its shifts, and how many people each shift needs. Sign-ups stop when a shift is full, so you never end up with ten people at one table and nobody at the next.",
+        body: "Set how many people each shift needs, or how many of each thing to bring. Sign-ups stop when a spot is covered, so you never end up with ten desserts and no main dish.",
         points: [
+          "Make any sign-up a list of things to bring, like sides, desserts, and drinks for a potluck, and everyone sees what's still needed",
           "Build a day of equal shifts in one step, or add each shift by hand",
           "Add where volunteers should report, any instructions, and who's leading each sign-up",
           "Mark sign-ups as adults only, and open or close sign-ups whenever you're ready",
-          "Make any sign-up a list of things to bring, like sides, desserts, and drinks for a potluck, with how many of each you need",
         ],
+        screen: {
+          src: "/screens/potluck-items.webp",
+          alt: "Things to bring on a phone: main dishes, sides and salads, desserts, and drinks, each with how many are still needed and who's coming with what.",
+        },
       },
       {
         title: "Sign-ups and reminders, without accounts",
@@ -480,8 +484,8 @@ export const audiences = {
           "A private link lets each volunteer see their shifts, sign up for more, or cancel",
         ],
         screen: {
-          src: "/screens/volunteer-shift-picker.webp",
-          alt: "The volunteer sign-up page on a phone in the organizer's colors: sign-ups with their shifts and how many spots are left.",
+          src: "/screens/potluck-shifts.webp",
+          alt: "A sign-up page on a phone: setup and cleanup shifts at a fall potluck, with how many spots are left on each.",
         },
       },
       {
@@ -524,15 +528,15 @@ export const audiences = {
     steps: [
       {
         title: "Set up sign-ups and shifts",
-        body: "Add sign-ups with their leads, then fill the day with shifts.",
-        screen: "/screens/set-up-shifts-blue.webp",
-        alt: "Setting up a sign-up with its morning and late-morning volunteer shifts.",
+        body: "Add shifts, or things to bring with how many of each you need.",
+        screen: "/screens/potluck-setup.webp",
+        alt: "Setting up a potluck's things to bring: main dishes, sides and salads, desserts, and drinks, with how many of each are needed.",
       },
       {
         title: "Share a link or QR code",
         body: "Volunteers pick their own shifts and get a confirmation, calendar invite, and reminder.",
-        screen: "/screens/volunteer-signup-blue.webp",
-        alt: "A volunteer picking a shift on the event's sign-up page.",
+        screen: "/screens/potluck-signup.webp",
+        alt: "The Fall Potluck sign-up page on a phone: the date, the place, and the first things to bring.",
       },
       {
         title: "Check volunteers in",
