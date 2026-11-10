@@ -51,7 +51,8 @@ export default async function AccountsPage({ searchParams }: PageProps<"/admin/a
   // Bookings are only shown (and counted) in the Teachers view.
   const bookings: Record<string, number> = teachers ? await bookingsByAccount(rows) : {};
   const sorted = sortBy(rows, sort, dir, {
-    name: (a) => a.name.toLowerCase(),
+    // The person first, like the Pipeline (issue #337): sort by the host's name, else the organization's.
+    name: (a) => (a.owner?.full_name || a.name).toLowerCase(),
     plan: (a) => planLabel(a.subscription_status),
     package: (a) => (a.package ? PACKAGES.findIndex((p) => p.value === a.package) : null),
     health: (a) => HEALTH_ORDER[a.health.level],
@@ -139,7 +140,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/admin/a
         <Table>
           <thead>
             <tr>
-              <SortTh label="Account" name="name" {...th} />
+              <SortTh label="Host and account" name="name" {...th} />
               <SortTh label="Health" name="health" {...th} />
               <SortTh label="Package" name="package" {...th} />
               <SortTh label="Plan" name="plan" {...th} />
@@ -153,8 +154,9 @@ export default async function AccountsPage({ searchParams }: PageProps<"/admin/a
               return (
                 <Tr key={a.id}>
                   <Td>
-                    <RecordLink href={`/admin/accounts/${a.id}`}>{a.name}</RecordLink>
+                    <RecordLink href={`/admin/accounts/${a.id}`}>{a.owner?.full_name || a.name}</RecordLink>
                     <KindTags account={a} />
+                    {a.owner?.full_name && a.name !== a.owner.full_name && <p className="text-sm">{a.name}</p>}
                     <p className="text-xs text-muted">
                       {a.owner ? a.owner.email : "No owner"}
                       {a.organization_members.length > 1 ? ` +${a.organization_members.length - 1}` : ""}
