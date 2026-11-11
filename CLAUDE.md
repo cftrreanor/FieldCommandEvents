@@ -12,6 +12,8 @@
   comma, no periods on incomplete headlines/buttons/bullets/labels, "organizer" for the role, claims guardrails). In-app permission levels stay "Host"/"Co-host"/"Account Host".
 - Number-only fields use `NumberInput` (src/components/number-input.tsx): a type-in box that
   accepts digits only. Never use `<input type="number">` (no up/down arrows).
+- Date and time fields use `DateField` and `TimeField` (src/components/date-field.tsx, time-field.tsx), never
+  `<input type="date">`, `"time"`, or `"datetime-local"`. End times pass their start as `after`.
 - Designs go through the design-review skill (.claude/skills/design-review): mock-ups before
   building, screenshots before a PR goes out. Severity 3–4 findings block until the owner decides,
   and decisions are logged in docs/design-decisions/.

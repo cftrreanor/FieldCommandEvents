@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ActionForm } from "@/components/action-form";
 import { SubmitButton } from "@/components/submit-button";
-import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import { Button, Field, Select, Textarea } from "@/components/ui";
 import type { ActionState } from "@/lib/action-state";
+import { DateField } from "@/components/date-field";
+import { TimeField } from "@/components/time-field";
 
 type Action = (prev: ActionState, formData: FormData) => Promise<ActionState>;
 
@@ -159,11 +161,11 @@ export function RescheduleButton({
                     <input type="hidden" name="date" value={days.min} />
                   ) : (
                     <Field label="Day">
-                      <Input type="date" name="date" required min={days.min} max={days.max} />
+                      <DateField name="date" required min={days.min} max={days.max} />
                     </Field>
                   )}
                   <Field label={`Start time (${days.zone})`}>
-                    <Input type="time" name="time" required step={300} />
+                    <TimeField name="time" required step={5} />
                   </Field>
                 </div>
                 <p className="text-xs text-muted">Any time {oneDay ? "that day" : "on the event's days"}, even outside your open hours. It can&apos;t overlap another meeting.</p>

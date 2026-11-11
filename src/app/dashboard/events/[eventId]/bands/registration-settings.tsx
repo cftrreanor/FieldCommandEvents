@@ -16,6 +16,7 @@ import { Input, Textarea } from "@/components/ui";
 import { ChipAdder } from "@/components/chip-adder";
 import { normalizePhone } from "@/lib/phone";
 import { formatDate } from "@/lib/time";
+import { DateField } from "@/components/date-field";
 
 /** How long after the last keystroke a field saves itself. */
 const SAVE_AFTER_MS = 900;
@@ -477,14 +478,14 @@ export function RegistrationSettings({
           }
           saver={opensOn}
         >
-          <Input
-            type="date"
+          <DateField
             value={opensOn.value}
             disabled={alreadyOpen}
             min={initial.opensOn && initial.opensOn < today ? initial.opensOn : today}
             max={deadline.value || contest.lastDeadline}
             onChange={(e) => opensOn.change(e.target.value)}
-            {...withClass(marked("reg-opens", opensOn), "max-w-xs")}
+            {...marked("reg-opens", opensOn)}
+            className="max-w-xs"
           />
         </AutoField>
 
@@ -495,13 +496,13 @@ export function RegistrationSettings({
           hint={`Pick a date at least two weeks before contest day (${contest.label}). Directors get their times two weeks before contest day, so they can book buses. Registration closes at 11:59 PM that day, your time.`}
           saver={deadline}
         >
-          <Input
-            type="date"
+          <DateField
             value={deadline.value}
             min={initial.deadline && initial.deadline < today ? initial.deadline : today}
             max={contest.lastDeadline}
             onChange={(e) => deadline.change(e.target.value)}
-            {...withClass(marked("reg-deadline", deadline), "max-w-xs")}
+            {...marked("reg-deadline", deadline)}
+            className="max-w-xs"
           />
         </AutoField>
 

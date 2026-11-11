@@ -12,6 +12,8 @@ import { US_TIMEZONES } from "@/lib/time";
 import { hasConferences, isMeeting } from "@/lib/event-types";
 import { SetupFooter } from "./setup-steps";
 import { LineIcon } from "@/components/line-icon";
+import { DateField } from "@/components/date-field";
+import { TimeField } from "@/components/time-field";
 
 export type EventFormValues = {
   name?: string;
@@ -269,14 +271,14 @@ function EventDates({
   const [end, setEnd] = useState(endsOn ?? startsOn ?? "");
   // Picked by hand (or saved that way): stays put when the first day changes, unless that passes it.
   const [endPicked, setEndPicked] = useState(multi);
+  const [startT, setStartT] = useState(startTime ?? "07:00");
   return (
     <>
       {/* The checkbox sits right under the date, level with the end date's hint. */}
       <div className="flex flex-col gap-1.5">
         <Field label={multi ? "Start date" : "Date"} hint={hint}>
-          <Input
+          <DateField
             name="startsOn"
-            type="date"
             required
             autoFocus={focus}
             value={start}
@@ -304,9 +306,8 @@ function EventDates({
       </div>
       {multi ? (
         <Field label="End date" hint="Starts as the start date. Pick the last day.">
-          <Input
+          <DateField
             name="endsOn"
-            type="date"
             required
             min={start || undefined}
             value={end}
@@ -323,10 +324,10 @@ function EventDates({
       )}
       {/* Always on a row of their own, under the dates. */}
       <Field label={multi ? "Start time (first day)" : "Start time"} className="sm:col-start-1">
-        <Input name="startTime" type="time" defaultValue={startTime ?? "07:00"} required />
+        <TimeField name="startTime" value={startT} onChange={(e) => setStartT(e.target.value)} required />
       </Field>
       <Field label={multi ? "End time (last day)" : "End time"}>
-        <Input name="endTime" type="time" defaultValue={endTime ?? "22:00"} required />
+        <TimeField name="endTime" defaultValue={endTime ?? "22:00"} after={multi ? undefined : startT} required />
       </Field>
     </>
   );

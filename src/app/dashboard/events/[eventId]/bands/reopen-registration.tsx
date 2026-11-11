@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { ActionForm } from "@/components/action-form";
 import { SubmitButton } from "@/components/submit-button";
-import { Button, Field, Input } from "@/components/ui";
+import { Button, Field } from "@/components/ui";
 import type { ActionState } from "@/lib/action-state";
+import { DateField } from "@/components/date-field";
 
 /**
  * After the deadline passed: reopen registration with a new deadline (or
@@ -36,7 +37,7 @@ export function ReopenRegistration({
             hint={deadlineRequired ? "Registration closes at the end of this day." : "Leave blank for no deadline. Registration closes at the end of this day."}
             className="max-w-xs"
           >
-            <Input type="date" name="deadline" min={today} required={deadlineRequired} />
+            <DateField name="deadline" min={today} required={deadlineRequired} />
           </Field>
           <div className="flex flex-wrap gap-2">
             <SubmitButton variant="go" pendingText="Reopening…">

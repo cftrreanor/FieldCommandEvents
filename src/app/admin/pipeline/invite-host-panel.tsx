@@ -6,6 +6,7 @@ import { SubmitButton } from "@/components/submit-button";
 import { Field, Input, Select } from "@/components/ui";
 import type { ActionState } from "@/lib/action-state";
 import { INVITE_PACKAGES, INVITE_STATUSES } from "@/lib/invitation-plan";
+import { DateField } from "@/components/date-field";
 
 export type InviteDefaults = {
   email: string;
@@ -148,7 +149,7 @@ function InviteFields({
           </Select>
         </Field>
         <Field label="Pilot through" error={errors.freeUntil}>
-          <Input name="freeUntil" type="date" required defaultValue={defaults.freeUntil} />
+          <DateField name="freeUntil" required defaultValue={defaults.freeUntil} />
         </Field>
       </div>
       <Field label="Welcome email" hint="Make more on the Email templates page. Use {{login_url}} for their sign-in link.">

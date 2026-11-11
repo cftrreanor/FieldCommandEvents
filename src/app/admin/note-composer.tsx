@@ -3,6 +3,7 @@
 import { ActionForm } from "@/components/action-form";
 import { SubmitButton } from "@/components/submit-button";
 import type { ActionState } from "@/lib/action-state";
+import { DateField } from "@/components/date-field";
 
 /** Write a note; add a date to make it a follow-up. */
 export function NoteComposer({ action }: { action: (prev: ActionState, formData: FormData) => Promise<ActionState> }) {
@@ -20,11 +21,7 @@ export function NoteComposer({ action }: { action: (prev: ActionState, formData:
       <div className="flex flex-wrap items-center justify-between gap-2">
         <label className="flex items-center gap-2 text-sm text-muted">
           Follow up on
-          <input
-            type="date"
-            name="followUpOn"
-            className="h-8 rounded-sm border border-border bg-surface px-2 text-sm text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/25"
-          />
+          <DateField name="followUpOn" aria-label="Follow up on" className="w-52 text-foreground" />
         </label>
         <SubmitButton className="h-8 min-h-8! rounded-sm px-3">Save note</SubmitButton>
       </div>

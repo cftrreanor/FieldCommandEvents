@@ -5,6 +5,7 @@ import { ActionForm } from "@/components/action-form";
 import { SubmitButton } from "@/components/submit-button";
 import { Field, Input, Select } from "@/components/ui";
 import type { ActionState } from "@/lib/action-state";
+import { DateField } from "@/components/date-field";
 
 type Plan = { value: string; label: string; free: boolean };
 
@@ -38,7 +39,7 @@ export function PlanForm({
         </Field>
         {free && (
           <Field label="Free through" hint="The last day they can publish new events for free.">
-            <Input type="date" name="freeUntil" required defaultValue={freeUntil ?? defaultEnd} />
+            <DateField name="freeUntil" required defaultValue={freeUntil ?? defaultEnd} />
           </Field>
         )}
       </div>
