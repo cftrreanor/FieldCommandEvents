@@ -44,9 +44,18 @@ export type Plan = { starts: Record<string, string>; order: OrderItem[] };
 /** Groups of one day, in order. */
 export const onDay = (order: OrderItem[], day: string) => order.filter((o) => o.day === day);
 
+/**
+ * The festival's days, plus any day a group is still on that the festival no longer has (after its dates changed),
+ * so a step never drops that group quietly: saving names it instead.
+ */
+function allDays(order: OrderItem[], days: string[]) {
+  const extra = [...new Set(order.map((o) => o.day).filter((d) => !days.includes(d)))].sort();
+  return extra.length ? [...days, ...extra] : days;
+}
+
 /** The order with days kept together (in festival order), each day's groups in their own order. */
 function byDays(order: OrderItem[], days: string[]) {
-  return days.flatMap((d) => onDay(order, d));
+  return allDays(order, days).flatMap((d) => onDay(order, d));
 }
 
 export function applyOp(plan: Plan, op: Op, days: string[]): Plan {
@@ -67,7 +76,7 @@ export function applyOp(plan: Plan, op: Op, days: string[]): Plan {
       const at = Math.max(0, Math.min(op.index, target.length));
       const moved = { ...item, day: op.day };
       const nextDay = [...target.slice(0, at), moved, ...target.slice(at)];
-      return { ...plan, order: days.flatMap((d) => (d === op.day ? nextDay : onDay(rest, d))) };
+      return { ...plan, order: allDays(order, days).flatMap((d) => (d === op.day ? nextDay : onDay(rest, d))) };
     }
     case "skip":
       return {
@@ -85,7 +94,7 @@ export function applyOp(plan: Plan, op: Op, days: string[]): Plan {
       const known = op.ids.flatMap((id) => today.filter((o) => o.bandId === id));
       const rest = today.filter((o) => !op.ids.includes(o.bandId));
       const nextDay = [...known, ...rest];
-      return { ...plan, order: days.flatMap((d) => (d === op.day ? nextDay : onDay(order, d))) };
+      return { ...plan, order: allDays(order, days).flatMap((d) => (d === op.day ? nextDay : onDay(order, d))) };
     }
     case "drop":
       return { ...plan, order: order.filter((o) => o.bandId !== op.bandId) };

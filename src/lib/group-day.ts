@@ -8,10 +8,15 @@ export type GroupCheckin = { band_id: string; room_id: string | null; created_at
 
 /** done: tapped · behind: its time is over and it isn't done · now: on now · upcoming. */
 export type RoomState = "done" | "behind" | "now" | "upcoming";
-/** here: tapped in · late: not here and their first room has started · soon: due within ARRIVE_SOON_MINUTES. */
+/**
+ * here: tapped in · late: not here, not marked didn't come, and their first room started more than
+ * LATE_GRACE_MINUTES ago (someone should find them) · soon: due within ARRIVE_SOON_MINUTES.
+ */
 export type ArrivalState = "here" | "late" | "soon" | "waiting";
 
 export const ARRIVE_SOON_MINUTES = 30;
+/** A few minutes either way is on time: nothing is flagged until a group is this late (light check, 2026-11-11). */
+export const LATE_GRACE_MINUTES = 5;
 
 export type GroupDay = {
   bandId: string;
@@ -35,10 +40,11 @@ export function groupDay(slots: GroupSlot[], checkins: GroupCheckin[], now: Date
     checkins.find((c) => c.band_id === band && c.room_id === room && (c.kind ?? "done") === "done") ?? null;
   return [...byBand.entries()].map(([bandId, mine]) => {
     const arrivedAt = tap(bandId, null);
+    const noShow = checkins.some((c) => c.band_id === bandId && c.room_id === null && c.kind === "no_show");
     const first = new Date(mine[0].starts_at).getTime();
     const arrival: ArrivalState = arrivedAt
       ? "here"
-      : live && t >= first
+      : live && !noShow && t >= first + LATE_GRACE_MINUTES * 60_000
         ? "late"
         : live && t >= first - ARRIVE_SOON_MINUTES * 60_000
           ? "soon"

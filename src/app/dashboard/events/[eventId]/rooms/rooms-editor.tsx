@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { confirmDialog } from "@/components/confirm-dialog";
 import { NumberInput } from "@/components/number-input";
 import { Button, Input } from "@/components/ui";
-import { pathRooms, timeChanges, tooLongRooms, type Room } from "@/lib/rooms";
+import { groupDuration, minutesPerGroup, pathRooms, timeChanges, tooLongRooms, type Room } from "@/lib/rooms";
 import { saveRooms, skipRoomForRest, type RoomInput, type SaveResult } from "./actions";
 import { SaveFooter } from "./save-footer";
 import { planTimes, roomNameMap, type Conflict, type Snapshot } from "./schedule-plan";
@@ -30,12 +30,6 @@ const ARROW =
   "inline-flex size-11 shrink-0 items-center justify-center rounded-md border border-field-border bg-surface hover:border-brand disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-disabled";
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const ordinal = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th"}`;
-
-function duration(min: number) {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return h ? `${plural(h, "hour", "hours")}${m ? ` ${plural(m, "minute", "minutes")}` : ""}` : plural(m, "minute", "minutes");
-}
 
 /** What changed since the last save, in words ("Performance hall 20 → 25 minutes"). */
 function describe(base: Snapshot, rows: Row[], interval: string, passing: string) {
@@ -309,7 +303,7 @@ export function RoomsEditor({
   const ivNum = Number(interval);
   const long = ivNum ? tooLongRooms(asRooms(rows), ivNum) : [];
   const walk = Number(passing) || 0;
-  const perGroup = pathComplete.reduce((n, r) => n + r.minutes, 0) + walk * Math.max(pathComplete.length - 1, 0);
+  const perGroup = minutesPerGroup(pathComplete, walk);
   const changes = saving.open ? changesFor(rows, interval, passing) : [];
   const todo = !base.rooms.length && !rows.some(complete) ? "Add your first room" : null;
 
@@ -435,7 +429,7 @@ export function RoomsEditor({
           )}
           <p className="mt-4 text-sm leading-6">
             <span className="font-semibold">Each group goes:</span>{" "}
-            {pathComplete.map((r, i) => `${i ? "then " : ""}${r.name} (${r.minutes} min)`).join(", ")}. About {duration(perGroup)} per group.
+            {pathComplete.map((r, i) => `${i ? "then " : ""}${r.name} (${r.minutes} min)`).join(", ")}. About {groupDuration(perGroup)} per group.
           </p>
         </>
       )}

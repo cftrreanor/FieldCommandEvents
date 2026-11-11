@@ -19,17 +19,22 @@ export function DoorLink({
   roomName,
   door,
   posted,
+  until,
+  expired,
 }: {
   eventId: string;
   roomId: string;
   roomName: string;
   door: { url: string; qr: string; on: boolean } | null;
   posted: boolean;
+  /** The last day it works ("Sunday, March 22"): the day after the festival. */
+  until: string;
+  expired: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<"new" | "off" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const live = door?.on ?? false;
+  const live = (door?.on ?? false) && !expired;
 
   const make = async () => {
     if (live) {
@@ -75,6 +80,9 @@ export function DoorLink({
         For whoever is at this room&apos;s door, with no sign-in. Anyone with the link can mark groups in {roomName} only, until it&apos;s
         turned off. It shows this room&apos;s list and nobody&apos;s contact details.
       </p>
+      <p className="mt-2 text-sm leading-6">
+        {expired ? `Door links stopped working at the end of ${until}.` : `Works until the end of ${until}.`}
+      </p>
       {!posted && <p className="mt-2 text-sm leading-6">The link works once the festival is published and the schedule is posted.</p>}
       {live && door ? (
         <>
@@ -101,12 +109,14 @@ export function DoorLink({
         </>
       ) : (
         <>
-          {door && !door.on && <p className="mt-3 text-sm font-semibold">This room&apos;s door link is turned off.</p>}
+          {door && !door.on && !expired && <p className="mt-3 text-sm font-semibold">This room&apos;s door link is turned off.</p>}
+          {!expired && (
           <div className="mt-3">
             <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => void make()}>
               {busy === "new" ? "Making…" : door ? "Make a new link" : "Make a door link"}
             </Button>
           </div>
+          )}
         </>
       )}
       {error && (

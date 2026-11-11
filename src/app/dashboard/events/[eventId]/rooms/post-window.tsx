@@ -4,8 +4,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { flushPending, settled } from "@/components/pending-edits";
 import { Button } from "@/components/ui";
+import { directorsOf } from "@/lib/rooms";
 import { formatDate } from "@/lib/time";
-import { postPreview, postSchedule, saveRooms, sendTheRest, type PostPreview } from "./actions";
+import { emailNewTimes, postPreview, postSchedule, saveRooms, sendTheRest, type PostPreview } from "./actions";
 import { Window } from "./windows";
 
 const NOTE = "rounded-md border border-warning/40 bg-warning-soft p-4 leading-6";
@@ -71,7 +72,7 @@ export function PostButton({ eventId, rooms }: { eventId: string; rooms: number 
 
   const p = preview;
   const n = p?.emailed ?? 0;
-  const directors = plural(n, "director", "directors");
+  const directors = directorsOf(n);
   return (
     <>
       <div className="flex flex-col items-start gap-2 sm:items-end">
@@ -138,7 +139,7 @@ export function PostButton({ eventId, rooms }: { eventId: string; rooms: number 
                     {p.noTimes.length === 1 ? "1 group has no times" : `${p.noTimes.length} groups have no times`}
                   </p>
                   <p>
-                    {p.noTimes.join(", ")}. {p.noTimes.length === 1 ? "Its director isn't" : "Their directors aren't"} emailed until you add{" "}
+                    {p.noTimes.join(", ")}. {p.noTimes.length === 1 ? "Its directors aren't" : "Their directors aren't"} emailed until you add{" "}
                     {p.noTimes.length === 1 ? "it" : "them"}.
                   </p>
                 </div>
@@ -185,8 +186,8 @@ export function PostButton({ eventId, rooms }: { eventId: string; rooms: number 
   );
 }
 
-/** "Couldn't send to …": send the rest of the latest list again. */
-export function SendTheRest({ eventId, batch, label }: { eventId: string; batch: string; label: string }) {
+/** Emails that didn't go: send the rest again, on every list that has any left. */
+export function SendTheRest({ eventId, label }: { eventId: string; label: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   return (
@@ -197,12 +198,48 @@ export function SendTheRest({ eventId, batch, label }: { eventId: string; batch:
       aria-busy={busy}
       onClick={async () => {
         setBusy(true);
-        await sendTheRest(eventId, batch).catch(() => null);
+        await sendTheRest(eventId).catch(() => null);
         setBusy(false);
         router.refresh();
       }}
     >
       {busy ? "Sending…" : label}
     </Button>
+  );
+}
+
+/**
+ * The festival's dates or time zone moved its posted times: the organizer's choice to email every director their
+ * times now (it's never automatic).
+ */
+export function EmailNewTimes({ eventId }: { eventId: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="flex flex-col items-start gap-2">
+      <Button
+        type="button"
+        variant="secondary"
+        disabled={busy}
+        aria-busy={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError(null);
+          const r = await emailNewTimes(eventId).catch(() => ({ error: "Check your connection, then try again." }));
+          setBusy(false);
+          if ("error" in r) return setError(r.error);
+          router.refresh();
+        }}
+      >
+        {busy ? "Emailing…" : "Email directors their new times"}
+      </Button>
+      {error && (
+        <p role="alert" className="text-sm font-semibold text-danger">
+          <span aria-hidden>▲ </span>
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

@@ -2713,6 +2713,87 @@ begin
   update public.events set starts_on = starts_on - 7, ends_on = ends_on - 7 where id = ev;
 end $$;
 
+-- In the app: shortening the dates is refused while a group is on a day that would drop off, naming it; moving both
+-- dates together moves everyone; a new time zone keeps every group's clock times; each move is a new version.
+set role authenticated;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
+do $$
+declare
+  ev  uuid := '10000000-0000-0000-0000-0000000000d1';
+  ok  boolean := false;
+  msg text;
+  v0  bigint := (select room_schedule_version from public.events where id = '10000000-0000-0000-0000-0000000000d1');
+  local_1 timestamp := (select min(starts_at) at time zone 'America/Chicago' from public.room_slots
+                         where band_id = '40000000-0000-0000-0000-0000000000d1');
+  d2_day  date := (select day from public.group_order where band_id = '40000000-0000-0000-0000-0000000000d2');
+begin
+  assert (select timezone from public.events where id = ev) = 'America/Chicago', 'the test festival is on Central Time';
+  begin
+    update public.events set ends_on = starts_on where id = ev;
+  exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg like 'Move Chamber Singers to another day first%', 'shortening the dates is refused, naming the group on the dropped day';
+  assert (select ends_on from public.events where id = ev) = d2_day, 'and the dates stay as they were';
+  ok := false;
+  begin
+    update public.events set starts_on = starts_on + 1 where id = ev;
+  exception when sqlstate 'P0001' then ok := sqlerrm like 'Move Chamber Singers%';
+  end;
+  assert ok, 'moving only the first day later pushes day two off the end: refused too';
+  update public.events set starts_on = starts_on + 1, ends_on = ends_on + 1 where id = ev;
+  assert (select day from public.group_order where band_id = '40000000-0000-0000-0000-0000000000d2') = d2_day + 1,
+         'moving both dates together moves the groups with them';
+  assert (select room_schedule_version from public.events where id = ev) = v0 + 1
+     and (select summary from public.room_schedule_changes where event_id = ev and version = v0 + 1) = 'The festival''s dates moved',
+         'a date move is a new version, logged';
+  update public.events set starts_on = starts_on - 1, ends_on = ends_on - 1 where id = ev;
+  update public.events set timezone = 'America/Denver' where id = ev;
+  assert (select min(starts_at) at time zone 'America/Denver' from public.room_slots where band_id = '40000000-0000-0000-0000-0000000000d1') = local_1,
+         'a new time zone keeps each group''s clock times';
+  assert (select summary from public.room_schedule_changes where event_id = ev
+           and version = (select room_schedule_version from public.events where id = ev)) = 'The festival''s time zone changed',
+         'and is a new version too';
+  update public.events set timezone = 'America/Chicago' where id = ev;
+  assert (select min(starts_at) at time zone 'America/Chicago' from public.room_slots where band_id = '40000000-0000-0000-0000-0000000000d1') = local_1,
+         'and back again';
+end $$;
+
+-- Rooms and spacing save in one step, and the database checks the ranges.
+do $$
+declare
+  ev uuid := '10000000-0000-0000-0000-0000000000d1';
+  v0 bigint := (select room_schedule_version from public.events where id = '10000000-0000-0000-0000-0000000000d1');
+  ok boolean := false;
+begin
+  assert public.save_rooms(ev, null, v0, 'A new group every 25 minutes', 25, 10) = v0 + 1, 'spacing saves as one version step';
+  assert (select room_interval_minutes = 25 and room_passing_minutes = 10 from public.events where id = ev), 'with both numbers';
+  begin
+    perform public.save_rooms(ev, null, null, null, 2, null);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'a new group every 2 minutes is refused';
+  ok := false;
+  begin
+    perform public.save_rooms(ev, null, null, null, null, 90);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, '90 minutes of walking is refused';
+  ok := false;
+  begin
+    perform public.save_rooms(ev, jsonb_build_array(jsonb_build_object('name', 'Long room', 'on_path', true, 'minutes', 0)));
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'a room on the path takes 1 to 240 minutes';
+  ok := false;
+  begin
+    perform public.save_room_schedule(ev, now(), 20, 61, '[]');
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'the schedule checks the walking time too';
+  perform public.save_rooms(ev, null, null, 'Back to every 20 minutes', 20, 5);
+end $$;
+reset role;
+
 -- On the day: in a room now, didn't come, and the hand-off.
 set role authenticated;
 set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000003","email":"lead@example.com"}';
@@ -2788,6 +2869,47 @@ begin
   -- Its own room only: the stage id is never accepted, the room comes from the link.
   assert not exists (select 1 from public.public_room_live('spring-choir') where room_id = stage and kind = 'in'),
          'a door link can''t mark another room';
+end $$;
+-- Families' live view has only "in a room" and "done there", never arrived or didn't come.
+do $$ begin
+  assert not exists (select 1 from public.public_room_live('spring-choir') where room_id is null or kind not in ('in', 'done')),
+         'the live view shows only in and done marks in rooms';
+end $$;
+-- A withdrawn group leaves the door, the posted schedule, and the live view, and the door can't mark it.
+reset role;
+update public.bands set scratched_at = now() where id = '40000000-0000-0000-0000-0000000000d1';
+set role anon;
+do $$
+declare
+  tok text := current_setting('test.door');
+  ok  boolean := false;
+begin
+  assert not (public.room_door(tok)::text like '%40000000-0000-0000-0000-0000000000d1%'), 'a withdrawn group isn''t on the door''s list';
+  assert not exists (select 1 from public.public_room_schedule('spring-choir') where band_id = '40000000-0000-0000-0000-0000000000d1'),
+         'or the posted schedule';
+  assert not exists (select 1 from public.public_room_live('spring-choir') where band_id = '40000000-0000-0000-0000-0000000000d1'),
+         'or the live view';
+  begin
+    perform public.room_door_mark(tok, '40000000-0000-0000-0000-0000000000d1', 'done', true);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'the door can''t mark a withdrawn group';
+end $$;
+reset role;
+update public.bands set scratched_at = null where id = '40000000-0000-0000-0000-0000000000d1';
+-- A door link stops working at the end of the day after the festival's last day.
+do $$
+declare
+  ev    uuid := '10000000-0000-0000-0000-0000000000d1';
+  s0    date := (select starts_on from public.events where id = '10000000-0000-0000-0000-0000000000d1');
+  today date := (now() at time zone (select timezone from public.events where id = '10000000-0000-0000-0000-0000000000d1'))::date;
+begin
+  update public.events set starts_on = today - 2, ends_on = today - 1 where id = ev;
+  assert public.room_door(current_setting('test.door')) is not null, 'a door link works the day after the festival';
+  update public.events set starts_on = today - 3, ends_on = today - 2 where id = ev;
+  assert public.room_door(current_setting('test.door')) is null, 'and not the day after that';
+  update public.events set starts_on = s0, ends_on = s0 + 1 where id = ev;
+  assert public.room_door(current_setting('test.door')) is not null, 'back on its dates, it works again';
 end $$;
 reset role;
 set role authenticated;
@@ -2949,6 +3071,49 @@ begin
   end;
   assert ok, 'nobody is emailed their times before the schedule is posted';
 end $$;
+-- Posting flips the posted flag and queues every director's email in one step.
+do $$
+declare
+  ev  uuid := '10000000-0000-0000-0000-0000000000d1';
+  ok  boolean := false;
+  res jsonb;
+begin
+  begin
+    perform public.post_room_schedule(ev, -1);
+  exception when sqlstate 'FC409' then ok := true;
+  end;
+  assert ok and not (select performance_order_published from public.events where id = ev),
+         'posting from a page that loaded an older version is refused, and nothing is posted';
+  res := public.post_room_schedule(ev, (select room_schedule_version from public.events where id = ev));
+  assert (res ->> 'posted')::boolean and (select performance_order_published from public.events where id = ev),
+         'a host posts the schedule';
+  assert (select count(*) from public.room_schedule_emails where batch = (res ->> 'batch')::uuid and kind = 'posted') > 0,
+         'and every director''s email is on the send list in the same step';
+  assert not (public.post_room_schedule(ev, null) ->> 'posted')::boolean, 'posting twice queues nothing more';
+  assert public.retry_room_schedule_emails(ev, null) = 0, 'nothing to send again yet, across every list';
+end $$;
+reset role;
+update public.events set performance_order_published = false where id = '10000000-0000-0000-0000-0000000000d1';
+set role authenticated;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000003","email":"lead@example.com"}';
+do $$ begin
+  begin
+    perform public.post_room_schedule('10000000-0000-0000-0000-0000000000d1', null);
+    raise exception 'FAIL: a lead posted the schedule';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
+reset role;
+set role anon;
+do $$ begin
+  begin
+    perform public.post_room_schedule('10000000-0000-0000-0000-0000000000d1', null);
+    raise exception 'FAIL: the public posted the schedule';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
 reset role;
 update public.events set performance_order_published = true where id = '10000000-0000-0000-0000-0000000000d1';
 set role authenticated;

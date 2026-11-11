@@ -2,7 +2,9 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Badge, Card } from "@/components/ui";
 import { CopyLink } from "@/components/copy-link";
+import { groupDuration } from "@/lib/rooms";
 import { formatDate } from "@/lib/time";
+import { EmailNewTimes } from "./rooms/post-window";
 import { ActionButton } from "./forms";
 import { setVolunteerSignupOpen } from "../../actions";
 
@@ -57,6 +59,8 @@ export type FestivalFacts = {
   past: boolean;
   /** On the day: how the groups are getting on (from the team's marks). */
   dayLine: ReactNode;
+  /** The festival's dates or time zone moved its posted times, and directors haven't been emailed since. */
+  moved: { line: string } | null;
 };
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -85,6 +89,26 @@ function regBadge(f: FestivalFacts) {
  * schedule. Once the schedule is posted there's nothing waiting, so no card.
  */
 export function FestivalNextStep({ f }: { f: FestivalFacts }) {
+  // The dates or time zone changed after posting: emailing directors is the organizer's choice, offered first.
+  if (f.moved) {
+    return (
+      <section id="next" aria-labelledby="next-heading" className="mt-6 scroll-mt-6 rounded-lg border-2 border-brand bg-surface p-4 shadow-card sm:p-6">
+        <p className="text-sm font-semibold text-muted">Next step</p>
+        <h2 id="next-heading" className="mt-1 text-xl font-semibold">
+          Email directors their new times?
+        </h2>
+        <p className="mt-1 text-sm leading-6">
+          {f.moved.line} The festival page has the new times. Directors haven&apos;t been emailed about it.
+        </p>
+        <div className="mt-4 flex flex-wrap items-start gap-3">
+          <EmailNewTimes eventId={f.eventId} />
+          <Link href={`/dashboard/events/${f.eventId}/rooms`} className={BTN_OUTLINE}>
+            See the new times
+          </Link>
+        </div>
+      </section>
+    );
+  }
   if (f.regOpen) {
     return (
       <section id="share" aria-labelledby="next-heading" className="mt-6 scroll-mt-6 rounded-lg border-2 border-brand bg-surface p-4 shadow-card sm:p-6">
@@ -97,7 +121,10 @@ export function FestivalNextStep({ f }: { f: FestivalFacts }) {
             {f.groups.length ? `${plural(f.groups.length, "group", "groups")} registered` : "No groups registered yet"}
             {f.deadline ? ` · open through ${short(f.deadline)}` : ""}.
           </span>{" "}
-          Directors register from this link, no account needed. Once registration closes, you post the schedule.
+          Directors register from this link, no account needed.{" "}
+          {f.posted
+            ? "New groups go on the schedule when you add them; you choose whether to email them."
+            : "Once registration closes, you post the schedule."}
         </p>
         <p className="mt-3 rounded-md bg-background px-3 py-2 font-mono text-sm break-all ring-1 ring-border">{f.registrationUrl.replace(/^https?:\/\//, "")}</p>
         <div className="mt-3 flex flex-wrap gap-3">
@@ -264,7 +291,8 @@ export function FestivalCards({ f, dayFirst }: { f: FestivalFacts; dayFirst: boo
 export function FestivalDraftCards({ f }: { f: FestivalFacts }) {
   const base = `/dashboard/events/${f.eventId}`;
   const outside = f.rooms - f.pathRooms;
-  const hours = f.minutesPerGroup >= 60 ? `about ${Math.round(f.minutesPerGroup / 30) / 2} ${f.minutesPerGroup >= 90 ? "hours" : "hour"} per group` : `about ${f.minutesPerGroup} minutes per group`;
+  // The same words as the Rooms and schedule page ("About 1 hour 5 minutes per group").
+  const hours = `about ${groupDuration(f.minutesPerGroup)} per group`;
   const cards: { id: string; title: string; line: string; button: { label: string; href: string } }[] = [
     {
       id: "schedule",

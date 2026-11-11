@@ -2,7 +2,15 @@ import { DayBar } from "@/components/event-day-nav";
 import { SetupStrip } from "@/components/setup-guide";
 import { loadDayActions } from "@/lib/event-day-actions";
 import { loadSetupFacts } from "@/lib/setup-facts";
-import { bandRegistrationMissing, emptyJobsNote, festivalRegistrationMissing, festivalRoomsMissing, setupChecklist, type SetupFacts } from "@/lib/setup-checklist";
+import {
+  bandRegistrationMissing,
+  emptyJobsNote,
+  festivalRegistrationMissing,
+  festivalRoomsMissing,
+  festivalRoomsToFix,
+  setupChecklist,
+  type SetupFacts,
+} from "@/lib/setup-checklist";
 import { SetupSteps } from "@/components/volunteer-steps";
 import { STEP_PATHS, type SetupStepFacts, type StepsKind } from "@/lib/setup-steps";
 import { hasConferences, hasRooms } from "@/lib/event-types";
@@ -82,7 +90,8 @@ function bandSteps(f: SetupFacts): SetupStepFacts {
  * both before publishing); Volunteers never blocks.
  */
 function festivalSteps(f: SetupFacts): SetupStepFacts {
-  const rooms = festivalRoomsMissing(f);
+  // A room that would hold two groups at once isn't "all set", though it doesn't stop publishing.
+  const rooms = festivalRoomsMissing(f) ?? festivalRoomsToFix(f);
   const registration = festivalRegistrationMissing(f);
   const empty = f.emptyJobs ?? [];
   return {

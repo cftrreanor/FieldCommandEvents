@@ -55,7 +55,7 @@ export function DayBoard({
   const finished = shown.filter((g) => g.finished);
 
   const tap = (g: BoardGroup, t: Tap) =>
-    run(`${g.id}:${t.label}`, () => markGroups(eventId, t.ops), `Marked ${g.name} ${t.did}`, () => markGroups(eventId, t.undo));
+    run(`${g.id}:${t.label}`, () => markGroups(eventId, t.ops), t.say ? t.say.replace("{group}", g.name) : `Marked ${g.name} ${t.did}`, () => markGroups(eventId, t.undo));
 
   const card = (g: BoardGroup) => (
     <li key={g.id} className="rounded-lg border border-border bg-surface p-4 shadow-card">

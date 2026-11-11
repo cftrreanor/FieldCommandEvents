@@ -5,7 +5,8 @@
 -- Posting a festival's schedule, or saving new times once it's posted, emails each group's directors. The
 -- page lists who gets one first, then every email is a row here: claimed before it's sent (so two senders never
 -- double up), marked sent or failed, and tried again from the page if sending stopped partway. The page reads
--- it to say "Sent to 5 of 6 directors".
+-- it to say how many were emailed. Posting flips the posted flag and queues the list in one step
+-- (post_room_schedule, at the end).
 --
 -- Addresses come from each group's registration (head director and contact), never from the page, so a host
 -- can't use this to email anyone else. Safe to run again.
@@ -86,8 +87,9 @@ $$;
 revoke execute on function public.queue_room_schedule_emails(uuid, text, uuid[], jsonb) from public, anon;
 grant execute on function public.queue_room_schedule_emails(uuid, text, uuid[], jsonb) to authenticated;
 
--- Sending stopped partway (or some failed): put the rest of a batch back on the list. Hosts only. Returns how
--- many will be tried again. An email claimed more than 10 minutes ago with no answer counts as stopped.
+-- Sending stopped partway (or some failed): put the rest of a batch back on the list (p_batch null: every batch of
+-- the festival, so an earlier list's failures aren't left behind). Hosts only. Returns how many will be tried
+-- again. An email claimed more than 10 minutes ago with no answer counts as stopped.
 create or replace function public.retry_room_schedule_emails(p_event uuid, p_batch uuid)
 returns integer
 language plpgsql security definer set search_path = public
@@ -100,7 +102,7 @@ begin
   end if;
   update room_schedule_emails
      set status = 'waiting', error = null
-   where event_id = p_event and batch = p_batch
+   where event_id = p_event and (p_batch is null or batch = p_batch)
      and (status = 'failed' or (status = 'sending' and claimed_at < now() - interval '10 minutes')
           or (status = 'waiting' and created_at < now() - interval '2 minutes'));
   get diagnostics n = row_count;
@@ -109,3 +111,51 @@ end;
 $$;
 revoke execute on function public.retry_room_schedule_emails(uuid, uuid) from public, anon;
 grant execute on function public.retry_room_schedule_emails(uuid, uuid) to authenticated;
+
+-- Posting the schedule: the posted flag and the send list in one step, so the schedule is never posted with
+-- nobody's email queued (light check on the built update). Hosts only, a published festival, the version the page
+-- showed, and at least one group (not withdrawn) with times. Already posted (a co-host was first): changes nothing.
+-- Returns {posted, batch, groups}.
+create or replace function public.post_room_schedule(p_event uuid, p_expected_version bigint default null)
+returns jsonb
+language plpgsql security definer set search_path = public
+as $$
+declare
+  ev  events;
+  ids uuid[];
+  bid uuid;
+begin
+  if not public.is_event_admin(p_event) then
+    raise exception 'Only the event''s host can post the schedule.' using errcode = '42501';
+  end if;
+  select * into ev from events where id = p_event for update;
+  if ev.event_type::text <> 'group_event' then
+    raise exception 'Room schedules are for group events.' using errcode = 'P0001';
+  end if;
+  if ev.status <> 'published' then
+    raise exception 'Publish the festival first. Then you can post its schedule.' using errcode = 'P0001';
+  end if;
+  if ev.performance_order_published then
+    return jsonb_build_object('posted', false, 'batch', null, 'groups', 0);
+  end if;
+  if p_expected_version is not null and ev.room_schedule_version <> p_expected_version then
+    raise exception 'Someone else changed the schedule. Load the latest version, then make your change again.'
+      using errcode = 'FC409';
+  end if;
+  select array_agg(distinct s.band_id) into ids
+    from room_slots s join bands b on b.id = s.band_id
+   where s.event_id = p_event and b.scratched_at is null;
+  if ids is null then
+    raise exception 'Give at least one group times first.' using errcode = 'P0001';
+  end if;
+  update events set performance_order_published = true, schedule_updated_at = now() where id = p_event;
+  bid := public.queue_room_schedule_emails(p_event, 'posted', ids);
+  if bid is null then
+    -- Nobody to email: nothing is posted either.
+    raise exception 'None of these groups has an email address for their times. Check Manage registration.' using errcode = 'P0001';
+  end if;
+  return jsonb_build_object('posted', true, 'batch', bid, 'groups', cardinality(ids));
+end;
+$$;
+revoke execute on function public.post_room_schedule(uuid, bigint) from public, anon;
+grant execute on function public.post_room_schedule(uuid, bigint) to authenticated;

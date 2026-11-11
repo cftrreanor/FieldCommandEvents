@@ -79,6 +79,26 @@ export function roomTimes(
 export const tooLongRooms = (rooms: Room[], intervalMinutes: number) =>
   pathRooms(rooms).filter((r) => r.minutes > intervalMinutes);
 
+/** Minutes in every room on the path, with the walking time between them: how long one group is at the festival. */
+export const minutesPerGroup = (rooms: Pick<Room, "minutes" | "path_order">[], passingMinutes: number) => {
+  const path = rooms.filter((r) => r.path_order != null);
+  return path.reduce((n, r) => n + r.minutes, 0) + passingMinutes * Math.max(path.length - 1, 0);
+};
+
+/** "1 hour 5 minutes", "45 minutes": one group's time, the same words on the Rooms page and the Publish step. */
+export function groupDuration(min: number) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  const words = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  return h ? `${words(h, "hour", "hours")}${m ? ` ${words(m, "minute", "minutes")}` : ""}` : words(m, "minute", "minutes");
+}
+
+/**
+ * Who a schedule email reaches, counted by group (each group's head director and contact, once each): "the
+ * directors of 1 group", "the directors of 5 groups". The same words in every window, button, and status line.
+ */
+export const directorsOf = (groups: number) => `the directors of ${groups} ${groups === 1 ? "group" : "groups"}`;
+
 // ---------------------------------------------------------------------------------------------------------------
 // Rooms and schedule page, and the schedule emails (build 2b, 2026-11-11): words for times, what changed, and
 // directors' requests. Pure, so the page (before saving) and the server (for the emails) say the same thing.

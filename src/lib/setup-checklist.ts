@@ -62,6 +62,8 @@ export type SetupFacts = {
   pathRooms: number;
   /** Group events: every room, on the path or not. */
   rooms: number;
+  /** Group events: a room on the path longer than the time between groups (it would have two groups at once). */
+  roomTwoAtOnce?: string | null;
   /** Performance (or room) times built, published or not. */
   scheduleSlots: number;
   /** Conferences: meeting times saved (the place may still be missing). */
@@ -153,6 +155,14 @@ export function festivalRegistrationMissing(f: Pick<SetupFacts, "registrationDea
 export function festivalRoomsMissing(f: Pick<SetupFacts, "pathRooms" | "rooms">) {
   if (f.pathRooms > 0) return null;
   return f.rooms > 0 ? "Put a room in the rotation" : "Add a room";
+}
+
+/**
+ * What a festival's Rooms and schedule step needs fixed, though it doesn't stop publishing: a room that would hold
+ * two groups at once ("Fix Performance hall's time"). Posting the schedule waits for it. Null when there's none.
+ */
+export function festivalRoomsToFix(f: Pick<SetupFacts, "roomTwoAtOnce">) {
+  return f.roomTwoAtOnce ? `Fix ${f.roomTwoAtOnce}'s time` : null;
 }
 
 export function emptyJobsNote(empty: { name: string; items: boolean }[]) {

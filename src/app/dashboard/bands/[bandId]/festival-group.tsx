@@ -125,7 +125,10 @@ export async function FestivalGroupPage({
       {registered && (
         <Card className="mt-2 border-success/30 bg-success-soft" role="status">
           <p className="font-medium">{band.band_name} is registered</p>
-          <p className="mt-1 text-sm">We emailed you a copy. Your times come by email once the organizer posts the schedule.</p>
+          <p className="mt-1 text-sm">
+            We emailed you a copy. Your group&apos;s times come by email once the organizer{" "}
+            {event.performance_order_published ? "adds your group to the schedule" : "posts the schedule"}.
+          </p>
         </Card>
       )}
 

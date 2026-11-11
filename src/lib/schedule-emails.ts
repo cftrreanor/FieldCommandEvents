@@ -117,36 +117,61 @@ export async function replyName(eventId: string) {
   return sender.person?.split(/\s+/)[0] || "the organizer";
 }
 
-/** What the page shows about the latest send list: how many groups' directors have their email. */
+/**
+ * What the page shows about the send lists (counted by group: a group is emailed once all its directors' emails
+ * went): the latest list, anything still sending, and every list (not only the latest) with emails that failed or
+ * stopped partway, so "Send the rest again" reaches them.
+ */
 export type SendStatus = {
-  batch: string;
-  kind: "posted" | "changed";
-  groups: number;
-  sent: number;
-  /** Still going (or stopped partway: `stuck`). */
-  going: boolean;
-  stuck: boolean;
-  failed: string[];
+  /** The latest list: posting, or a change. */
+  latest: { kind: "posted" | "changed"; groups: number; sent: number };
+  /** Lists still going, added up. */
+  going: { groups: number; sent: number } | null;
+  /** Lists with emails that failed or stopped partway, added up, and the groups that couldn't be reached. */
+  rest: { groups: number; sent: number; failed: string[] } | null;
 };
 
-/** Loads the send list's state for the page (as the signed-in host). */
-export async function latestSendStatus(
+type EmailRow = { batch: string; kind: string; band_id: string; status: string; created_at: string; claimed_at: string | null };
+
+/** Loads the send lists' state for the page (as the signed-in host). */
+export async function sendStatus(
   supabase: Awaited<ReturnType<typeof createClient>>,
   eventId: string,
   names: Map<string, string>,
 ): Promise<SendStatus | null> {
-  const { data: last } = await supabase.from("room_schedule_emails").select("batch, kind").eq("event_id", eventId).order("created_at", { ascending: false }).limit(1).maybeSingle();
-  if (!last) return null;
-  const { data } = await supabase.from("room_schedule_emails").select("band_id, status, created_at, claimed_at").eq("batch", last.batch);
-  const rows = (data ?? []) as { band_id: string; status: string; created_at: string; claimed_at: string | null }[];
-  const bands = [...new Set(rows.map((r) => r.band_id))];
-  const of = (b: string) => rows.filter((r) => r.band_id === b);
-  const sent = bands.filter((b) => of(b).every((r) => r.status === "sent")).length;
-  const failed = bands.filter((b) => of(b).some((r) => r.status === "failed")).map((b) => names.get(b) ?? "A group");
-  const open = rows.filter((r) => r.status === "waiting" || r.status === "sending");
+  const { data } = await supabase
+    .from("room_schedule_emails")
+    .select("batch, kind, band_id, status, created_at, claimed_at")
+    .eq("event_id", eventId)
+    .order("created_at", { ascending: false })
+    .limit(5000);
+  const rows = (data ?? []) as EmailRow[];
+  if (!rows.length) return null;
   const now = Date.now();
-  const stuck = open.some((r) => now - new Date(r.claimed_at ?? r.created_at).getTime() > (r.status === "sending" ? 10 : 2) * 60_000);
-  return { batch: last.batch, kind: last.kind as SendStatus["kind"], groups: bands.length, sent, going: open.length > 0 && !stuck, stuck, failed };
+  const stuck = (r: EmailRow) =>
+    (r.status === "waiting" || r.status === "sending") && now - new Date(r.claimed_at ?? r.created_at).getTime() > (r.status === "sending" ? 10 : 2) * 60_000;
+  const open = (r: EmailRow) => (r.status === "waiting" || r.status === "sending") && !stuck(r);
+  const batches = [...new Set(rows.map((r) => r.batch))];
+  const of = (batch: string) => rows.filter((r) => r.batch === batch);
+  /** Groups in a list, and those with every email sent. */
+  const count = (list: EmailRow[]) => {
+    const bands = [...new Set(list.map((r) => r.band_id))];
+    return { groups: bands.length, sent: bands.filter((b) => list.every((r) => r.band_id !== b || r.status === "sent")).length, bands };
+  };
+  const add = (lists: string[]) =>
+    lists.reduce((t, b) => {
+      const c = count(of(b));
+      return { groups: t.groups + c.groups, sent: t.sent + c.sent };
+    }, { groups: 0, sent: 0 });
+  const goingLists = batches.filter((b) => of(b).some(open));
+  const restLists = batches.filter((b) => !goingLists.includes(b) && of(b).some((r) => r.status === "failed" || stuck(r)));
+  const failed = [...new Set(restLists.flatMap((b) => of(b).filter((r) => r.status === "failed" || stuck(r)).map((r) => names.get(r.band_id) ?? "A group")))];
+  const last = count(of(batches[0]));
+  return {
+    latest: { kind: rows[0].kind as "posted" | "changed", groups: last.groups, sent: last.sent },
+    going: goingLists.length ? add(goingLists) : null,
+    rest: restLists.length ? { ...add(restLists), failed } : null,
+  };
 }
 
 /**
@@ -218,4 +243,27 @@ export async function sendScheduleBatch(batch: string, origin: string, deadlineM
       .eq("id", row.id);
     await pause();
   }
+}
+
+/**
+ * The festival's dates or time zone moved its posted times (the latest change in the log, written by the
+ * database), and nobody has been emailed since: what moved and when, for "Email directors their new times".
+ * Null otherwise.
+ */
+export async function datesMoved(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  eventId: string,
+): Promise<{ summary: string; at: string; line: string } | null> {
+  const [{ data: ev }, { data: last }, { data: mail }] = await Promise.all([
+    supabase.from("events").select("status, performance_order_published").eq("id", eventId).maybeSingle(),
+    supabase.from("room_schedule_changes").select("summary, saved_at").eq("event_id", eventId).order("version", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("room_schedule_emails").select("created_at").eq("event_id", eventId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  if (!ev?.performance_order_published || ev.status !== "published" || !last?.summary) return null;
+  if (!/^The festival's (dates|time zone)/.test(last.summary as string)) return null;
+  if (mail && (mail.created_at as string) > (last.saved_at as string)) return null;
+  const summary = last.summary as string;
+  // A new time zone keeps every group's clock times (the database converts them); new dates move them.
+  const line = /dates/.test(summary) ? `${summary}, so every group's times moved with it.` : `${summary}. Every group keeps its clock times in the new time zone.`;
+  return { summary, at: last.saved_at as string, line };
 }

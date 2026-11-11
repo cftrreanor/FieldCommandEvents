@@ -23,6 +23,7 @@ export function FestivalForm({
   chaperoneLimit,
   days,
   email,
+  posted = false,
   initial = {},
   update,
   submitLabel = "Register group",
@@ -37,6 +38,11 @@ export function FestivalForm({
   days: { value: string; label: string }[];
   /** Signed in: their email (no email box). */
   email: string | null;
+  /**
+   * The schedule is posted already: a new group's times come once the organizer adds it (adding a group emails
+   * its directors by default), not when the schedule is posted.
+   */
+  posted?: boolean;
   /** Changing a registration: its answers, and the save action (in place of registering). */
   initial?: Partial<{
     band_name: string;
@@ -54,6 +60,7 @@ export function FestivalForm({
   submitLabel?: string;
 }) {
   const [pending, setPending] = useState<GuestState["pending"] | null>(null);
+  const when = posted ? "adds your group to the schedule" : "posts the schedule";
   const [earliest, setEarliest] = useState(initial.earliest_start?.slice(0, 5) ?? "");
   const num = (v: number | null | undefined) => (v == null ? "" : String(v));
   const formWrap = useRef<HTMLDivElement>(null);
@@ -157,10 +164,10 @@ export function FestivalForm({
             </Field>
             {update ? null : email ? (
               <p className="text-sm">
-                We&apos;ll email a copy, and your group&apos;s times once the organizer posts the schedule, to <span className="font-semibold break-all">{email}</span>.
+                We&apos;ll email a copy, and your group&apos;s times once the organizer {when}, to <span className="font-semibold break-all">{email}</span>.
               </p>
             ) : (
-              <Field label="Your email" hint="We'll send a code here to confirm, then your group's times once the organizer posts the schedule. No account or password.">
+              <Field label="Your email" hint={`We'll send a code here to confirm, then your group's times once the organizer ${when}. No account or password.`}>
                 <Input name="headDirectorEmail" type="email" required autoComplete="email" />
               </Field>
             )}

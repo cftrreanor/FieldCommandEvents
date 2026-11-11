@@ -5,6 +5,7 @@ import { loadConferenceSettings } from "@/lib/conference-settings";
 import { hasBooths, hasConferences, hasRooms } from "@/lib/event-types";
 import type { SetupFacts } from "@/lib/setup-checklist";
 import { createClient } from "@/lib/supabase/server";
+import { tooLongRooms, type Room } from "@/lib/rooms";
 import { utcToZonedDate } from "@/lib/time";
 
 /**
@@ -27,7 +28,7 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
   const count = async (q: PromiseLike<{ count: number | null }>) => (await q).count ?? 0;
   const head = { count: "exact" as const, head: true };
   const conferenceHere = hasConferences(type);
-  const [jobs, checkInStops, shifts, staff, invites, cohosts, files, finalsSlots, pathRooms, booths, conference, rooms, scheduleSlots, directorInvites] = await Promise.all([
+  const [jobs, checkInStops, shifts, staff, invites, cohosts, files, finalsSlots, pathRooms, booths, conference, rooms, scheduleSlots, directorInvites, twoAtOnce] = await Promise.all([
     loadJobs(supabase, eventId),
     count(supabase.from("stations").select("id", head).eq("event_id", eventId).not("checkpoint_kind", "is", null)),
     count(supabase.from("shifts").select("id", head).eq("event_id", eventId)),
@@ -49,6 +50,7 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
         : 0,
     // Director invitations sent or waiting for the opening day.
     type === "band_contest" ? count(supabase.from("band_invitations").select("id", head).eq("event_id", eventId)) : 0,
+    hasRooms(type) ? roomTwoAtOnce(supabase, eventId) : null,
   ]);
   // Why the account's plan won't let this publish (packages: what's included, one at a time), or null.
   // For "one at a time", the event that's already published, to link to.
@@ -87,6 +89,7 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
     classifications: (event.classifications ?? []).length,
     pathRooms,
     rooms,
+    roomTwoAtOnce: twoAtOnce,
     scheduleSlots,
     conferenceTimesSaved: Boolean(conference?.times_saved_at),
     conferenceWeekly: conference?.schedule === "weekly",
@@ -150,4 +153,14 @@ async function publishBlock(supabase: Awaited<ReturnType<typeof createClient>>, 
       ).find((e) => e.ends_on >= utcToZonedDate(new Date().toISOString(), e.timezone))
     : null;
   return { reason, other: other ? { id: other.id, name: other.name } : null };
+}
+
+/** A festival's first room on the path that's longer than the time between groups (two groups at once), by name. */
+async function roomTwoAtOnce(supabase: Awaited<ReturnType<typeof createClient>>, eventId: string) {
+  const [{ data: rooms }, { data: ev }] = await Promise.all([
+    supabase.from("rooms").select("id, name, note, path_order, minutes").eq("event_id", eventId).not("path_order", "is", null),
+    supabase.from("events").select("room_interval_minutes").eq("id", eventId).maybeSingle(),
+  ]);
+  if (!ev) return null;
+  return tooLongRooms((rooms ?? []) as Room[], ev.room_interval_minutes)[0]?.name ?? null;
 }

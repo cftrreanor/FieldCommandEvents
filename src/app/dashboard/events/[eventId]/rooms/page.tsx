@@ -8,15 +8,15 @@ import { Badge, Card } from "@/components/ui";
 import { opensLater, registrationIsOpen } from "@/lib/bands";
 import { getEventAccess } from "@/lib/data";
 import { hasRooms } from "@/lib/event-types";
-import type { Room } from "@/lib/rooms";
-import { latestSendStatus } from "@/lib/schedule-emails";
+import { directorsOf, type Room } from "@/lib/rooms";
+import { datesMoved, sendStatus } from "@/lib/schedule-emails";
 import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
 import { eachDate, formatDate, utcToZonedDate, zoneName } from "@/lib/time";
 import { SetupTabs } from "../../_components/setup-tabs";
 import { StepPage } from "../conferences/step-page";
 import { loadSchedule } from "./actions";
-import { PostButton, SendTheRest } from "./post-window";
+import { EmailNewTimes, PostButton, SendTheRest } from "./post-window";
 import { RoomsEditor } from "./rooms-editor";
 import { ScheduleEditor, type ScheduleGroup } from "./schedule-editor";
 
@@ -107,7 +107,9 @@ export default async function RoomsPage({ params, searchParams }: PageProps<"/da
   const current = tab === "rooms" || tab === "lists" || tab === "times" ? tab : pathCount === 0 ? "rooms" : "times";
   const regOpen = registrationIsOpen(event) || (event.band_registration_open && opensLater(event));
   const deadline = event.band_registration_deadline ? formatDate(event.band_registration_deadline, { year: undefined }) : null;
-  const send = event.performance_order_published ? await latestSendStatus(supabase, eventId, new Map(Object.entries(groupNames))) : null;
+  const [send, moved] = event.performance_order_published
+    ? await Promise.all([sendStatus(supabase, eventId, new Map(Object.entries(groupNames))), datesMoved(supabase, eventId)])
+    : [null, null];
 
   const statusLine = event.performance_order_published
     ? "Directors and the festival page have the times. Changes here save with a button, and you choose who's emailed."
@@ -132,31 +134,15 @@ export default async function RoomsPage({ params, searchParams }: PageProps<"/da
               </span>
             </p>
             <p className="mt-1 text-sm text-muted">{statusLine}</p>
-            {send && (
-              <p className="mt-2 text-sm" role="status">
-                {send.going ? (
-                  <>
-                    <AutoRefresh seconds={5} />
-                    Sending… {send.sent} of {plural(send.groups, "director", "directors")} so far
-                  </>
-                ) : (
-                  <>
-                    <span className="font-medium">
-                      {send.sent === send.groups ? (
-                        <span aria-hidden className="text-success">
-                          ✓{" "}
-                        </span>
-                      ) : null}
-                      {send.kind === "changed" ? "New times sent" : "Sent"} to {send.sent} of {plural(send.groups, "director", "directors")}
-                    </span>
-                    {send.failed.length > 0 && <span className="text-danger"> · Couldn&apos;t send to {send.failed.join(", ")}</span>}
-                  </>
-                )}
-              </p>
-            )}
-            {send && !send.going && (send.failed.length > 0 || send.stuck) && (
-              <div className="mt-2">
-                <SendTheRest eventId={eventId} batch={send.batch} label="Send the rest again" />
+            {send && <SendLine send={send} eventId={eventId} />}
+            {moved && (
+              <div className="mt-3">
+                <p className="text-sm">
+                  {moved.line} Directors haven&apos;t been emailed about it.
+                </p>
+                <div className="mt-2">
+                  <EmailNewTimes eventId={eventId} />
+                </div>
               </div>
             )}
           </div>
@@ -187,6 +173,47 @@ export default async function RoomsPage({ params, searchParams }: PageProps<"/da
         {current === "lists" && <Lists rooms={snap.rooms} slots={slots} bands={bands} tz={tz} live={days.includes(utcToZonedDate(new Date().toISOString(), tz))} />}
       </div>
     </div>
+  );
+}
+
+/**
+ * Where the emails stand, counted by group (a group is emailed once all its directors' emails went): still sending,
+ * any list with emails that didn't go (with "Send the rest again", for every list, not only the latest), or the
+ * latest list sent.
+ */
+function SendLine({ send, eventId }: { send: NonNullable<Awaited<ReturnType<typeof sendStatus>>>; eventId: string }) {
+  if (send.going) {
+    return (
+      <p className="mt-2 text-sm" role="status">
+        <AutoRefresh seconds={5} />
+        Sending… {send.going.sent} of {send.going.groups} emailed so far
+      </p>
+    );
+  }
+  if (send.rest) {
+    return (
+      <div className="mt-2 text-sm" role="status">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="font-medium">
+            {send.rest.sent} of {send.rest.groups} emailed
+          </span>
+          <span aria-hidden>·</span>
+          <SendTheRest eventId={eventId} label="Send the rest again" />
+        </p>
+        {send.rest.failed.length > 0 && <p className="mt-1 text-danger">Not emailed yet: {send.rest.failed.join(", ")}</p>}
+      </div>
+    );
+  }
+  const n = send.latest.groups;
+  return (
+    <p className="mt-2 text-sm font-medium" role="status">
+      <span aria-hidden className="text-success">
+        ✓{" "}
+      </span>
+      {send.latest.kind === "changed"
+        ? `Last change: new times emailed to the directors of ${n === 1 ? "the group" : `the ${n} groups`} it affected`
+        : `Times emailed to ${n === 1 ? directorsOf(1) : `the directors of all ${n} groups`}`}
+    </p>
   );
 }
 

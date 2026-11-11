@@ -7,11 +7,12 @@
 --   2. Saving rooms and the schedule checks the version the page loaded, so two
 --      co-hosts can't overwrite each other; each save records who and what.
 --   3. A room the team has marked groups in can't be removed (its marks stay).
---   4. The schedule moves with the festival's dates.
+--   4. The schedule moves with the festival's dates (and keeps its clock times when the time zone changes);
+--      shortening the dates is refused while a group is on a day that would drop off.
 --   5. On the day: "in the room now", "didn't come", and a hand-off ("done, next
 --      group is in") in one step.
 --   6. A private link for each room's door: marks groups in that room only, no
---      sign-in, and the organizer can turn it off.
+--      sign-in, until the end of the day after the festival, or sooner when the organizer turns it off.
 --   7. Families' live view, from the team's marks, without who marked them.
 --   8. Registration: optional classifications, fewer required answers, when a
 --      group can come (day, earliest start, latest finish), a group limit, and
@@ -149,10 +150,17 @@ end;
 $$;
 revoke execute on function public.rebuild_room_slots(uuid) from public, anon, authenticated;
 
--- Rooms: the whole list, checked against the version the page loaded. Returns the new version.
+-- Rooms: the whole list, checked against the version the page loaded, and the spacing (how often a new group
+-- starts, the walking time between rooms) in the same call, so a rooms save is one version step. p_rooms null keeps
+-- the rooms as they are; p_interval or p_passing null keeps that. Returns the new version.
+-- Room minutes: 1 to 240 (the page's own limits; the first festival database allowed 5 to 240).
+alter table public.rooms drop constraint if exists rooms_minutes_check;
+alter table public.rooms add constraint rooms_minutes_check check (minutes between 1 and 240);
 drop function if exists public.save_rooms(uuid, jsonb);
 drop function if exists public.save_rooms(uuid, jsonb, bigint, text);
-create function public.save_rooms(p_event uuid, p_rooms jsonb, p_expected_version bigint default null, p_summary text default null)
+drop function if exists public.save_rooms(uuid, jsonb, bigint, text, integer, integer);
+create function public.save_rooms(p_event uuid, p_rooms jsonb, p_expected_version bigint default null, p_summary text default null,
+                                  p_interval integer default null, p_passing integer default null)
 returns bigint
 language plpgsql security definer set search_path = public
 as $$
@@ -163,6 +171,7 @@ declare
   stop   integer := 0;
   used   text;
   ver    bigint;
+  mins   integer;
 begin
   if not public.is_event_admin(p_event) then
     raise exception 'Only the event''s host can change rooms.' using errcode = '42501';
@@ -170,43 +179,65 @@ begin
   if (select event_type::text from events where id = p_event) <> 'group_event' then
     raise exception 'Rooms are for group events.' using errcode = 'P0001';
   end if;
-  if jsonb_typeof(p_rooms) <> 'array' or jsonb_array_length(p_rooms) > 30 then
+  if p_rooms is not null and (jsonb_typeof(p_rooms) <> 'array' or jsonb_array_length(p_rooms) > 30) then
     raise exception 'Up to 30 rooms.' using errcode = 'P0001';
   end if;
-  ver := public.next_room_schedule_version(p_event, p_expected_version, p_summary);
-  for r in select * from jsonb_array_elements(p_rooms) loop
-    if length(trim(coalesce(r ->> 'name', ''))) not between 1 and 80 then
-      raise exception 'Every room needs a name.' using errcode = 'P0001';
-    end if;
-    if coalesce((r ->> 'on_path')::boolean, false) then
-      stop := stop + 1;
-    end if;
-    rid := nullif(r ->> 'id', '')::uuid;
-    if rid is not null and exists (select 1 from rooms where id = rid and event_id = p_event) then
-      update rooms
-         set name = trim(r ->> 'name'),
-             note = nullif(trim(coalesce(r ->> 'note', '')), ''),
-             path_order = case when coalesce((r ->> 'on_path')::boolean, false) then stop end,
-             minutes = coalesce((r ->> 'minutes')::integer, 20)
-       where id = rid;
-    else
-      insert into rooms (event_id, name, note, path_order, minutes)
-      values (p_event, trim(r ->> 'name'), nullif(trim(coalesce(r ->> 'note', '')), ''),
-              case when coalesce((r ->> 'on_path')::boolean, false) then stop end,
-              coalesce((r ->> 'minutes')::integer, 20))
-      returning id into rid;
-    end if;
-    keep := keep || rid;
-  end loop;
-  select r2.name into used from rooms r2
-   where r2.event_id = p_event and not (r2.id = any (keep))
-     and exists (select 1 from group_checkins c where c.room_id = r2.id)
-   limit 1;
-  if used is not null then
-    raise exception 'The team has marked groups in %, so it can''t be removed. Skip it for the groups still to come instead.', used
-      using errcode = 'P0001';
+  if p_interval is not null and p_interval not between 5 and 240 then
+    raise exception 'A new group can start every 5 to 240 minutes.' using errcode = 'P0001';
   end if;
-  delete from rooms where event_id = p_event and not (id = any (keep));
+  if p_passing is not null and p_passing not between 0 and 60 then
+    raise exception 'Walking time between rooms: 0 to 60 minutes.' using errcode = 'P0001';
+  end if;
+  ver := public.next_room_schedule_version(p_event, p_expected_version, p_summary);
+  if p_interval is not null or p_passing is not null then
+    update events
+       set room_interval_minutes = coalesce(p_interval, room_interval_minutes),
+           room_passing_minutes  = coalesce(p_passing, room_passing_minutes)
+     where id = p_event;
+  end if;
+  if p_rooms is not null then
+    for r in select * from jsonb_array_elements(p_rooms) loop
+      if length(trim(coalesce(r ->> 'name', ''))) not between 1 and 80 then
+        raise exception 'Every room needs a name (up to 80 characters).' using errcode = 'P0001';
+      end if;
+      if length(trim(coalesce(r ->> 'note', ''))) > 200 then
+        raise exception 'Keep “Where it is” to 200 characters.' using errcode = 'P0001';
+      end if;
+      mins := coalesce((r ->> 'minutes')::integer, 20);
+      if coalesce((r ->> 'on_path')::boolean, false) then
+        stop := stop + 1;
+        if mins not between 1 and 240 then
+          raise exception 'Each room takes 1 to 240 minutes per group.' using errcode = 'P0001';
+        end if;
+      elsif mins not between 1 and 240 then
+        mins := 20;
+      end if;
+      rid := nullif(r ->> 'id', '')::uuid;
+      if rid is not null and exists (select 1 from rooms where id = rid and event_id = p_event) then
+        update rooms
+           set name = trim(r ->> 'name'),
+               note = nullif(trim(coalesce(r ->> 'note', '')), ''),
+               path_order = case when coalesce((r ->> 'on_path')::boolean, false) then stop end,
+               minutes = mins
+         where id = rid;
+      else
+        insert into rooms (event_id, name, note, path_order, minutes)
+        values (p_event, trim(r ->> 'name'), nullif(trim(coalesce(r ->> 'note', '')), ''),
+                case when coalesce((r ->> 'on_path')::boolean, false) then stop end, mins)
+        returning id into rid;
+      end if;
+      keep := keep || rid;
+    end loop;
+    select r2.name into used from rooms r2
+     where r2.event_id = p_event and not (r2.id = any (keep))
+       and exists (select 1 from group_checkins c where c.room_id = r2.id)
+     limit 1;
+    if used is not null then
+      raise exception 'The team has marked groups in %, so it can''t be removed. Skip it for the groups still to come instead.', used
+        using errcode = 'P0001';
+    end if;
+    delete from rooms where event_id = p_event and not (id = any (keep));
+  end if;
   perform public.rebuild_room_slots(p_event);
   return ver;
 end;
@@ -237,6 +268,12 @@ begin
   if ev.event_type::text <> 'group_event' then
     raise exception 'Room schedules are for group events.' using errcode = 'P0001';
   end if;
+  if p_interval is null or p_interval not between 5 and 240 then
+    raise exception 'A new group can start every 5 to 240 minutes.' using errcode = 'P0001';
+  end if;
+  if p_passing is null or p_passing not between 0 and 60 then
+    raise exception 'Walking time between rooms: 0 to 60 minutes.' using errcode = 'P0001';
+  end if;
   ver := public.next_room_schedule_version(p_event, p_expected_version, p_summary);
   update events
      set room_schedule_start = p_start, room_interval_minutes = p_interval, room_passing_minutes = p_passing
@@ -260,6 +297,9 @@ begin
     if gday is not null and (gday < ev.starts_on or gday > coalesce(ev.ends_on, ev.starts_on)) then
       raise exception 'That day isn''t one of the festival''s days.' using errcode = 'P0001';
     end if;
+    if coalesce((o ->> 'extra_minutes_before')::integer, 0) not between 0 and 600 then
+      raise exception 'A break can be up to 600 minutes.' using errcode = 'P0001';
+    end if;
     pos := pos + 1;
     insert into group_order (band_id, event_id, position, day, skipped_room_ids, extra_minutes_before)
     values ((o ->> 'band_id')::uuid, p_event, pos, gday,
@@ -270,44 +310,102 @@ begin
   return ver;
 end;
 $$;
-revoke execute on function public.save_rooms(uuid, jsonb, bigint, text),
+revoke execute on function public.save_rooms(uuid, jsonb, bigint, text, integer, integer),
                          public.save_room_schedule(uuid, timestamptz, integer, integer, jsonb, jsonb, bigint, text)
   from public, anon;
-grant execute on function public.save_rooms(uuid, jsonb, bigint, text),
+grant execute on function public.save_rooms(uuid, jsonb, bigint, text, integer, integer),
                         public.save_room_schedule(uuid, timestamptz, integer, integer, jsonb, jsonb, bigint, text)
   to authenticated;
 
 -- 4. The schedule moves with the festival's dates ----------------------------------------------------
--- Same wall-clock times, moved by the same number of days in the festival's time zone.
+-- Changing the dates by hand (in the app) is refused while a group is on a day the new dates would leave out,
+-- naming the groups (owner, light check on the built update): nothing moves without the organizer seeing it.
+-- Moving both dates by the same number of days moves every group with them (below), so that's never refused.
+create or replace function public.group_dates_keep_groups()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+declare
+  shift_d int := new.starts_on - old.starts_on;
+  last_d  date := coalesce(new.ends_on, new.starts_on);
+  names   text[];
+  n       int;
+begin
+  if new.event_type::text <> 'group_event' or coalesce(current_setting('role', true), '') not in ('authenticated', 'anon') then
+    return new;
+  end if;
+  select array_agg(coalesce(nullif(b.band_name, ''), b.school_name, 'A group') order by g.day, g.position), count(*)
+    into names, n
+    from group_order g join bands b on b.id = g.band_id
+   where g.event_id = new.id and g.day is not null
+     and (g.day + shift_d < new.starts_on or g.day + shift_d > last_d);
+  if n > 0 then
+    raise exception 'Move % to another day first, in Rooms and schedule. % on a day these dates leave out.',
+      case when n = 1 then names[1]
+           else names[1] || ' and ' || (n - 1) || ' other ' || case when n = 2 then 'group' else 'groups' end end,
+      case when n = 1 then 'It''s' else 'They''re' end
+      using errcode = 'P0001';
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.group_dates_keep_groups() from public, anon, authenticated;
+drop trigger if exists group_dates_keep_groups on public.events;
+create trigger group_dates_keep_groups
+  before update of starts_on, ends_on on public.events
+  for each row when (old.starts_on is distinct from new.starts_on or old.ends_on is distinct from new.ends_on)
+  execute function public.group_dates_keep_groups();
+
+-- Same wall-clock times, moved by the same number of days, and kept at the same wall-clock time when the time zone
+-- changes (as volunteer shifts are). A day the new dates leave out with no group on it loses its first start.
+-- A move is a new version of the schedule, so a page that loaded the old times can't save over the new ones.
 create or replace function public.group_schedule_follows_dates()
 returns trigger
 language plpgsql security definer set search_path = public
 as $$
 declare
   shift_d int := new.starts_on - old.starts_on;
+  rezoned boolean := old.timezone is distinct from new.timezone;
+  gone    int;
 begin
-  if new.event_type::text <> 'group_event' or shift_d = 0 then
+  if new.event_type::text <> 'group_event' then
     return new;
   end if;
-  update events
-     set room_schedule_start = ((room_schedule_start at time zone new.timezone) + make_interval(days => shift_d)) at time zone new.timezone
-   where id = new.id and room_schedule_start is not null;
-  -- Two steps, so a later day never lands on an earlier one's key mid-update.
-  update room_schedule_days set day = day + 100000 where event_id = new.id;
-  update room_schedule_days
-     set day = day - 100000 + shift_d,
-         starts_at = ((starts_at at time zone new.timezone) + make_interval(days => shift_d)) at time zone new.timezone
-   where event_id = new.id;
-  update group_order set day = day + shift_d where event_id = new.id and day is not null;
-  perform public.rebuild_room_slots(new.id);
+  if shift_d <> 0 or rezoned then
+    update events
+       set room_schedule_start = ((room_schedule_start at time zone old.timezone) + make_interval(days => shift_d)) at time zone new.timezone
+     where id = new.id and room_schedule_start is not null;
+    -- Two steps, so a later day never lands on an earlier one's key mid-update.
+    update room_schedule_days set day = day + 100000 where event_id = new.id;
+    update room_schedule_days
+       set day = day - 100000 + shift_d,
+           starts_at = ((starts_at at time zone old.timezone) + make_interval(days => shift_d)) at time zone new.timezone
+     where event_id = new.id;
+    update group_order set day = day + shift_d where event_id = new.id and day is not null;
+  end if;
+  delete from room_schedule_days d
+   where d.event_id = new.id
+     and (d.day < new.starts_on or d.day > coalesce(new.ends_on, new.starts_on))
+     and not exists (select 1 from group_order g where g.event_id = new.id and g.day = d.day);
+  get diagnostics gone = row_count;
+  if (shift_d <> 0 or rezoned) and exists (select 1 from group_order where event_id = new.id) then
+    perform public.next_room_schedule_version(new.id, null,
+      case when shift_d <> 0 and rezoned then 'The festival''s dates and time zone changed'
+           when shift_d <> 0 then 'The festival''s dates moved'
+           else 'The festival''s time zone changed' end);
+  end if;
+  if shift_d <> 0 or rezoned or gone > 0 then
+    perform public.rebuild_room_slots(new.id);
+  end if;
   return new;
 end;
 $$;
 revoke execute on function public.group_schedule_follows_dates() from public, anon, authenticated;
 drop trigger if exists group_schedule_follows_dates on public.events;
 create trigger group_schedule_follows_dates
-  after update of starts_on on public.events
-  for each row when (old.starts_on is distinct from new.starts_on)
+  after update of starts_on, ends_on, timezone on public.events
+  for each row when (old.starts_on is distinct from new.starts_on or old.ends_on is distinct from new.ends_on
+                     or old.timezone is distinct from new.timezone)
   execute function public.group_schedule_follows_dates();
 
 -- 5. Marks on the day ----------------------------------------------------------------------------------
@@ -461,7 +559,8 @@ $$;
 revoke execute on function public.room_door_link_new(uuid), public.room_door_link_off(uuid) from public, anon;
 grant execute on function public.room_door_link_new(uuid), public.room_door_link_off(uuid) to authenticated;
 
--- The room a working link opens, while the festival is published and its schedule posted (else nothing).
+-- The room a working link opens, while the festival is published and its schedule posted, until the end of the day
+-- after its last day in its own time zone (owner, light check on the built update). Else nothing.
 create or replace function public.door_room(p_token text)
 returns table (room_id uuid, event_id uuid, room_name text)
 language sql stable security definer set search_path = public
@@ -471,11 +570,13 @@ as $$
     join rooms r on r.id = l.room_id and r.path_order is not null
     join events e on e.id = r.event_id
    where l.token = p_token and l.turned_off_at is null
-     and e.status = 'published' and e.performance_order_published and e.event_type::text = 'group_event';
+     and e.status = 'published' and e.performance_order_published and e.event_type::text = 'group_event'
+     and (now() at time zone e.timezone)::date <= coalesce(e.ends_on, e.starts_on) + 1;
 $$;
 revoke execute on function public.door_room(text) from public, anon, authenticated;
 
--- What the door sees: the room, and every group with a time there, with its marks. No one's personal details.
+-- What the door sees: the room, and every group with a time there (not withdrawn), with its marks. No one's personal
+-- details.
 create or replace function public.room_door(p_token text)
 returns jsonb
 language plpgsql stable security definer set search_path = public
@@ -500,11 +601,11 @@ begin
                'done_at', (select c.created_at from group_checkins c where c.band_id = b.id and c.room_id = d.room_id and c.kind = 'done'))
              order by s.starts_at)
         from room_slots s join bands b on b.id = s.band_id
-       where s.room_id = d.room_id), '[]'::jsonb));
+       where s.room_id = d.room_id and b.scratched_at is null), '[]'::jsonb));
 end;
 $$;
 
--- Marks from the door: only groups with a time in that room, only "in" and "done" there.
+-- Marks from the door: only groups with a time in that room (not withdrawn), only "in" and "done" there.
 create or replace function public.room_door_mark(p_token text, p_band uuid, p_kind text, p_on boolean)
 returns void
 language plpgsql security definer set search_path = public
@@ -521,6 +622,9 @@ begin
   end if;
   if not exists (select 1 from room_slots s where s.room_id = d.room_id and s.band_id = p_band) then
     raise exception 'That group doesn''t have a time in this room.' using errcode = 'P0001';
+  end if;
+  if exists (select 1 from bands b where b.id = p_band and b.scratched_at is not null) then
+    raise exception 'That group withdrew from the festival.' using errcode = 'P0001';
   end if;
   perform public.apply_group_mark(d.event_id, p_band, d.room_id, p_kind, p_on, 'At the door of ' || d.room_name);
 end;
@@ -545,6 +649,8 @@ grant execute on function public.room_door(text), public.room_door_mark(text, uu
                         public.room_door_handoff(text, uuid, uuid) to anon, authenticated;
 
 -- 7. Families' live view: the team's marks, never who made them ----------------------------------------
+-- Only what the page shows: a group in a room, or done there. Not when a group arrived, not "didn't come", and
+-- nothing for a withdrawn group.
 create or replace function public.public_room_live(p_slug text)
 returns table (band_id uuid, room_id uuid, kind text, marked_at timestamptz)
 language sql stable security definer set search_path = public
@@ -552,13 +658,16 @@ as $$
   select c.band_id, c.room_id, c.kind, c.created_at
     from events e
     join group_checkins c on c.event_id = e.id
+    join bands b on b.id = c.band_id and b.scratched_at is null
    where e.slug = p_slug and e.status = 'published' and e.performance_order_published
-     and e.event_type::text = 'group_event';
+     and e.event_type::text = 'group_event'
+     and c.room_id is not null and c.kind in ('in', 'done');
 $$;
 revoke execute on function public.public_room_live(text) from public;
 grant execute on function public.public_room_live(text) to anon, authenticated;
 
--- The posted schedule now names each group's id too, so the live view can match marks to it.
+-- The posted schedule now names each group's id too, so the live view can match marks to it. Withdrawn groups
+-- aren't on it.
 drop function if exists public.public_room_schedule(text);
 create function public.public_room_schedule(p_slug text)
 returns table (
@@ -580,7 +689,7 @@ as $$
     join room_slots s on s.event_id = e.id
     join rooms r on r.id = s.room_id
     join bands b on b.id = s.band_id
-   where e.slug = p_slug and e.status = 'published' and e.performance_order_published
+   where e.slug = p_slug and e.status = 'published' and e.performance_order_published and b.scratched_at is null
    order by s.starts_at, r.path_order;
 $$;
 grant execute on function public.public_room_schedule(text) to anon, authenticated;

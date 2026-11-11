@@ -15,8 +15,11 @@ export type DayRoom = { id: string; name: string; note: string | null; path_orde
 /** One mark to set or take back. */
 export type MarkOp = { band: string; room: string | null; kind: MarkKind; on: boolean };
 
-/** The next tap for a group: its button words, what it marks, and what Undo puts back. */
-export type Tap = { label: string; ops: MarkOp[]; undo: MarkOp[]; did: string };
+/**
+ * The next tap for a group: its button words, what it marks, and what Undo puts back. `did` finishes "Marked
+ * [group] …"; `say` replaces the whole message, with "{group}" for the group's name.
+ */
+export type Tap = { label: string; ops: MarkOp[]; undo: MarkOp[]; did: string; say?: string };
 
 export type Tone = "info" | "neutral" | "warning" | "success";
 
@@ -40,6 +43,11 @@ export type GroupState = {
 };
 
 const MIN = 60_000;
+/**
+ * A few minutes either way is on time (light check on the built update): a group is "N min behind", or "Not marked
+ * in" a room, only once it's this late. Amber is kept for what someone has to act on ("Not marked in").
+ */
+export const GRACE_MINUTES = 5;
 
 /** "Warm-up room and Performance hall" / "A, B, and C". */
 export function listWords(items: string[]) {
@@ -84,7 +92,7 @@ export function groupState({
   const next = rooms.find((r) => !r.done && r.slot !== current?.slot)?.slot ?? null;
   const finished = rooms.length > 0 && rooms.every((r) => r.done);
   const t = now.getTime();
-  const past = (iso: string) => live && t >= new Date(iso).getTime();
+  const past = (iso: string) => live && t >= new Date(iso).getTime() + GRACE_MINUTES * MIN;
 
   const arriveTap: Tap = {
     label: "Mark arrived",
@@ -94,6 +102,14 @@ export function groupState({
       { band: bandId, room: null, kind: "done", on: false },
       ...(noShow ? [{ band: bandId, room: null, kind: "no_show" as const, on: true }] : []),
     ],
+  };
+  // "Didn't come" taken back later, from the group's card (not only the 10-second Undo).
+  const takeBackTap: Tap = {
+    label: "Undo didn't come",
+    did: "",
+    say: "Took back didn't come for {group}",
+    ops: [{ band: bandId, room: null, kind: "no_show", on: false }],
+    undo: [{ band: bandId, room: null, kind: "no_show", on: true }],
   };
   const noShowTap: Tap = {
     label: "Didn't come",
@@ -117,7 +133,7 @@ export function groupState({
 
   const base = { bandId, rooms, arrived, noShow, current, next, finished };
   if (noShow && !arrived) {
-    return { ...base, status: { text: "Didn't come", tone: "neutral" }, line: `Marked didn't come ${stamp(noShow, time)}`, tap: arriveTap, alt: null };
+    return { ...base, status: { text: "Didn't come", tone: "neutral" }, line: `Marked didn't come ${stamp(noShow, time)}`, tap: arriveTap, alt: takeBackTap };
   }
   if (!rooms.length) {
     return {
@@ -136,7 +152,8 @@ export function groupState({
     const late = Math.round((new Date(current.in.created_at).getTime() - new Date(current.slot.starts_at).getTime()) / MIN);
     return {
       ...base,
-      status: late >= 1 ? { text: `${late >= 60 ? `${Math.floor(late / 60)} hr ${late % 60} min` : `${late} min`} behind`, tone: "warning" } : { text: "On time", tone: "info" },
+      // Behind is worth knowing, not something to act on: no amber.
+      status: late >= GRACE_MINUTES ? { text: `${late >= 60 ? `${Math.floor(late / 60)} hr ${late % 60} min` : `${late} min`} behind`, tone: "neutral" } : { text: "On time", tone: "info" },
       line: `In ${roomName(current.slot.room_id)} since ${stamp(current.in, time)}`,
       tap: doneTap(current.slot),
       alt: null,

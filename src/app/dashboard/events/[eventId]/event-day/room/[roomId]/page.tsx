@@ -46,6 +46,10 @@ export default async function RoomDayPage({ params, searchParams }: PageProps<"/
     };
   });
   const dayQuery = d.days.length > 1 ? `?day=${d.day}` : "";
+  // Door links work until the end of the day after the festival's last day, in its time zone (the database checks).
+  const after = new Date(`${event.ends_on ?? event.starts_on}T12:00:00Z`);
+  after.setUTCDate(after.getUTCDate() + 1);
+  const until = after.toISOString().slice(0, 10);
 
   // The door link (hosts and co-hosts read it).
   let door: { url: string; qr: string; on: boolean } | null = null;
@@ -83,7 +87,15 @@ export default async function RoomDayPage({ params, searchParams }: PageProps<"/
         />
       </div>
       {access.isHost && (
-        <DoorLink eventId={eventId} roomId={room.id} roomName={room.name} door={door} posted={event.performance_order_published && event.status === "published"} />
+        <DoorLink
+          eventId={eventId}
+          roomId={room.id}
+          roomName={room.name}
+          door={door}
+          posted={event.performance_order_published && event.status === "published"}
+          until={longDay(until)}
+          expired={d.today > until}
+        />
       )}
     </div>
   );

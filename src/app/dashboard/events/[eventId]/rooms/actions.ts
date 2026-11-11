@@ -6,8 +6,8 @@ import { friendlyDbError } from "@/lib/action-state";
 import { requireUser } from "@/lib/auth";
 import { opensLater, registrationIsOpen } from "@/lib/bands";
 import { getOrigin } from "@/lib/data";
-import { checkRequest, longDay, slotsToTimes, timeChanges, tooLongRooms, type Room } from "@/lib/rooms";
-import { sendScheduleBatch } from "@/lib/schedule-emails";
+import { checkRequest, directorsOf, longDay, slotsToTimes, timeChanges, tooLongRooms, type Room } from "@/lib/rooms";
+import { datesMoved, sendScheduleBatch } from "@/lib/schedule-emails";
 import { createClient } from "@/lib/supabase/server";
 import { eachDate, formatTime, utcToZonedDate, utcToZonedTime, zonedToUtc } from "@/lib/time";
 import type { Conflict, OrderItem, Snapshot } from "./schedule-plan";
@@ -170,46 +170,35 @@ export async function saveRooms(
   if (!whole(input.interval, 5, 240)) return { error: "A new group can start every 5 to 240 minutes." };
   if (input.passing !== null && !whole(input.passing, 0, 60)) return { error: "Walking time between rooms: 0 to 60 minutes." };
   const supabase = await createClient();
-  const [before, { data: oldRooms }] = await Promise.all([loadSlots(supabase, eventId), supabase.from("rooms").select("id, name").eq("event_id", eventId)]);
+  const [before, { data: oldRooms }, { data: ev }] = await Promise.all([
+    loadSlots(supabase, eventId),
+    supabase.from("rooms").select("id, name").eq("event_id", eventId),
+    supabase.from("events").select("room_interval_minutes, room_passing_minutes").eq("id", eventId).single(),
+  ]);
+  const passing = input.passing ?? ev?.room_passing_minutes ?? 5;
+  const spacing = !ev || ev.room_interval_minutes !== input.interval || ev.room_passing_minutes !== passing;
   let version = input.expectedVersion;
-  if (input.rooms) {
+  // Rooms and spacing in one call, so a rooms save is one version step (and the database checks the ranges too).
+  if (input.rooms || spacing) {
     const { data, error } = await supabase.rpc("save_rooms", {
       p_event: eventId,
-      p_rooms: input.rooms.map((r) => ({ id: r.id ?? null, name: r.name.trim(), note: r.note.trim(), on_path: r.onPath, minutes: r.onPath ? r.minutes : 20 })),
+      p_rooms: input.rooms
+        ? input.rooms.map((r) => ({ id: r.id ?? null, name: r.name.trim(), note: r.note.trim(), on_path: r.onPath, minutes: r.onPath ? r.minutes : 20 }))
+        : null,
       p_expected_version: version,
       p_summary: input.summary.slice(0, 500),
-    });
-    if (isConflict(error)) return conflict(supabase, eventId, version);
-    if (error?.code === "P0001" && /can't be removed/.test(error.message)) return cantRemove(supabase, eventId, input.rooms, version, error.message);
-    if (error) return { error: friendlyDbError(error) };
-    version = Number(data);
-  }
-  const { data: ev } = await supabase
-    .from("events")
-    .select("room_interval_minutes, room_passing_minutes, room_schedule_start")
-    .eq("id", eventId)
-    .single();
-  const passing = input.passing ?? ev?.room_passing_minutes ?? 5;
-  if (ev && (ev.room_interval_minutes !== input.interval || ev.room_passing_minutes !== passing)) {
-    const { data: order } = await supabase.from("group_order").select("band_id, day, skipped_room_ids, extra_minutes_before").eq("event_id", eventId).order("position");
-    const { data, error } = await supabase.rpc("save_room_schedule", {
-      p_event: eventId,
-      p_start: ev.room_schedule_start,
       p_interval: input.interval,
       p_passing: passing,
-      p_order: (order ?? []).map((o) => ({ band_id: o.band_id, day: o.day, skipped_room_ids: o.skipped_room_ids, extra_minutes_before: o.extra_minutes_before })),
-      p_days: null,
-      p_expected_version: version,
-      p_summary: input.summary.slice(0, 500),
     });
     if (isConflict(error)) return conflict(supabase, eventId, version);
+    if (error?.code === "P0001" && /can't be removed/.test(error.message) && input.rooms) return cantRemove(supabase, eventId, input.rooms, version, error.message);
     if (error) return { error: friendlyDbError(error) };
     version = Number(data);
   }
   const emailed = await emailChanges(supabase, eventId, before, input.email, new Map((oldRooms ?? []).map((r) => [r.id as string, r.name as string])));
   const { data: rooms } = await supabase.from("rooms").select("id, name, note, path_order, minutes").eq("event_id", eventId).order("path_order", { nullsFirst: false }).order("created_at");
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
-  return { ok: true, version, rooms: (rooms ?? []) as Room[], emailed, message: emailed ? `Saved. Emailing ${plural(emailed, "director", "directors")} their new times.` : "Saved" };
+  return { ok: true, version, rooms: (rooms ?? []) as Room[], emailed, message: emailed ? `Saved. Emailing ${directorsOf(emailed)} their new times.` : "Saved" };
 }
 
 /** The room the database wouldn't remove, and the groups still to come there (no mark in it, time not started). */
@@ -275,20 +264,28 @@ async function saveOrder(
   if (!ev) return { error: "This festival couldn't be loaded. Reload the page." };
   const days = eachDate(ev.starts_on, ev.ends_on ?? ev.starts_on);
   const path = new Set(snap.rooms.filter((r) => r.path_order != null).map((r) => r.id));
-  if (Object.entries(starts).some(([d, t]) => !days.includes(d) || !/^\d{2}:\d{2}$/.test(t))) return { error: "Pick a time for the first group of each day." };
+  // A first start for a day the festival no longer has (and no group is on): left out, not an error.
+  const dayStarts = Object.fromEntries(Object.entries(starts).filter(([d]) => days.includes(d)));
+  if (Object.values(dayStarts).some((t) => !/^\d{2}:\d{2}$/.test(t))) return { error: "Pick a time for the first group of each day." };
   if (new Set(order.map((o) => o.bandId)).size !== order.length) return { error: "A group is on the schedule twice. Reload the page." };
-  if (order.some((o) => !days.includes(o.day))) return { error: "That day isn't one of the festival's days." };
+  // Never dropped quietly: a group on a day the festival no longer has is named, so it can be moved.
+  const offDay = order.filter((o) => !days.includes(o.day));
+  if (offDay.length) {
+    const { data: names } = await supabase.from("bands").select("band_name").in("id", offDay.map((o) => o.bandId));
+    const list = (names ?? []).map((b) => b.band_name as string);
+    return { error: `${list[0] ?? "A group"}${list.length > 1 ? ` and ${plural(list.length - 1, "other group", "other groups")}` : ""} ${list.length > 1 ? "are" : "is"} on a day the festival no longer has. In Event settings, put that day back in the festival's dates, then move ${list.length > 1 ? "them" : "it"} to another day here.` };
+  }
   if (order.some((o) => !whole(o.extraMinutes, 0, 600))) return { error: "A break can be up to 600 minutes." };
   const tz = ev.timezone;
   const before = await loadSlots(supabase, eventId);
-  const first = starts[ev.starts_on];
+  const first = dayStarts[ev.starts_on];
   const { data, error } = await supabase.rpc("save_room_schedule", {
     p_event: eventId,
     p_start: first ? zonedToUtc(ev.starts_on, first, tz).toISOString() : null,
     p_interval: snap.interval,
     p_passing: snap.passing,
     p_order: order.map((o) => ({ band_id: o.bandId, day: o.day, skipped_room_ids: o.skipped.filter((r) => path.has(r)), extra_minutes_before: o.extraMinutes })),
-    p_days: Object.entries(starts).map(([day, t]) => ({ day, starts_at: zonedToUtc(day, t, tz).toISOString() })),
+    p_days: Object.entries(dayStarts).map(([day, t]) => ({ day, starts_at: zonedToUtc(day, t, tz).toISOString() })),
     p_expected_version: expectedVersion,
     p_summary: summary.slice(0, 500),
   });
@@ -296,42 +293,39 @@ async function saveOrder(
   if (error) return { error: friendlyDbError(error) };
   const emailed = await emailChanges(supabase, eventId, before, email);
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
-  return { ok: true, version: Number(data), emailed, message: emailed ? `Saved. Emailing ${plural(emailed, "director", "directors")} their new times.` : "Saved" };
+  return { ok: true, version: Number(data), emailed, message: emailed ? `Saved. Emailing ${directorsOf(emailed)} their new times.` : "Saved" };
 }
 
 /**
- * Posts the schedule: on the festival page, and each director with times is emailed. Only once: the flag flips
- * in one update, and only the request that flipped it sends. A room that would hold two groups at once blocks it.
+ * Posts the schedule: on the festival page, and each director with times is emailed. The posted flag and the send
+ * list are one database step (post_room_schedule), so it's never posted with nobody's email queued; only the
+ * request that posted it sends. A room that would hold two groups at once blocks it.
  */
 export async function postSchedule(eventId: string, input: { expectedVersion: number }): Promise<SaveResult> {
   await requireUser();
   const supabase = await createClient();
-  const [{ data: ev }, { data: rooms }, { data: slots }, { data: bands }] = await Promise.all([
+  const [{ data: ev }, { data: rooms }] = await Promise.all([
     supabase.from("events").select("status, room_schedule_version, room_interval_minutes, performance_order_published").eq("id", eventId).single(),
     supabase.from("rooms").select("id, name, note, path_order, minutes").eq("event_id", eventId),
-    supabase.from("room_slots").select("band_id").eq("event_id", eventId),
-    supabase.from("bands").select("id").eq("event_id", eventId).is("scratched_at", null),
   ]);
   if (!ev) return { error: "This festival couldn't be loaded. Reload the page." };
   if (ev.status !== "published") return { error: "Publish the festival first. Then you can post its schedule." };
   if (ev.performance_order_published) return { ok: true, version: Number(ev.room_schedule_version), emailed: 0, message: "The schedule is already posted." };
-  if (Number(ev.room_schedule_version) !== input.expectedVersion) return conflict(supabase, eventId, input.expectedVersion);
   const long = tooLongRooms((rooms ?? []) as Room[], ev.room_interval_minutes);
   if (long.length) return { error: `${long[0].name} is longer than the time between groups, so it would have two groups at once. Fix that first.` };
-  const timed = new Set((slots ?? []).map((s) => s.band_id as string));
-  const withTimes = (bands ?? []).map((b) => b.id as string).filter((id) => timed.has(id));
-  if (!withTimes.length) return { error: "Give at least one group times first." };
-  const { data: flipped, error } = await supabase
-    .from("events")
-    .update({ performance_order_published: true, schedule_updated_at: new Date().toISOString() })
-    .eq("id", eventId)
-    .eq("performance_order_published", false)
-    .select("id");
+  const { data, error } = await supabase.rpc("post_room_schedule", { p_event: eventId, p_expected_version: input.expectedVersion });
+  if (isConflict(error)) return conflict(supabase, eventId, input.expectedVersion);
   if (error) return { error: friendlyDbError(error) };
+  const res = data as { posted: boolean; batch: string | null; groups: number };
   // Someone else posted it a moment ago: they sent the emails.
-  const emailed = flipped?.length ? await queue(supabase, eventId, "posted", withTimes) : 0;
+  if (res.posted && res.batch) {
+    const origin = await getOrigin();
+    const batch = res.batch;
+    after(() => sendScheduleBatch(batch, origin));
+  }
+  const emailed = res.posted ? res.groups : 0;
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
-  return { ok: true, version: input.expectedVersion, emailed, message: emailed ? `Posted. Emailing ${plural(emailed, "director", "directors")} their group's times.` : "Posted" };
+  return { ok: true, version: input.expectedVersion, emailed, message: emailed ? `Posted. Emailing ${directorsOf(emailed)} their group's times.` : "Posted" };
 }
 
 /**
@@ -360,21 +354,50 @@ export async function pushBack(
   const r = await saveOrder(supabase, eventId, snap, snap.starts, order, input.expectedVersion ?? snap.version, summary, input.email);
   if ("ok" in r) {
     const moved = after + 1;
-    return { ...r, message: `Moved ${plural(moved, "group", "groups")} ${input.minutes} minutes later.${r.emailed ? ` Emailing ${plural(r.emailed, "director", "directors")} their new times.` : ""}` };
+    return { ...r, message: `Moved ${plural(moved, "group", "groups")} ${input.minutes} minutes later.${r.emailed ? ` Emailing ${directorsOf(r.emailed)} their new times.` : ""}` };
   }
   return r;
 }
 
-/** Sending stopped partway or some failed: try the rest of the latest list again. */
-export async function sendTheRest(eventId: string, batch: string): Promise<SaveResult> {
+/**
+ * Sending stopped partway or some failed: try the rest again, on every send list that has any left (not only the
+ * latest), so an earlier list's failures are reached too.
+ */
+export async function sendTheRest(eventId: string): Promise<SaveResult> {
   await requireUser();
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("retry_room_schedule_emails", { p_event: eventId, p_batch: batch });
+  const { data, error } = await supabase.rpc("retry_room_schedule_emails", { p_event: eventId, p_batch: null });
   if (error) return { error: friendlyDbError(error) };
+  const { data: rows } = await supabase.from("room_schedule_emails").select("batch").eq("event_id", eventId).eq("status", "waiting");
+  const batches = [...new Set((rows ?? []).map((r) => r.batch as string))];
   const origin = await getOrigin();
-  after(() => sendScheduleBatch(batch, origin));
-  revalidatePath(`/dashboard/events/${eventId}/rooms`);
+  after(async () => {
+    for (const b of batches) await sendScheduleBatch(b, origin);
+  });
+  revalidatePath(`/dashboard/events/${eventId}`, "layout");
   return { ok: true, version: 0, message: data ? "Sending the rest" : "Sending" };
+}
+
+/**
+ * After the festival's dates or time zone changed on a posted schedule (the database moved every group's times and
+ * logged it): the organizer's choice to email every director their times now. Not automatic.
+ */
+export async function emailNewTimes(eventId: string): Promise<SaveResult> {
+  await requireUser();
+  const supabase = await createClient();
+  const [moved, { data: slots }, { data: bands }] = await Promise.all([
+    datesMoved(supabase, eventId),
+    supabase.from("room_slots").select("band_id").eq("event_id", eventId),
+    supabase.from("bands").select("id").eq("event_id", eventId).is("scratched_at", null),
+  ]);
+  if (!moved) return { ok: true, version: 0, emailed: 0, message: "Nothing to email: the times haven't moved since directors were last emailed." };
+  const timed = new Set((slots ?? []).map((s) => s.band_id as string));
+  const ids = (bands ?? []).map((b) => b.id as string).filter((id) => timed.has(id));
+  const what = moved.summary.replace(/^The /, "the ");
+  const emailed = await queue(supabase, eventId, "changed", ids, Object.fromEntries(ids.map((id) => [id, what])));
+  if (!emailed && ids.length) return { error: "The emails couldn't be queued. Try again." };
+  revalidatePath(`/dashboard/events/${eventId}`, "layout");
+  return { ok: true, version: 0, emailed, message: `Emailing ${directorsOf(emailed)} their new times.` };
 }
 
 /** What the "Post the schedule?" window says (board 11), worked out from what's saved now. */

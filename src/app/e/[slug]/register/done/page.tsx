@@ -26,8 +26,8 @@ export default async function RegisteredPage({ params, searchParams }: PageProps
   const ev = band.events as unknown as { band_registration_deadline: string | null; performance_order_published: boolean } | null;
   const deadline = ev?.band_registration_deadline ?? null;
   const when = ev?.performance_order_published
-    ? "Your times come by email once the organizer adds your group to the schedule."
-    : `Your times come by email once the organizer posts the schedule${deadline ? `, after registration closes ${formatDate(deadline)}` : ""}.`;
+    ? "Your group's times come by email once the organizer adds your group to the schedule."
+    : "Your group's times come by email once the organizer posts the schedule.";
 
   return (
     <>

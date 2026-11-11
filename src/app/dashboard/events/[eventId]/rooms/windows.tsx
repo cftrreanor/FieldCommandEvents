@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui";
+import { directorsOf } from "@/lib/rooms";
 import type { Conflict } from "./schedule-plan";
 
 // The Rooms and schedule page's windows (boards 4, 11, 12, and 14): one look for all of them, the question as the
@@ -79,7 +80,7 @@ export function EmailChoice({ count, email, setEmail, emailLabel }: { count: num
     <fieldset className="space-y-2">
       <legend className="font-semibold">Email the directors?</legend>
       <Choice name={name} checked={email} onChange={() => setEmail(true)}>
-        {emailLabel ?? (count === 1 ? "Email the director whose times change" : `Email the ${count} directors whose times change`)}
+        {emailLabel ?? `Email the directors of ${count === 1 ? "the group" : `the ${count} groups`} whose times change`}
       </Choice>
       <Choice name={name} checked={!email} onChange={() => setEmail(false)}>
         Don&apos;t email anyone (the festival page updates either way)
@@ -144,7 +145,7 @@ export function SaveTimesWindow({
 }) {
   const [email, setEmail] = useState(true);
   const n = changes.length;
-  const label = n === 0 ? (saveLabel ?? "Save") : email ? `Save and email ${n === 1 ? "1 director" : `${n} directors`}` : "Save without emailing";
+  const label = n === 0 ? (saveLabel ?? "Save") : email ? `Save and email ${directorsOf(n)}` : "Save without emailing";
   return (
     <Window
       open={open}

@@ -271,7 +271,9 @@ function EventDates({
   const [end, setEnd] = useState(endsOn ?? startsOn ?? "");
   // Picked by hand (or saved that way): stays put when the first day changes, unless that passes it.
   const [endPicked, setEndPicked] = useState(multi);
-  const [startT, setStartT] = useState(startTime ?? "07:00");
+  // New events start with both times empty ("Pick a time"), every kind (pattern rule 2); a copy or a saved
+  // event fills them.
+  const [startT, setStartT] = useState(startTime ?? "");
   return (
     <>
       {/* The checkbox sits right under the date, level with the end date's hint. */}
@@ -327,7 +329,7 @@ function EventDates({
         <TimeField name="startTime" value={startT} onChange={(e) => setStartT(e.target.value)} required />
       </Field>
       <Field label={multi ? "End time (last day)" : "End time"}>
-        <TimeField name="endTime" defaultValue={endTime ?? "22:00"} after={multi ? undefined : startT} required />
+        <TimeField name="endTime" defaultValue={endTime ?? ""} after={multi ? undefined : startT} required />
       </Field>
     </>
   );

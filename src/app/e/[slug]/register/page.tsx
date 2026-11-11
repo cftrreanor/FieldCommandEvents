@@ -20,7 +20,7 @@ async function loadEvent(slug: string) {
   const { data } = await supabase
     .from("events")
     .select(
-      "id, name, status, event_type, starts_on, ends_on, timezone, venue_name, venue_address, venue_place_id, band_registration_open, band_registration_deadline, band_registration_opens_on, director_info, payment_link, chaperone_limit, classifications, ask_chaperones, ask_buses, ask_availability",
+      "id, name, status, event_type, starts_on, ends_on, timezone, venue_name, venue_address, venue_place_id, band_registration_open, band_registration_deadline, band_registration_opens_on, director_info, payment_link, chaperone_limit, classifications, ask_chaperones, ask_buses, ask_availability, performance_order_published",
     )
     .eq("slug", slug)
     .maybeSingle();
@@ -164,6 +164,7 @@ export default async function FestivalRegisterPage({ params }: Params) {
                 chaperoneLimit={event.chaperone_limit}
                 days={eachDate(event.starts_on, event.ends_on).map((d) => ({ value: d, label: weekday(d) }))}
                 email={user?.email ?? null}
+                posted={Boolean(event.performance_order_published)}
                 initial={
                   prefill
                     ? {

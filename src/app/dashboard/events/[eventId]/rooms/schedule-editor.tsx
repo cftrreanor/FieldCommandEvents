@@ -428,7 +428,7 @@ export function ScheduleEditor({
             Registered, no times yet · {plural(waiting.length, "group", "groups")}
           </h3>
           <p className="mt-1 text-sm text-muted">
-            {posted ? "Once you save, only their directors are emailed." : "They get times once you add them."}
+            {posted ? "When you add a group and save, its directors are emailed its times. No one else is emailed." : "They get times once you add them."}
           </p>
           <ul className="mt-3 divide-y divide-border">
             {waiting.map((g) => (

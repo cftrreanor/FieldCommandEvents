@@ -55,6 +55,8 @@ import { loadSetupFacts } from "@/lib/setup-facts";
 import { LineIcon } from "@/components/line-icon";
 import { FestivalCards, FestivalDraftCards, FestivalNextStep, type FestivalFacts } from "./festival-home";
 import { festivalRegistrationMissing, festivalRoomsMissing } from "@/lib/setup-checklist";
+import { minutesPerGroup } from "@/lib/rooms";
+import { datesMoved } from "@/lib/schedule-emails";
 
 export const metadata: Metadata = { title: "Event setup" };
 
@@ -251,7 +253,17 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         supabase.from("room_slots").select("room_id, band_id, starts_at, ends_at").eq("event_id", eventId),
         supabase.from("group_checkins").select("band_id, room_id, created_at, actor_name, kind").eq("event_id", eventId),
       ]).then(([{ data: gs }, { data: gc }]) =>
-        (gs ?? []).length ? groupDaySummary(groupDay((gs ?? []) as GroupSlot[], (gc ?? []) as GroupCheckin[], now, isEventDay)) : null,
+        (gs ?? []).length
+          ? groupDaySummary(
+              groupDay(
+                // Withdrawn groups aren't expected on the day.
+                ((gs ?? []) as GroupSlot[]).filter((x) => !(bandData ?? []).some((b: { id: string; scratched_at?: string | null }) => b.id === x.band_id && b.scratched_at)),
+                (gc ?? []) as GroupCheckin[],
+                now,
+                isEventDay,
+              ),
+            )
+          : null,
       )
     : null;
   const groupName = (id: string) => {
@@ -1298,6 +1310,8 @@ function PublishPanel({
   // A festival needs a room in the rotation, then a registration deadline (the database checks too).
   const festRooms = festival ? festivalRoomsMissing(facts) : null;
   const festReg = festival ? festivalRegistrationMissing(facts) : null;
+  // Doesn't stop publishing, but posting the schedule waits for it.
+  const festFix = festival && !festRooms && facts.roomTwoAtOnce ? facts.roomTwoAtOnce : null;
   const blocked = needsJob || Boolean(bandMissing) || meetingTodo.length > 0 || Boolean(festRooms || festReg);
   // A volunteer event says what its own button opens (it chooses when sign-up opens), as band contests do.
   const effects = publishEffects(facts).map((line) =>
@@ -1340,6 +1354,17 @@ function PublishPanel({
           <p className="mt-1">Publishing needs at least one room in the rotation and a registration deadline before the festival.</p>
           <Link href={`/dashboard/events/${facts.eventId}/${festRooms ? "rooms" : "bands"}`} className={`${BTN} mt-3`}>
             {festRooms ? "Go to Rooms and schedule" : "Go to Registration"}
+          </Link>
+        </div>
+      )}
+      {festFix && (
+        <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
+          <p className="font-semibold">
+            <span aria-hidden>◆ </span>Before you can post the schedule: fix {festFix} (it would have two groups at once)
+          </p>
+          <p className="mt-1">You can still publish now. Directors register either way.</p>
+          <Link href={`/dashboard/events/${facts.eventId}/rooms`} className={`${BTN_OUTLINE} mt-3`}>
+            Go to Rooms and schedule
           </Link>
         </div>
       )}
@@ -1973,11 +1998,12 @@ async function festivalFacts(
   },
 ): Promise<FestivalFacts> {
   const supabase = await createClient();
-  const [{ data: roomRows }, { data: slotRows }, { data: extra }] = await Promise.all([
+  const [{ data: roomRows }, { data: slotRows }, { data: extra }, moved] = await Promise.all([
     supabase.from("rooms").select("id, path_order, minutes").eq("event_id", eventId),
     supabase.from("room_slots").select("band_id").eq("event_id", eventId),
     // After the 20270129000000 update (a group limit); before it, no limit.
     supabase.from("events").select("max_groups, room_passing_minutes").eq("id", eventId).maybeSingle(),
+    datesMoved(supabase, eventId),
   ]);
   const rooms = (roomRows ?? []) as { id: string; path_order: number | null; minutes: number | null }[];
   const path = rooms.filter((r) => r.path_order != null);
@@ -2007,7 +2033,7 @@ async function festivalFacts(
     posted: event.performance_order_published,
     rooms: rooms.length,
     pathRooms: path.length,
-    minutesPerGroup: path.reduce((n, r) => n + (r.minutes ?? 0), 0) + passing * Math.max(path.length - 1, 0),
+    minutesPerGroup: minutesPerGroup(path.map((r) => ({ path_order: r.path_order, minutes: r.minutes ?? 0 })), passing),
     volunteers: {
       jobs: setup?.stations ?? 0,
       filled: totals.filled,
@@ -2032,5 +2058,6 @@ async function festivalFacts(
           {status.late.length > 0 && <p className="font-medium text-warning">Not marked arrived: {status.late.map((d) => ctx.groupName(d.bandId)).join(", ")}</p>}
         </>
       ) : null,
+    moved: moved ? { line: moved.line } : null,
   };
 }

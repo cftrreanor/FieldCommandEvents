@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { NumberInput } from "@/components/number-input";
 import { Button, Select } from "@/components/ui";
+import { directorsOf } from "@/lib/rooms";
 import { pushBack } from "./actions";
 import { Choice, Window } from "./windows";
 
@@ -54,8 +55,7 @@ export function PushBackButton({
   const count = after + 1;
   const m = Number(minutes);
   const valid = Number.isInteger(m) && m >= 1 && m <= 240;
-  const directors = count === 1 ? "1 director" : `${count} directors`;
-  const button = !posted ? "Push back" : email ? `Push back and email ${directors}` : "Push back without emailing";
+  const button = !posted ? "Push back" : email ? `Push back and email ${directorsOf(count)}` : "Push back without emailing";
 
   const submit = async () => {
     if (!valid) return setError("Enter 1 to 240 minutes.");
@@ -134,7 +134,7 @@ export function PushBackButton({
           <fieldset className="space-y-2">
             <legend className="sr-only">Email the directors?</legend>
             <Choice name="push-email" checked={email} onChange={() => setEmail(true)}>
-              Email {count === 1 ? "that director" : `those ${count} directors`} their new times
+              Email the directors of {count === 1 ? "that group" : `those ${count} groups`} their new times
             </Choice>
             <Choice name="push-email" checked={!email} onChange={() => setEmail(false)}>
               Don&apos;t email anyone (the festival page updates either way)
