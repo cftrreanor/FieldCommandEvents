@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, type FocusEvent } from "react";
-import { flushSync } from "react-dom";
 import { formatTime, parseTime, timesEvery } from "@/lib/date-input";
-import { LockIcon, PickerPopover, PickerProblem, pickerBoxClass, pickerButtonClass, makeRoom, useEditEvents, useFieldLabel, useTouchScreen } from "./picker-parts";
+import { LockIcon, PickerPopover, PickerProblem, pickerBoxClass, pickerButtonClass, makeRoom, useEditEvents, useFieldLabel } from "./picker-parts";
 
 type ChangeEvent = { target: { value: string; name?: string } };
 
@@ -81,8 +80,6 @@ export function TimeField({
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const open = anchor !== null;
   const [active, setActive] = useState(-1);
-  const touch = useTouchScreen();
-  const [typeMode, setTypeMode] = useState(false);
   const locked = !!(disabled || readOnly);
   const input = useRef<HTMLInputElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
@@ -173,8 +170,6 @@ export function TimeField({
     commit(v);
   };
 
-  const tapToPick = touch && !typeMode;
-
   return (
     <div ref={wrap} data-picker data-picker-open={open || undefined} className={`relative scroll-mt-24 ${className}`}>
       <input
@@ -182,7 +177,6 @@ export function TimeField({
         id={boxId}
         type="text"
         role="combobox"
-        inputMode={tapToPick ? "none" : "text"}
         autoComplete="off"
         data-picker-box
         value={text}
@@ -206,7 +200,12 @@ export function TimeField({
           setActive(parseTime(next, start) ? 0 : -1);
           if (typedProblem) setTypedProblem(null);
         }}
-        onClick={openList}
+        // Tapping in selects the time, so typing replaces it.
+        onFocus={(e) => e.currentTarget.select()}
+        onClick={(e) => {
+          if (!open && typed === null) e.currentTarget.select();
+          openList();
+        }}
         onBlur={(e) => {
           setAnchor(null);
           readTyped();
@@ -282,24 +281,6 @@ export function TimeField({
               </li>
             ))}
           </ul>
-          {tapToPick && (
-            <div className="border-t border-border p-1">
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setAnchor(null);
-                  flushSync(() => setTypeMode(true));
-                  input.current?.blur();
-                  input.current?.focus();
-                  input.current?.select();
-                }}
-                className="min-h-11 w-full rounded-md px-3 text-left text-sm font-semibold text-brand hover:bg-brand-soft dark:text-foreground"
-              >
-                Type it instead
-              </button>
-            </div>
-          )}
         </PickerPopover>
       )}
     </div>

@@ -103,20 +103,30 @@ export function PickerPopover({
       if (matchWidth) el.style.minWidth = `${r.width}px`;
       el.style.maxHeight = "";
       const h = el.offsetHeight;
-      const below = window.innerHeight - r.bottom;
-      const up = below < h + 8 && r.top > below;
-      // A short screen (zoomed in, phone turned sideways): the pop-up scrolls inside itself.
-      const room = (up ? r.top : below) - 12;
-      if (h > room) el.style.maxHeight = `${Math.max(160, room)}px`;
-      el.style.top = `${up ? Math.max(8, r.top - Math.min(h, room) - 4) : r.bottom + 4}px`;
+      // The part of the screen people can see: on a phone, above the on-screen keyboard.
+      const vv = window.visualViewport;
+      const seenTop = vv?.offsetTop ?? 0;
+      const seenBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+      const below = seenBottom - r.bottom;
+      const above = r.top - seenTop;
+      const up = below < h + 8 && above > below;
+      // A short screen (zoomed in, keyboard up, phone turned sideways): the pop-up scrolls inside itself.
+      const room = (up ? above : below) - 12;
+      if (h > room) el.style.maxHeight = `${Math.max(132, room)}px`;
+      el.style.top = `${up ? Math.max(seenTop + 8, r.top - Math.min(h, room) - 4) : r.bottom + 4}px`;
       el.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - el.offsetWidth - 8))}px`;
     };
     place();
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
+    // The keyboard coming up or going away.
+    window.visualViewport?.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("scroll", place);
     return () => {
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
+      window.visualViewport?.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("scroll", place);
     };
   }, [anchor, popRef, matchWidth]);
 

@@ -41,3 +41,12 @@ owner's "all as recommended", including one severity 3 (Tab leaving the calendar
 Left for later: two messages on the band contest deadline after a refused save and a typo (severity 1).
 Shift end times read a bare hour after their start but aren't refused when earlier, because shifts can run
 past midnight; conference end times are refused.
+
+## Owner change after merging (2026-11-11)
+
+"They should always be able to type a time in the field or choose from the list." The time box no longer
+opens its list without the keyboard on touch screens, and "Type it instead" is gone: a tap brings up the
+keyboard and the list together, so people can type or tap a time. On phones the list sits in the part of the
+screen above the keyboard (flipping above the box, or scrolling inside itself, when there isn't room).
+Tapping into a box that has a time selects it, so typing replaces it. Date boxes are unchanged for now.
+This is the owner's own design decision, so it had no panel.
