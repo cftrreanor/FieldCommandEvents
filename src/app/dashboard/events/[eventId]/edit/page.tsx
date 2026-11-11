@@ -263,12 +263,14 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
     uploaded: uploaded.get(f.id) ?? null,
   }));
 
-  // Team: how many co-hosts and Volunteer Leads, for the menu.
-  const [{ count: coHostCount }, { count: leadCount }] = await Promise.all([
-    supabase.from("organization_members").select("user_id", { count: "exact", head: true }).eq("organization_id", event.organization_id).eq("role", "admin"),
-    supabase.from("event_staff").select("user_id", { count: "exact", head: true }).eq("event_id", eventId).eq("role", "volunteer_director"),
+  // Team: everyone on the tabs (co-hosts of every event, and this event's co-hosts, Volunteer Leads, and
+  // Coordinators), counted the same way for everyone who can open this page.
+  const [{ count: coHostCount }, { data: eventTeam }] = await Promise.all([
+    admin.from("organization_members").select("user_id", { count: "exact", head: true }).eq("organization_id", event.organization_id).eq("role", "admin"),
+    admin.from("event_staff").select("user_id, role").eq("event_id", eventId),
   ]);
-  const teamCount = (coHostCount ?? 0) + (conference ? 0 : (leadCount ?? 0));
+  const teamCount =
+    (coHostCount ?? 0) + new Set((eventTeam ?? []).filter((s) => !conference || s.role === "co_host").map((s) => s.user_id)).size;
   const base = `/dashboard/events/${eventId}/edit`;
   const sections: SettingsSection[] = [
     { id: "details", label: "Event details", done: true, status: eventTypeLabel(event.event_type) },

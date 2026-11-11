@@ -145,3 +145,36 @@ Drumline Invitational"), not a switch to one-by-one events.
 
 This is an AI review, not testing with real people. For the severity 3 findings, try the invite and remove windows
 with two or three organizers before launch.
+
+## Round 2: light check on the mock-ups
+
+UX Designer, UI Designer, Content Manager, Product Owner, and consultant, on `2026-11-11-event-cohosts-mockups-2/`
+(pick from your team on every tab, the drawn windows and states). Severity 3s: a co-host of one event's "From your
+team" would show the account's other events (owner: only people on their event); co-hosts of a few events had no place
+on the tab; Change… one way only; after-event states; the team-spot rule. Owner decisions are in
+`docs/design-decisions/2026-11-11-event-cohosts.md`.
+
+## Light check on the build
+
+Software Engineer, consultant, Product Owner, and UI Designer with Content Manager, on
+`2026-11-11-event-cohosts-built/`. The Software Engineer drove the real screens as the Account Host and as a co-host of
+one event, and ran the database functions as that co-host. Severity 3s, all fixed:
+- Past band directors from the account's other contests (with emails) could be listed by a co-host of one event; now
+  the account's hosts only, with a security test.
+- "Invite again" on a removed co-host of one event invited them to every event; now to their event only.
+- Windows opened with keyboard focus left on the page (My team's too); focus now goes to the window's question.
+
+Owner decisions on two more: a co-host of one event moving the event's last day later emails the Account Host (their
+access follows the date); and a co-host of one event sees volunteer history like a Volunteer Lead.
+
+Severity 2s fixed: the Change… jobs warning only when they lead jobs (named); "Just from Fall Cleanup Day" and "From
+every event" as the Remove choices, with "stays a co-host of your other open events" first; the team count in the
+menu counts everyone on the tabs, the same for every viewer; Volunteer Leads and Coordinators get the same Remove…
+window (with the email box); stopping co-hosting confirms on the dashboard; leaving works until access ends; the
+dashboard card and the co-host's tab say "Co-host until" the date; the Account Host sees "Access ends" after the
+event; the row of someone made co-host from Volunteer Lead says so; window buttons stack the same way on phones; the
+address lookup works for co-hosts of one event; the Account Host's name shows for them; wording ("a co-host of",
+"other events from", Oxford commas in the removed email, one name for team spots, non-breaking "co‑host" on the
+invitation page). Left as is: Undo for a removal made on the event's tab is on My team (said in the message).
+
+The last round of fixes was checked against fresh screenshots by the builder, not by the panel again.

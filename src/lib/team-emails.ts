@@ -58,7 +58,7 @@ export function removedEmail(o: {
   contact: string;
 }) {
   const coHost = o.roles.length === 1 && o.roles[0] === "co-host";
-  const what = coHost ? `a co-host${o.organization ? ` for ${o.organization}` : ""}` : o.roles.join(" and ");
+  const what = coHost ? `a co-host${o.organization ? ` for ${o.organization}` : ""}` : listAnd(o.roles);
   const title = `You're no longer ${what}`;
   return {
     subject: title,
@@ -66,7 +66,7 @@ export function removedEmail(o: {
       heading: title,
       paragraphs: [
         `${o.remover} removed you as ${what}.`,
-        ...(o.keeps.length ? [`You're still ${o.keeps.join(" and ")}.`] : []),
+        ...(o.keeps.length ? [`You're still ${keepsInWords(o.keeps)}.`] : []),
         `Questions? Contact ${o.remover} at ${o.contact}.`,
       ],
       footer: "Your own account and any volunteer sign-ups you made stay as they are.",
@@ -189,12 +189,25 @@ export function cohostChangedEmail(o: { changer: string; organization: string; e
       heading: title,
       paragraphs: [
         o.every
-          ? `${o.changer} made you a co-host of every event for ${o.organization}, including any they add later.`
-          : `${o.changer} changed what you co-host for ${o.organization}: now just ${o.eventName}. You no longer see their other events, and your access ends 10 days after it.`,
+          ? `${o.changer} made you a co-host of every event for ${o.organization}, including any added later.`
+          : `${o.changer} changed what you co-host for ${o.organization} to ${o.eventName} only. You no longer see other events from ${o.organization}, and your access ends 10 days after ${o.eventName}.`,
         `Questions? Contact ${o.changer} at ${o.contact}.`,
       ],
       button: { label: "Open your dashboard", url: o.url },
       footer: "Your own account and any volunteer sign-ups you made stay as they are.",
     }),
   };
+}
+
+/** "A, B, and C". */
+function listAnd(items: string[]) {
+  return items.length <= 2 ? items.join(" and ") : `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
+/** The roles someone keeps, in words: many co-host roles read as one line ("a co-host of 10 other events"). */
+function keepsInWords(keeps: string[]) {
+  const cohost = keeps.filter((k) => k.startsWith("co-host of "));
+  const rest = keeps.filter((k) => !k.startsWith("co-host of "));
+  const parts = cohost.length > 3 ? [`a co-host of ${cohost.length} other events`, ...rest] : [...cohost.map((k) => `a ${k}`), ...rest];
+  return listAnd(parts);
 }

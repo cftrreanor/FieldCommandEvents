@@ -12,6 +12,7 @@ import { eventForShare, shareLink } from "@/lib/share";
 import { requireUser } from "@/lib/auth";
 import { emailMovedMeetings } from "@/app/e/[slug]/book/data";
 import { getOrigin } from "@/lib/data";
+import { emailLayout, sendEmail } from "@/lib/email";
 import { normalizePhone } from "@/lib/phone";
 import { slugify } from "@/lib/slug";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -222,7 +223,7 @@ export async function updateEvent(eventId: string, _prev: ActionState, formData:
   const supabase = await createClient();
   const { data: before } = await supabase
     .from("events")
-    .select("timezone, starts_on, window_start, venue_name, venue_address, name, event_type, status, band_registration_deadline")
+    .select("timezone, starts_on, ends_on, organization_id, window_start, venue_name, venue_address, name, event_type, status, band_registration_deadline")
     .eq("id", eventId)
     .maybeSingle();
   // Saving by itself is for drafts: a live event's changes can email volunteers, so they wait for Save.
@@ -267,6 +268,10 @@ export async function updateEvent(eventId: string, _prev: ActionState, formData:
     p_timezone: v.timezone,
   });
   if (error) return { error: friendlyDbError(error) };
+
+  // A co-host of one event keeps access until 10 days after its last day, so moving that day later keeps them
+  // on longer: the Account Host hears about it (owner, 2026-11-11).
+  if (before && v.endsOn > before.ends_on) await tellAccountHostDatesMoved(eventId, before.organization_id, before.ends_on, v.endsOn);
 
   // Volunteers' calendars need updating if the day, time zone, venue or name changed.
   const changed =
@@ -970,4 +975,31 @@ export async function setEventType(eventId: string, type: string): Promise<Actio
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
   revalidatePath("/dashboard");
   return { ok: true, message: `Done: this is now a ${eventTypeLabel(type).toLowerCase()}.` };
+}
+
+/** Email the Account Host when a co-host of one event moves the event's last day later. */
+async function tellAccountHostDatesMoved(eventId: string, orgId: string, from: string, to: string) {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const { data: wide } = await supabase.rpc("is_org_admin", { org: orgId });
+  if (wide) return;
+  const admin = createAdminClient();
+  const [{ data: owner }, { data: me }, { data: ev }] = await Promise.all([
+    admin.from("organization_members").select("profiles(email)").eq("organization_id", orgId).eq("role", "owner").maybeSingle(),
+    admin.from("profiles").select("full_name").eq("id", user.id).maybeSingle(),
+    admin.from("events").select("name").eq("id", eventId).maybeSingle(),
+  ]);
+  const to_ = (owner as unknown as { profiles: { email: string } | null } | null)?.profiles?.email;
+  if (!to_ || !ev) return;
+  const who = me?.full_name || user.email;
+  const { html, text } = emailLayout({
+    heading: `${who} moved ${ev.name} to end ${formatDate(to)}`,
+    paragraphs: [
+      `${who}, a co-host of ${ev.name} only, moved its last day from ${formatDate(from)} to ${formatDate(to)}.`,
+      "Co-hosts of one event keep access until 10 days after its last day, so they'll keep access longer. You can change or remove co-hosts in the event's team setup.",
+    ],
+    button: { label: "Open team setup", url: `${await getOrigin()}/dashboard/events/${eventId}/edit?section=team` },
+    footer: "You're getting this because you're the Account Host.",
+  });
+  await sendEmail({ to: to_, subject: `${who} moved ${ev.name}'s dates`, html, text });
 }

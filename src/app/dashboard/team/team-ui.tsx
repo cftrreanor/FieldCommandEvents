@@ -54,6 +54,12 @@ export function Window({
   children: ReactNode;
 }) {
   const id = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
+  // Opening rebuilds the form (a fresh one each time), which drops the focus showModal() gave it: put it on the
+  // window's question, so screen readers hear it and keyboards start inside the window.
+  useEffect(() => {
+    if (formKey && dialogRef.current?.open) heading.current?.focus();
+  }, [formKey, dialogRef]);
   return (
     <dialog
       ref={dialogRef}
@@ -62,7 +68,7 @@ export function Window({
       className="team-window m-auto w-[calc(100%-2rem)] max-w-md rounded-xl border border-border p-0 text-left text-foreground shadow-elevated"
     >
       <div key={formKey} className="p-6">
-        <h2 id={id} className="text-lg font-semibold leading-7 [overflow-wrap:anywhere]">
+        <h2 id={id} ref={heading} tabIndex={-1} className="text-lg font-semibold leading-7 outline-none [overflow-wrap:anywhere]">
           {title}
         </h2>
         {children}
@@ -263,7 +269,8 @@ export function Points({ items }: { items: ReactNode[] }) {
 /** The way out (outlined, naming what you keep), then the action. */
 export function WindowButtons({ keep, close, children }: { keep: string; close: () => void; children: ReactNode }) {
   return (
-    <div className="flex flex-wrap justify-end gap-2">
+    // On phones: full width, the action on top; wider: one row, the way out first.
+    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end [&>*]:w-full sm:[&>*]:w-auto">
       <Button type="button" variant="secondary" onClick={close}>
         {keep}
       </Button>

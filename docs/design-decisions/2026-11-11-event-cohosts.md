@@ -41,3 +41,12 @@ Light check on the round-2 mock-ups (UX Designer, UI Designer, Content Manager, 
   on events that aren't over each count once); a check before adding someone as co-host of every event; the same
   "Let them know by email" box in Change…; the wording fixes ("other events from North Ridge Band Boosters", "plan"
   not "package", "Remove Sam from the team", and the rest).
+
+Light check on the build (Software Engineer, consultant, Product Owner, UI Designer and Content Manager). Owner
+decisions:
+- **A co-host of one event moving the event's last day later:** allowed (co-hosts fix dates), and the Account Host is
+  emailed, since their access follows the date.
+- **Volunteer history:** a co-host of one event sees it like a Volunteer Lead, until 10 days after their event, so
+  making someone co-host never takes it away.
+- Everything else fixed as the reviewers suggested (see the review). Undo for a removal made on an event's tab stays on
+  My team, and the message says so.

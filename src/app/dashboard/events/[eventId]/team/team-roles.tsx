@@ -16,7 +16,7 @@ import {
   reinviteMember,
   removeAccountCoHost,
   removeEventCoHost,
-  removeMember,
+  removeFromEvents,
   resendInvitation,
   stopCohosting,
 } from "../../../team-actions";
@@ -81,7 +81,7 @@ export async function TeamRoles({
   const user = await requireUser();
   const supabase = await createClient();
 
-  const { data: event } = await supabase.from("events").select("id, organization_id, name, event_type").eq("id", eventId).maybeSingle();
+  const { data: event } = await supabase.from("events").select("id, organization_id, name, event_type, ends_on, timezone").eq("id", eventId).maybeSingle();
   if (!event) missing();
   const lead = leadWords(event.event_type);
 
@@ -125,7 +125,8 @@ export async function TeamRoles({
 
   // How far each co-host of one event reaches on the account (the account's hosts can see it).
   const eventCoHosts = hosts.filter((h) => h.kind === "event");
-  const [{ data: reachData }, { data: accountEvents }, spots] = await Promise.all([
+  const everyIds = hosts.filter((h) => h.kind === "every").map((h) => h.user_id);
+  const [{ data: reachData }, { data: accountEvents }, spots, { data: otherJobs }] = await Promise.all([
     wide && eventCoHosts.length
       ? supabase
           .from("event_staff")
@@ -138,7 +139,22 @@ export async function TeamRoles({
     wide
       ? supabase.rpc("team_spots", { p_org: event.organization_id }).then((r) => (r.data ?? null) as { used: number; max: number | null } | null)
       : supabase.rpc("team_is_full", { p_org: event.organization_id }).then((r) => ({ used: 0, max: r.data ? 0 : null })),
+    // Jobs co-hosts of every event lead on other events (Change… to this event only takes them off those).
+    isAccountHost && everyIds.length
+      ? supabase.from("station_leads").select("user_id, event_id, stations(name), events(name)").in("user_id", everyIds).neq("event_id", eventId)
+      : Promise.resolve({ data: [] }),
   ]);
+  const jobsElsewhere = (userId: string) =>
+    ((otherJobs ?? []) as unknown as { user_id: string; stations: { name: string } | null; events: { name: string } | null }[])
+      .filter((j) => j.user_id === userId && j.stations)
+      .map((j) => `${j.stations!.name} at ${j.events?.name ?? "another event"}`);
+  // A co-host of one event keeps access until 10 days after it ends.
+  const accessEnd = (() => {
+    const d = new Date(`${event.ends_on}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 10);
+    return d.toISOString().slice(0, 10);
+  })();
+  const eventOver = event.ends_on < utcToZonedDate(new Date().toISOString(), event.timezone || "America/Chicago");
   const reach = new Map<string, string[]>();
   for (const r of (reachData ?? []) as unknown as { user_id: string; events: { name: string } }[]) {
     reach.set(r.user_id, [...(reach.get(r.user_id) ?? []), r.events.name]);
@@ -197,6 +213,8 @@ export async function TeamRoles({
                 ? `${lead.one} at ${o.event_name}`
                 : null;
       if (role) entry.roles.push(o.event_over ? `${role} (event ended)` : role);
+      // Co-host includes running volunteers, so it takes the place of their Volunteer Lead role here.
+      if (tab === "hosts" && o.kind === "volunteer_director" && o.event_id === eventId) entry.roles.push("Co-host replaces their Volunteer Lead role here");
       byPerson.set(o.user_id, entry);
     }
     return [...byPerson.entries()].map(([userId, p]) => ({ userId, name: p.name, now: p.roles.join(" · "), takesSpot: !p.holds }));
@@ -245,6 +263,7 @@ export async function TeamRoles({
             : others.length
               ? `Co-host of ${others.length + 1} events: ${[event.name, ...others].join(", ")}`
               : `Co-host of ${event.name} only`;
+    const reachShown = reachLine && h.kind === "event" && eventOver ? `${reachLine} · Access ends ${formatDate(accessEnd)}` : reachLine;
     const jobs = jobsLed(h.user_id);
     const jobLine = jobs.length ? `Jobs ${first(name)} leads here (${jobs.join(", ")}) will need a new ${lead.one}` : null;
     const you = h.user_id === user.id;
@@ -261,11 +280,11 @@ export async function TeamRoles({
                 label: `${event.name} only`,
                 points: [
                   `${first(name)} loses access to your other ${plural(allEvents - 1, "event", "events")}, and won't be added to new ones`,
-                  `Jobs ${first(name)} leads on other events will need a new ${lead.one}`,
+                  ...jobsElsewhere(h.user_id).map((j) => `${j} will need a new ${lead.one}`),
                   "No change to team spots",
                 ],
                 firstMatters: true,
-                confirmLabel: `Make co-host of ${event.name} only`,
+                confirmLabel: `Make ${first(name)} a co-host of ${event.name} only`,
               },
             ]}
             action={changeCoHost.bind(null, event.organization_id, h.user_id, name, "only", eventId)}
@@ -282,10 +301,10 @@ export async function TeamRoles({
             choices={[
               {
                 value: "event",
-                label: `${event.name} only`,
+                label: `Just from ${event.name}`,
                 points: [
-                  `${first(name)} won't be added to new events unless you add them to each one`,
-                  `${first(name)} loses access to ${event.name} right away, and stays a co-host of your other ${plural(openOthers, "open event", "open events")}`,
+                  `${first(name)} stays a co-host of your other ${plural(openOthers, "open event", "open events")}, but won't be added to new events unless you add them to each one`,
+                  `${first(name)} loses access to ${event.name} right away`,
                   ...(jobLine ? [jobLine] : []),
                   `${first(name)} keeps their team spot`,
                   `To make ${first(name)} a co-host of every event again, use Change… on My team`,
@@ -295,7 +314,7 @@ export async function TeamRoles({
               },
               {
                 value: "all",
-                label: `Every event (takes ${first(name)} off your team)`,
+                label: `From every event (takes ${first(name)} off your team)`,
                 points: [
                   `${first(name)} loses access to every event right away`,
                   ...(jobLine ? [jobLine.replace("leads here", `leads`)] : []),
@@ -326,7 +345,7 @@ export async function TeamRoles({
                 label: "Every event",
                 points: [
                   `${first(name)} sees and runs every event on the account right away, and any you add later`,
-                  "No extra team spot",
+                  "No change to team spots",
                 ],
                 confirmLabel: `Make ${first(name)} a co-host of every event`,
               },
@@ -350,6 +369,7 @@ export async function TeamRoles({
                   `${first(name)} loses access to ${event.name} right away`,
                   ...(jobLine ? [jobLine] : []),
                   ...(others.length ? [`${first(name)} stays a co-host of ${others.join(", ")}`] : []),
+                  ...(spots?.max != null ? [others.length ? `${first(name)} keeps their team spot` : "A team spot opens up"] : []),
                   "You can invite them again from Removed or left recently on My team",
                 ],
                 confirmLabel: "Remove from this event",
@@ -374,7 +394,7 @@ export async function TeamRoles({
               label: event.name,
               points: [
                 `You lose access to ${event.name} right away`,
-                `We'll let ${accountHost?.full_name || "the Account Host"}, your Account Host, know`,
+                `We'll tell ${accountHost?.full_name || "the Account Host"}, your Account Host`,
                 `To come back, ask ${first(accountHost?.full_name || "the Account Host")} to add you again`,
               ],
               confirmLabel: "Stop co-hosting",
@@ -402,7 +422,7 @@ export async function TeamRoles({
         name={name}
         isYou={you}
         badge={h.kind === "owner" ? "Account Host" : "Co-host"}
-        reach={reachLine}
+        reach={reachShown}
         details={[h.email, formatPhone(h.phone)]}
       >
         {actions}
@@ -445,8 +465,8 @@ export async function TeamRoles({
                   <p className="mt-1 text-sm leading-6 text-muted">
                     {myKind === "event" ? (
                       <>
-                        You co-host {event.name}: you can do everything on it except invite or remove co-hosts, or delete it. To add a
-                        co-host, ask {accountHost?.full_name || "your Account Host"}, your Account Host.
+                        You co-host {event.name} until {formatDate(accessEnd)}: you can do everything on it except invite or remove co-hosts,
+                        or delete it. To add a co-host, ask {accountHost?.full_name || "your Account Host"}, your Account Host.
                       </>
                     ) : (
                       <>
@@ -485,12 +505,29 @@ export async function TeamRoles({
                           badge="Volunteer Lead"
                           details={[d.profiles?.email, formatPhone(d.profiles?.phone)]}
                         >
-                          {access.isHost && (
-                            <RemoveButton
-                              action={removeMember.bind(null, eventId, d.user_id, d.role)}
-                              label="Remove Volunteer Lead"
-                              confirmMessage="Remove this Volunteer Lead from the event?"
-                            />
+                          {access.isHost && d.user_id !== user.id && (
+                            <ChoiceWindowButton
+                              label={`Remove… ${d.profiles?.full_name || d.profiles?.email}`}
+                              title={`Remove ${d.profiles?.full_name || d.profiles?.email} as Volunteer Lead?`}
+                              choices={[
+                                {
+                                  value: `${eventId}:volunteer_director`,
+                                  label: event.name,
+                                  points: [
+                                    `${first(d.profiles?.full_name || "They")} loses access to ${event.name} right away`,
+                                    ...(directors.length === 1 ? [`${event.name} will have no Volunteer Lead, so you and your co-hosts run its volunteers`] : []),
+                                    "You can invite them again from Removed or left recently on My team",
+                                  ],
+                                  confirmLabel: "Remove from this event",
+                                },
+                              ]}
+                              action={removeFromEvents.bind(null, d.user_id, d.profiles?.full_name || d.profiles?.email || "them")}
+                              keepLabel={`Keep ${first(d.profiles?.full_name || "them")}`}
+                              notifyLabel={`Let ${first(d.profiles?.full_name || "them")} know by email`}
+                              pendingText="Removing…"
+                            >
+                              Remove…
+                            </ChoiceWindowButton>
                           )}
                         </PersonRow>
                       ))}
@@ -523,11 +560,30 @@ export async function TeamRoles({
                             reach={led.length ? `Leads ${led.join(", ")}` : "No sign-up yet"}
                             details={[l.profiles?.email, formatPhone(l.profiles?.phone)]}
                           >
-                            <RemoveButton
-                              action={removeMember.bind(null, eventId, l.user_id, l.role)}
-                              label={`Remove ${lead.one}`}
-                              confirmMessage={`Remove this ${lead.one} from the event? They'll be taken off their sign-ups.`}
-                            />
+                            {l.user_id !== user.id && (
+                              <ChoiceWindowButton
+                                label={`Remove… ${l.profiles?.full_name || l.profiles?.email}`}
+                                title={`Remove ${l.profiles?.full_name || l.profiles?.email} as ${lead.one}?`}
+                                choices={[
+                                  {
+                                    value: `${eventId}:section_lead`,
+                                    label: event.name,
+                                    points: [
+                                      `${first(l.profiles?.full_name || "They")} loses access to ${event.name} right away`,
+                                      ...led.map((job) => `${job} will need a new ${lead.one}`),
+                                      "You can invite them again from Removed or left recently on My team",
+                                    ],
+                                    confirmLabel: "Remove from this event",
+                                  },
+                                ]}
+                                action={removeFromEvents.bind(null, l.user_id, l.profiles?.full_name || l.profiles?.email || "them")}
+                                keepLabel={`Keep ${first(l.profiles?.full_name || "them")}`}
+                                notifyLabel={`Let ${first(l.profiles?.full_name || "them")} know by email`}
+                                pendingText="Removing…"
+                              >
+                                Remove…
+                              </ChoiceWindowButton>
+                            )}
                           </PersonRow>
                         );
                       })}
@@ -552,6 +608,7 @@ export async function TeamRoles({
                 </div>
               )}
 
+              {(canInvite || pending.length > 0) && (
               <section>
                 <h2 className="text-sm font-semibold">Pending</h2>
                 {pending.length === 0 ? (
@@ -596,6 +653,7 @@ export async function TeamRoles({
                   </ul>
                 )}
               </section>
+              )}
 
               {canInvite && (
                 <AddToTeam

@@ -38,8 +38,8 @@ export function invitationEmail(inv: InvitationDetails, acceptUrl: string, bands
 
   const { subject, heading, paragraphs } = inv.role === "co_host"
     ? {
-        subject: `You're invited to co-host ${inv.event_name} on ${brand.name}`,
-        heading: `Co-host ${inv.event_name}`,
+        subject: `Join ${inv.event_name} as a co-host on ${brand.name}`,
+        heading: `Join ${inv.event_name} as a co-host`,
         paragraphs: [
           `${who} invited you to co-host ${inv.event_name} (${when}) on ${brand.name}.`,
           `As a co-host, you'll help run this event: setup, publishing, sign-ups, volunteers, and the event day. You can do everything ${inv.inviter_name ?? "the organizer"} can on it, except invite or remove co-hosts, or delete it. You won't see other events from ${inv.organization}, and your access ends 10 days after the event.`,

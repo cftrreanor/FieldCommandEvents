@@ -283,6 +283,13 @@ export async function inviteAgain(orgId: string, email: string, role: "co_host" 
   return result;
 }
 
+/** Invite again: a co-host of one event, back to that event only. */
+export async function inviteCoHostAgain(eventId: string, email: string): Promise<ActionState> {
+  const result = await invite(eventId, email, "co_host", null);
+  revalidatePath("/dashboard/team");
+  return result;
+}
+
 export async function resendTeamInvitation(invitationId: string): Promise<ActionState> {
   await requireUser();
   const sent = await sendInvitation(invitationId);
@@ -820,7 +827,7 @@ export async function addTeamMember(eventId: string, _prev: ActionState, formDat
           : `${lead} at ${ev?.name}`;
   const powers =
     role === "co_host_every"
-      ? "You can see and run every event on the account, and any added later, except inviting or removing co-hosts and deleting events."
+      ? "You can see and run every event on the account, and any added later, except invite or remove co-hosts, or delete events."
       : role === "co_host"
         ? `You can do everything on ${ev?.name} except invite or remove co-hosts, or delete it. Your access ends 10 days after the event.`
         : role === "volunteer_director"
@@ -857,6 +864,7 @@ export async function removeEventCoHost(
 ): Promise<ActionState> {
   const user = await requireUser();
   const pick = formData.get("pick");
+  if (every ? pick !== "event" && pick !== "all" : pick !== "event") return { error: "Choose what to remove them from." };
   const supabase = await createClient();
   const { data: event } = await supabase.from("events").select("name, organization_id").eq("id", eventId).maybeSingle();
   if (!event) return { error: "Event not found." };
@@ -877,7 +885,7 @@ export async function removeEventCoHost(
     if (error) return { error: friendlyDbError(error) };
     if (!data?.length) return { error: "Only the Account Host can remove a co-host." };
   }
-  const told = await tellRemoved(formData, userId, event.organization_id, [`co-host of ${event.name}`]);
+  const told = await tellRemoved(formData, userId, event.organization_id, [`a co-host of ${event.name}`]);
   await noteWhoWasTold(userId, user.id, [{ eventId, role: "co_host", hosts: [] }], told, event.organization_id);
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
   revalidatePath("/dashboard/team");
@@ -919,7 +927,10 @@ export async function changeCoHost(
     }
   }
   revalidatePath("/dashboard", "layout");
-  return { ok: true, message: to === "every" ? `${name} is now a co-host of every event.` : `${name} now co-hosts just that event.` };
+  return {
+    ok: true,
+    message: to === "every" ? `${name} is now a co-host of every event.` : `${name} now co-hosts just that event. To undo, use Change… again.`,
+  };
 }
 
 /** A co-host of one event stops co-hosting it. The Account Host is told. */
@@ -940,7 +951,8 @@ export async function stopCohosting(eventId: string): Promise<ActionState> {
   if (error) return { error: friendlyDbError(error) };
   if (!data?.length) return { error: "You've already stopped co-hosting that event." };
   const jobs = ((led ?? []) as unknown as { stations: { name: string } | null }[]).map((l) => l.stations?.name).filter((n): n is string => !!n);
+  const { data: ev } = await createAdminClient().from("events").select("name").eq("id", eventId).maybeSingle();
   await tellHostsSomeoneLeft(eventId, user.id, me?.full_name || user.email, "co_host", jobs);
   revalidatePath("/dashboard", "layout");
-  redirect("/dashboard");
+  redirect(`/dashboard?stopped=${encodeURIComponent(ev?.name ?? "that event")}`);
 }

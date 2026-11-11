@@ -8987,6 +8987,42 @@ set request.jwt.claims = '{"sub":"0000008c-0000-0000-0000-000000000005","email":
 do $$ begin
   assert not public.is_event_admin('8c000000-0000-0000-0000-0000000000e3'), 'access ends 10 days after the event';
 end $$;
+-- Light-check fixes (20270128000200): the Account Host's name, volunteer history like a Volunteer Lead, no
+-- account-wide lists, no changing co-hosts, and leaving until access ends.
+reset role;
+update public.events set ends_on = current_date - 3, starts_on = current_date - 3 where id = '8c000000-0000-0000-0000-0000000000e3';
+insert into public.event_staff (event_id, user_id, role)
+values ('8c000000-0000-0000-0000-0000000000e3', '0000008c-0000-0000-0000-000000000004', 'co_host');
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000008c-0000-0000-0000-000000000003","email":"econe@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  assert (select count(*) from public.account_host('8c000000-0000-0000-0000-000000000001')) = 1,
+         'a co-host of one event can see who the Account Host is';
+  assert public.can_see_volunteer_history('8c000000-0000-0000-0000-000000000001'),
+         'a co-host of one event sees volunteer history, like a Volunteer Lead';
+  assert not exists (select 1 from public.past_band_directors('8c000000-0000-0000-0000-0000000000e1')),
+         'but not the account''s past band directors';
+  begin
+    perform public.change_cohost('8c000000-0000-0000-0000-000000000001', '0000008c-0000-0000-0000-000000000003', 'every');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'a co-host of one event can''t change co-hosts (even themself)';
+  ok := false;
+  begin
+    perform public.remove_cohost_from_event('8c000000-0000-0000-0000-0000000000e1', '0000008c-0000-0000-0000-000000000002');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'or take a co-host of every event off an event';
+end $$;
+set request.jwt.claims = '{"sub":"0000008c-0000-0000-0000-000000000004","email":"ecvl@example.com"}';
+do $$ begin
+  assert public.is_event_admin('8c000000-0000-0000-0000-0000000000e3'), 'three days after the event, a co-host still has access';
+  delete from public.event_staff where user_id = '0000008c-0000-0000-0000-000000000004';
+  assert not exists (select 1 from public.event_staff where user_id = '0000008c-0000-0000-0000-000000000004'),
+         'and can stop co-hosting until it ends';
+end $$;
 reset role;
 delete from public.organizations where id = '8c000000-0000-0000-0000-000000000001';
 

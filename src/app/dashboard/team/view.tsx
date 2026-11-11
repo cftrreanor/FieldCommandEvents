@@ -12,6 +12,7 @@ import {
   inviteCoHost,
   leaveEvent,
   changeCoHost,
+  inviteCoHostAgain,
   stopCohosting,
   removeAccountCoHost,
   removeFromEvents,
@@ -371,8 +372,8 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
         <Card className="space-y-3">
           <h2 className="text-lg font-semibold">It&apos;s just you so far</h2>
           <p className="text-sm leading-6">
-            A co-host shares the whole load: every event, start to finish. For one event, add a Volunteer Lead to run volunteers, or Coordinators to
-            lead single jobs like parking or the gate.
+            A co-host of every event shares the whole load, start to finish. For one event, use that event&apos;s team setup: add a co-host of
+            just that event, a Volunteer Lead to run volunteers, or Coordinators to lead single jobs like parking or the gate.
           </p>
           {isAccountHost && !view.offer && (
             <p className="text-sm leading-6">
@@ -756,6 +757,23 @@ function RemovedRecently({
                 <p className="text-sm text-muted">Undo is at the top of the page</p>
               ) : blocked(r) ? (
                 <p className="text-sm text-muted">{blocked(r)}</p>
+              ) : r.role === "co_host" && r.oneEvent && r.event ? (
+                <ConfirmButton
+                  action={inviteCoHostAgain.bind(null, r.event.id, r.email)}
+                  label={`Invite again… ${r.name}`}
+                  title={`Invite ${r.name} again as co-host of ${r.event.name} only?`}
+                  points={[
+                    `We'll email ${r.email} an invitation to co-host ${r.event.name} only, not your other events`,
+                    "To make them a co-host of every event, use Change… after they accept",
+                    spotNote,
+                  ]}
+                  keepLabel="Not now"
+                  confirmLabel="Send invitation"
+                  pendingText="Sending…"
+                  danger={false}
+                >
+                  Invite again…
+                </ConfirmButton>
               ) : (
                 <InviteAgainButton
                   name={r.name}

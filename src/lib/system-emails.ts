@@ -146,8 +146,8 @@ export const SYSTEM_EMAILS: SystemEmail[] = [
     fields: inviteFields,
     required: [],
     starting: {
-      subject: "You're invited to co-host {{event_name}} on {{brand}}",
-      heading: "Co-host {{event_name}}",
+      subject: "Join {{event_name}} as a co-host on {{brand}}",
+      heading: "Join {{event_name}} as a co-host",
       body: "{{inviter}} invited you to co-host {{event_name}} ({{event_when}}) on {{brand}}.\n\nAs a co-host, you'll help run this event: setup, publishing, sign-ups, volunteers, and the event day. You can do everything the organizer can on it, except invite or remove co-hosts, or delete it. You won't see other events from {{organization}}, and your access ends 10 days after the event.",
       button_label: "Accept invitation",
     },

@@ -159,7 +159,7 @@ function signupLine(type: string | null, n: number) {
 }
 
 export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
-  const { deleted, withdrawn } = await searchParams;
+  const { deleted, withdrawn, stopped } = await searchParams;
   const user = await requireUser();
   const supabase = await createClient();
   const [org, { data: orgRows }, { data: staffRows }, { data: bandRows }] = await Promise.all([
@@ -317,6 +317,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">My events</h1>
         {deleted && <SuccessToast message="Event deleted." />}
         {withdrawn && <SuccessToast message="Registration withdrawn. The organizer has been emailed." />}
+        {typeof stopped === "string" && <SuccessToast message={`You've stopped co-hosting ${stopped.slice(0, 120)}. We've told your Account Host.`} />}
         {isAdmin && (
           <Link
             href="/admin"
@@ -775,8 +776,10 @@ function HelpingCard({ row: r, showType }: { row: StaffEvent & { events: EventSu
       badge={<Badge tone="info">{ROLE_LABEL[r.role]}</Badge>}
     >
       {isToday(r.events) && <p className="text-sm font-semibold text-brand">Happening today</p>}
-      {r.role === "co_host" && r.events.ends_on < new Date().toISOString().slice(0, 10) && (
-        <p className="text-sm">Event over · Your access ends {formatDate(accessEnds(r.events.ends_on))}</p>
+      {r.role === "co_host" && (
+        <p className="text-sm">
+          {isPast(r.events) ? "Event over · " : ""}Co-host until {formatDate(accessEnds(r.events.ends_on))}
+        </p>
       )}
     </EventCard>
   );

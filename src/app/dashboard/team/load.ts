@@ -47,6 +47,8 @@ export type Removal = {
   left: boolean;
   /** You removed them in the last few minutes: until when Undo puts them back. */
   undoUntil: string | null;
+  /** A co-host of one event (not one of every event taken off one): invited again to that event only. */
+  oneEvent?: boolean;
 };
 
 /** How long Undo stays offered after removing someone. */
@@ -241,6 +243,7 @@ function recentRemovals(rows: RemovalRow[], events: Map<string, TeamEvent>, back
       event: r.event_id ? (events.get(r.event_id) ?? null) : null,
       removedAt: r.removed_at,
       left: r.removed_by === r.user_id,
+      oneEvent: r.role === "co_host" && !!r.event_id && !(r as { was_every?: boolean }).was_every,
       undoUntil:
         r.removed_by === me && r.removed_by !== r.user_id && new Date(r.removed_at).getTime() >= undoFrom
           ? new Date(new Date(r.removed_at).getTime() + UNDO_MINUTES * 60_000).toISOString()
@@ -354,7 +357,7 @@ async function loadHostView(org: { id: string; name: string; timezone: string },
       .order("created_at"),
     supabase
       .from("team_removals")
-      .select("id, role, user_id, email, full_name, removed_by, removed_at, event_id")
+      .select("id, role, user_id, email, full_name, removed_by, removed_at, event_id, was_every")
       .eq("organization_id", org.id)
       .gte("removed_at", removedSince())
       .order("removed_at", { ascending: false }),
