@@ -43,7 +43,7 @@ import { parentStats, type ParentStats } from "@/lib/parent-stats";
 import { filesFor, uploadedLines, type EventFile } from "@/lib/event-files";
 import { bandRegistrationMissing, publishEffects, setupChecklist, twoWeeksBefore, type SetupFacts } from "@/lib/setup-checklist";
 import { volunteerTotals } from "@/lib/volunteer-totals";
-import { opensLater, registrationIsOpen } from "@/lib/bands";
+import { deadlinePassed, opensLater, registrationIsOpen } from "@/lib/bands";
 import { SetupGuide } from "@/components/setup-guide";
 import { MeetingContactForm } from "./conferences/conference-forms";
 import { saveMeetingContact } from "./conferences/actions";
@@ -53,6 +53,8 @@ import { SavedBy } from "@/components/saved-by";
 import { brand } from "@/lib/brand";
 import { loadSetupFacts } from "@/lib/setup-facts";
 import { LineIcon } from "@/components/line-icon";
+import { FestivalCards, FestivalDraftCards, FestivalNextStep, type FestivalFacts } from "./festival-home";
+import { festivalRegistrationMissing, festivalRoomsMissing } from "@/lib/setup-checklist";
 
 export const metadata: Metadata = { title: "Event setup" };
 
@@ -81,6 +83,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   const demoEnded = query.demo === "ended";
   // Just published (here or from a setup page).
   const justPublished = query.published === "1";
+  // Just made from last year's festival (Copy last year's festival).
+  const justCopied = query.copied === "1";
   const user = await requireUser();
   const supabase = await createClient();
 
@@ -98,7 +102,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   const roomsHere = hasRooms(event.event_type);
   const conferenceHere = hasConferences(event.event_type);
   // Set up in steps (the step bar along the top is the one tracker until it's published): no second checklist beside it.
-  const steppedSetup = conferenceHere || event.event_type === "volunteer" || event.event_type === "band_contest";
+  const steppedSetup = conferenceHere || event.event_type === "volunteer" || event.event_type === "band_contest" || roomsHere;
   const booking = bookingWords(event.event_type);
   const words = groupWords(event.event_type);
 
@@ -250,7 +254,10 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         (gs ?? []).length ? groupDaySummary(groupDay((gs ?? []) as GroupSlot[], (gc ?? []) as GroupCheckin[], now, isEventDay)) : null,
       )
     : null;
-  const groupName = (id: string) => dayBands.find((b) => b.id === id)?.band_name ?? "A group";
+  const groupName = (id: string) => {
+    const b = dayBands.find((x) => x.id === id);
+    return b?.band_name || b?.school_name || "A group";
+  };
   const [{ count: volunteerCount }, { data: checkins }] = access.canManage
     ? await Promise.all([
         supabase.from("volunteers").select("id", { count: "exact", head: true }).eq("event_id", eventId),
@@ -316,6 +323,17 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   // On the day (and once it's over), what's happening comes first; before it, setup and publishing.
   const dayFirst = isEventDay || (past && published);
 
+  // A festival's hosts: one Next step card and a card per setup step (owner decisions, 2026-11-11).
+  const fest: FestivalFacts | null =
+    roomsHere && access.isHost ? await festivalFacts(eventId, event, bands as unknown as FestBand[], publicUrl, totals, setup, {
+      published,
+      past,
+      isEventDay,
+      days,
+      groupStatus,
+      groupName,
+    }) : null;
+
   // Links to share: one row for each kind of person the event has a public page for, at the top
   // once it's live. A page that isn't usable yet says why instead of offering a dead link.
   const base = `/dashboard/events/${eventId}`;
@@ -326,8 +344,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           what: roomsHere ? "Room schedule and what's on now" : "Performance schedule and what's on now",
           url: publicUrl,
           on: event.performance_order_published,
-          off: "Shows the schedule once you publish it",
-          fix: { label: "Publish the schedule", href: `${base}/${roomsHere ? "rooms#order-heading" : "schedule"}` },
+          off: roomsHere ? "Shows the schedule once you post it" : "Shows the schedule once you publish it",
+          fix: roomsHere ? { label: "Post the schedule", href: `${base}/rooms` } : { label: "Publish the schedule", href: `${base}/schedule` },
         }
       : conferenceHere
         ? // One name for this link everywhere: the booking page (Meeting setup calls it the booking link).
@@ -341,9 +359,10 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
             who: `${words.One} directors`,
             what: "Registration",
             url: `${publicUrl}/bands`,
-            on: event.band_registration_open,
+            on: roomsHere ? registrationIsOpen(event) : event.band_registration_open,
             off: "Registration is closed",
-            fix: { label: "Open it", href: `${base}/bands` },
+            // A festival reopens registration in Event settings (owner, 2026-11-11).
+            fix: roomsHere ? { label: "Reopen it", href: `${base}/edit?section=more#registration` } : { label: "Open it", href: `${base}/bands` },
           },
         ]
       : []),
@@ -987,6 +1006,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         facts={setup}
         remaining={checklist.remaining}
         previewHref={conferenceHere ? `/e/${event.slug}/book` : `/e/${event.slug}/volunteer`}
+        festival={fest ? { previewHref: publicUrl } : undefined}
         // A one-day meetings event's optional contact email lives here (it has no More options step: owner, 2026-11-09).
         contact={conferenceHere && access.isHost && conference?.schedule !== "weekly" ? { initial: conference?.contact_email ?? null, meeting: event.event_type === "meeting" } : undefined}
       /> : null;
@@ -1033,10 +1053,23 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
 
   // The team is managed in event settings (Coordinators in Volunteer Setup), and what needs
   // fixing there shows in "To do", so there's no Team card here.
-  const blocks: Record<string, ReactNode> = { next, publish, attention: attentionBlock, day, signups, schedule, volunteers, files: filesBlock };
+  const blocks: Record<string, ReactNode> = fest
+    ? {
+        // A festival: drafts are the Publish card and one line per area; live, the Next step card and the area cards.
+        publish,
+        next: published ? <FestivalNextStep f={fest} /> : null,
+        attention: attentionBlock,
+        areas: published ? <FestivalCards f={fest} dayFirst={dayFirst} /> : <FestivalDraftCards f={fest} />,
+        files: filesBlock,
+      }
+    : { next, publish, attention: attentionBlock, day, signups, schedule, volunteers, files: filesBlock };
   // Setting up: the next step, the areas, then publishing. Live: what needs doing, then the areas.
   // On the day (and after): the day first.
-  const order = dayFirst
+  const order = fest
+    ? published
+      ? ["next", "attention", "areas", "files"]
+      : ["publish", "attention", "areas", "files"]
+    : dayFirst
     ? ["day", "attention", "signups", "schedule", "volunteers", "files"]
     : published
       ? ["attention", "signups", "schedule", "volunteers", "day", "files"]
@@ -1069,19 +1102,36 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
     volunteers: usesJobs(event.event_type) ? "Jobs and shifts" : "Volunteers",
     files: "Maps and documents",
   };
-  const navLinks = order.filter((k) => labels[k] && blocks[k]).map((k) => ({ id: k, label: labels[k] }));
+  const navLinks = fest
+    ? published
+      ? // The same names as the cards they jump to.
+        (dayFirst ? ["day", "registration", "schedule", "volunteers"] : ["registration", "schedule", "volunteers", "day"]).map((id) => ({
+          id,
+          label: { day: "Event day", registration: "Registration", schedule: "Rooms and schedule", volunteers: "Volunteers" }[id]!,
+        }))
+      : []
+    : order.filter((k) => labels[k] && blocks[k]).map((k) => ({ id: k, label: labels[k] }));
   const latest = announcements[0];
   const emergency = announcements.some((a) => a.priority === "emergency");
 
   return (
     <div
-      className={dayActions || (checklist && !(steppedSetup && !published)) ? "lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-8" : undefined}
+      className={dayActions || (checklist && !(steppedSetup && !published) && !fest) ? "lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-8" : undefined}
     >
-      {justPublished && !contestLive && <SuccessToast message={`Published. Your ${conferenceHere ? "booking" : "event"} page is live; the links to share are at the top.`} />}
+      {justPublished && !contestLive && (
+        <SuccessToast
+          message={
+            fest
+              ? "Published. Group registration is open: share the registration link at the top."
+              : `Published. Your ${conferenceHere ? "booking" : "event"} page is live; the links to share are at the top.`
+          }
+        />
+      )}
       {justPublished && <ScrollTo id="share" />}
+      {justCopied && <SuccessToast message="Your copy is ready. Check the dates on each step, then publish." />}
       {demoEnded && <SuccessToast message="You're back on your own account. The demo people and sample data are gone." />}
       {/* Meetings set up in steps: the step bar is the one tracker, so no second checklist beside it (decisions 2026-11-08). */}
-      {dayActions ? <DayRail day={dayActions} /> : checklist && !(steppedSetup && !published) && <SetupGuide checklist={checklist} />}
+      {dayActions ? <DayRail day={dayActions} /> : checklist && !(steppedSetup && !published) && !fest && <SetupGuide checklist={checklist} />}
       <div className="min-w-0">
         <Link href="/dashboard" className="text-sm text-muted hover:text-foreground">
           ← My events
@@ -1137,7 +1187,9 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
             volunteersReady={totals.capacity > 0}
           />
         ) : (
-          published && access.canManage && <ShareLinks rows={shareRows} qrs={shareQrs} slug={event.slug} canFix={access.isHost} />
+          published &&
+          access.canManage &&
+          !(fest && (fest.regOpen || !fest.posted)) && <ShareLinks rows={shareRows} qrs={shareQrs} slug={event.slug} canFix={access.isHost} />
         )}
 
         {/* Hosts and Volunteer Leads posted these, so one line is enough; the rest of the team sees them in full. */}
@@ -1162,8 +1214,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         )}
 
         {navLinks.length >= 4 && (
-          <nav aria-label="On this page" className="relative -mx-4 mt-6 overflow-x-auto px-4 sm:mx-0 sm:overflow-visible sm:px-0">
-            <ul className="flex gap-2 whitespace-nowrap sm:flex-wrap">
+          <nav aria-label="On this page" className={fest ? "mt-6" : "relative -mx-4 mt-6 overflow-x-auto px-4 sm:mx-0 sm:overflow-visible sm:px-0"}>
+            <ul className={fest ? "flex flex-wrap gap-2" : "flex gap-2 whitespace-nowrap sm:flex-wrap"}>
               {navLinks.map((l) => (
                 <li key={l.id}>
                   <a
@@ -1212,7 +1264,10 @@ function PublishPanel({
   remaining,
   previewHref,
   contact,
+  festival,
 }: {
+  /** A festival: its page, to preview before publishing. */
+  festival?: { previewHref: string };
   facts: SetupFacts;
   remaining: ReturnType<typeof setupChecklist>["remaining"];
   /** A volunteer event's sign-up page, as the team previews it. */
@@ -1240,7 +1295,10 @@ function PublishPanel({
         facts.conferencePlaceMissing && { step: "place", label: facts.conferencePlaceMissing.replace(/\.$/, ""), href: `/dashboard/events/${facts.eventId}/conferences/place` },
       ].filter((x): x is { step: string; label: string; href: string } => Boolean(x))
     : [];
-  const blocked = needsJob || Boolean(bandMissing) || meetingTodo.length > 0;
+  // A festival needs a room in the rotation, then a registration deadline (the database checks too).
+  const festRooms = festival ? festivalRoomsMissing(facts) : null;
+  const festReg = festival ? festivalRegistrationMissing(facts) : null;
+  const blocked = needsJob || Boolean(bandMissing) || meetingTodo.length > 0 || Boolean(festRooms || festReg);
   // A volunteer event says what its own button opens (it chooses when sign-up opens), as band contests do.
   const effects = publishEffects(facts).map((line) =>
     jobsHere && line.startsWith("Volunteer sign-up") ? "With Publish and open sign-up, volunteers can pick a shift or an item right away." : line,
@@ -1266,6 +1324,22 @@ function PublishPanel({
           <p className="mt-1">Publishing needs a registration deadline that hasn&apos;t passed and at least one classification.</p>
           <Link href={`/dashboard/events/${facts.eventId}/bands`} className={`${BTN} mt-3`}>
             Go to band registration
+          </Link>
+        </div>
+      )}
+      {(festRooms || festReg) && (
+        // The first thing missing, in step order, with one button to its step.
+        <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
+          <p className="font-semibold">
+            {festRooms
+              ? `${festRooms} before you publish`
+              : festReg === "Add a deadline"
+                ? "Add a registration deadline before you publish"
+                : "Pick a new registration deadline before you publish: the one you set has passed"}
+          </p>
+          <p className="mt-1">Publishing needs at least one room in the rotation and a registration deadline before the festival.</p>
+          <Link href={`/dashboard/events/${facts.eventId}/${festRooms ? "rooms" : "bands"}`} className={`${BTN} mt-3`}>
+            {festRooms ? "Go to Rooms and schedule" : "Go to Registration"}
           </Link>
         </div>
       )}
@@ -1321,15 +1395,20 @@ function PublishPanel({
           <MeetingContactForm action={saveMeetingContact.bind(null, facts.eventId)} initial={contact.initial} meeting={contact.meeting} autosave />
         </div>
       )}
-      <p className="mt-4 text-sm font-semibold">When you publish:</p>
-      <ul className="mt-2 space-y-1.5 text-sm text-muted">
-        {effects.map((line) => (
-          <li key={line} className="flex gap-2">
-            <span aria-hidden className="text-success">✓</span>
-            <span>{line}</span>
-          </li>
-        ))}
-      </ul>
+      {/* A festival says what publishing does once it can publish (the mock-up's Publish step, 2026-11-11). */}
+      {!(festival && blocked) && (
+        <>
+          <p className="mt-4 text-sm font-semibold">When you publish:</p>
+          <ul className="mt-2 space-y-1.5 text-sm text-muted">
+            {effects.map((line) => (
+              <li key={line} className="flex gap-2">
+                <span aria-hidden className="text-success">✓</span>
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       {blocked ? null : facts.planBlock ? (
         // Say why before they try, and what they can do: not an error after the click.
         <div className="mt-5 rounded-md border border-brand/25 bg-brand-soft p-4 text-sm leading-6">
@@ -1374,6 +1453,15 @@ function PublishPanel({
                 </ActionButton>
               </div>
             </div>
+          </div>
+        ) : festival ? (
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <ActionButton action={publishAndOpenBandRegistration.bind(null, facts.eventId)} variant="go" pendingText="Publishing…">
+              Publish and open registration
+            </ActionButton>
+            <a href={festival.previewHref} target="_blank" className={BTN_OUTLINE}>
+              Preview the festival page<span className="sr-only"> (opens in a new tab)</span>
+            </a>
           </div>
         ) : bandsHere ? (
           <div className="mt-5">
@@ -1851,4 +1939,98 @@ function VolunteerStats({
       )}
     </div>
   );
+}
+
+type FestBand = { id: string; band_name: string | null; school_name: string | null; student_count: number | null; scratched_at: string | null };
+
+/** What a festival's cards say, read once (rooms, which groups have times, the group limit) for the host's event page. */
+async function festivalFacts(
+  eventId: string,
+  event: {
+    slug: string;
+    status: string;
+    timezone: string;
+    starts_on: string;
+    ends_on: string;
+    band_registration_open: boolean;
+    band_registration_deadline: string | null;
+    band_registration_opens_on: string | null;
+    classifications: string[] | null;
+    performance_order_published: boolean;
+    volunteer_signup_open: boolean;
+  },
+  bands: FestBand[],
+  publicUrl: string,
+  totals: { filled: number; capacity: number; sentence: string },
+  setup: SetupFacts | null,
+  ctx: {
+    published: boolean;
+    past: boolean;
+    isEventDay: boolean;
+    days: string[];
+    groupStatus: ReturnType<typeof groupDaySummary> | null;
+    groupName: (id: string) => string;
+  },
+): Promise<FestivalFacts> {
+  const supabase = await createClient();
+  const [{ data: roomRows }, { data: slotRows }, { data: extra }] = await Promise.all([
+    supabase.from("rooms").select("id, path_order, minutes").eq("event_id", eventId),
+    supabase.from("room_slots").select("band_id").eq("event_id", eventId),
+    // After the 20270129000000 update (a group limit); before it, no limit.
+    supabase.from("events").select("max_groups, room_passing_minutes").eq("id", eventId).maybeSingle(),
+  ]);
+  const rooms = (roomRows ?? []) as { id: string; path_order: number | null; minutes: number | null }[];
+  const path = rooms.filter((r) => r.path_order != null);
+  const passing = (extra as { room_passing_minutes?: number | null } | null)?.room_passing_minutes ?? 0;
+  const groups = bands.filter((b) => !b.scratched_at).map((b) => ({ id: b.id, name: b.band_name || b.school_name || "A group" }));
+  const timed = new Set(((slotRows ?? []) as { band_id: string }[]).map((r) => r.band_id));
+  const noTimes = groups.filter((g) => !timed.has(g.id)).map((g) => g.name);
+  const deadlinePast = deadlinePassed(event);
+  const regOpen = registrationIsOpen(event);
+  const status = ctx.groupStatus;
+  return {
+    eventId,
+    slug: event.slug,
+    registrationUrl: `${publicUrl}/bands`,
+    previewHref: `/e/${event.slug}/bands`,
+    published: ctx.published,
+    regOpen,
+    closedEarly: ctx.published && !event.band_registration_open && !deadlinePast,
+    deadline: event.band_registration_deadline,
+    deadlinePast,
+    groups,
+    performers: bands.filter((b) => !b.scratched_at).reduce((n, b) => n + (b.student_count ?? 0), 0),
+    maxGroups: (extra as { max_groups?: number | null } | null)?.max_groups ?? null,
+    classifications: (event.classifications ?? []).length,
+    withTimes: groups.length - noTimes.length,
+    noTimes,
+    posted: event.performance_order_published,
+    rooms: rooms.length,
+    pathRooms: path.length,
+    minutesPerGroup: path.reduce((n, r) => n + (r.minutes ?? 0), 0) + passing * Math.max(path.length - 1, 0),
+    volunteers: {
+      jobs: setup?.stations ?? 0,
+      filled: totals.filled,
+      capacity: totals.capacity,
+      sentence: totals.sentence,
+      signupOpen: event.volunteer_signup_open,
+      notShowing: ctx.published ? (setup?.emptyJobs ?? []).length : 0,
+    },
+    dates: ctx.days.length > 1 ? `${formatDate(event.starts_on)} to ${formatDate(event.ends_on)}` : formatDate(event.starts_on),
+    isEventDay: ctx.isEventDay,
+    past: ctx.past,
+    dayLine:
+      ctx.isEventDay && status ? (
+        <>
+          <AutoRefresh seconds={30} />
+          <p>
+            <span className="font-medium">
+              {status.here} of {status.total} groups here
+            </span>
+            {status.finished > 0 && <span className="text-muted"> · {status.finished} finished every room</span>}
+          </p>
+          {status.late.length > 0 && <p className="font-medium text-warning">Not marked arrived: {status.late.map((d) => ctx.groupName(d.bandId)).join(", ")}</p>}
+        </>
+      ) : null,
+  };
 }

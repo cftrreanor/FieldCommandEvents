@@ -2855,6 +2855,16 @@ begin
   end;
   assert ok, 'the earliest start comes before the latest finish';
 end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    update public.events set max_groups = 2 where id = '10000000-0000-0000-0000-0000000000d1';
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'the group limit can''t drop below the groups already registered';
+end $$;
 reset role;
 do $$
 declare ok boolean := false;

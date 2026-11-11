@@ -725,6 +725,13 @@ begin
     end if;
   end if;
 
+  -- A festival's group limit stays at or above the groups already registered.
+  if tg_op = 'UPDATE' and new.max_groups is not null and new.max_groups is distinct from old.max_groups
+     and (select count(*) from bands b where b.event_id = new.id and b.scratched_at is null) > new.max_groups then
+    raise exception '% groups have registered. Set the limit to at least that.',
+      (select count(*) from bands b where b.event_id = new.id and b.scratched_at is null) using errcode = 'P0001';
+  end if;
+
   kind := new.event_type::text;
   if tg_op <> 'UPDATE' or kind not in ('band_contest', 'group_event') then
     return new;
@@ -765,6 +772,12 @@ begin
 end;
 $$;
 revoke execute on function public.events_registration_rules() from public, anon, authenticated;
+drop trigger if exists events_registration_rules on public.events;
+create trigger events_registration_rules
+  before insert or update of status, event_type, classifications, band_registration_deadline, band_registration_open, starts_on,
+                             chaperone_limit, max_groups
+  on public.events
+  for each row execute function public.events_registration_rules();
 
 -- 9. Copy last year's festival -----------------------------------------------------------------------------
 -- Into a new, empty draft festival on the same account: rooms (with their notes, order, and minutes), the

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { Card } from "@/components/ui";
 import { SettingsNav, type SettingsSection } from "./settings-nav";
 import { TeamRoles } from "../team/team-roles";
-import { EVENT_TYPES, bookingWords, eventTypeLabel, groupWords, leadWords, hasBands, hasBooths, hasConferences, hasEnsembles, hasParents, isMeeting, usesJobs } from "@/lib/event-types";
+import { EVENT_TYPES, bookingWords, eventTypeLabel, groupWords, leadWords, hasBands, hasBooths, hasConferences, hasEnsembles, hasParents, hasRooms, isMeeting, usesJobs, volunteerAreaName } from "@/lib/event-types";
 import { conferenceBookedCount } from "@/lib/conference-access";
 import { ActionButton } from "../forms";
 import { getEventAccess } from "@/lib/data";
@@ -20,9 +20,11 @@ import { saveNotifyRecipients } from "../../../notify-actions";
 import { NotifyForm, type TeamMember } from "./notify-form";
 import { MAX_EXTRA_EMAILS, notifyKinds, type DigestPrefs, type NotifyKind } from "@/lib/notify-kinds";
 import { AUDIENCES, fileHref, fileMeta, isShowing, uploadedLines, type EventFile } from "@/lib/event-files";
-import { formatDate, formatDateRange, utcToZonedTime, zoneName } from "@/lib/time";
+import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime, zoneName } from "@/lib/time";
 import { deleteEvent, publishAndOpen, setEventPublished, setEventShowBrand, setEventType, updateEvent } from "../../../actions";
 import { DeleteEventButton } from "../delete-event";
+import { reopenBandRegistration, setBandRegistrationOpen } from "../../../band-actions";
+import { ReopenRegistration } from "../bands/reopen-registration";
 import { DemoStart } from "@/components/demo-switcher";
 import { personasFor } from "@/lib/demo";
 import { requireUser } from "@/lib/auth";
@@ -78,7 +80,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const { data: event } = await supabase
     .from("events")
     .select(
-      "id, organization_id, name, status, event_type, created_by, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng",
+      "id, organization_id, name, status, event_type, created_by, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng, band_registration_open, band_registration_deadline, band_registration_opens_on",
     )
     .eq("id", eventId)
     .maybeSingle();
@@ -94,9 +96,10 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   // Volunteer events and band contests set up in three steps (shown by the layout), not the guided Event settings.
   // The Details step of an event set up in steps (opened from the step bar, no section asked for): the step bar is
   // the one menu there. "Event settings" (?section=…) always shows every section, with its own list.
-  const steppedSetup = hasConferences(event.event_type) || event.event_type === "volunteer" || event.event_type === "band_contest";
+  const steppedSetup =
+    hasConferences(event.event_type) || event.event_type === "volunteer" || event.event_type === "band_contest" || hasRooms(event.event_type);
   const stepOnly = steppedSetup && event.status !== "published" && !asked;
-  const guided = setupParam === "1" && !hasConferences(event.event_type) && event.event_type !== "volunteer" && event.event_type !== "band_contest";
+  const guided = setupParam === "1" && !steppedSetup;
   const at = SETUP_STEPS.findIndex((s) => s.id === section);
   const prevStep = guided && at > 0 ? setupHref(eventId, SETUP_STEPS[at - 1].id) : undefined;
   const nextStep = guided && at < SETUP_STEPS.length - 1 ? setupHref(eventId, SETUP_STEPS[at + 1].id) : undefined;
@@ -291,8 +294,8 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
         usesJobs(event.event_type)
           ? supabase.from("volunteers").select("id", { count: "exact", head: true }).eq("event_id", eventId).then((r) => r.count ?? 0)
           : Promise.resolve(0),
-        event.event_type === "band_contest"
-          ? supabase.from("bands").select("id", { count: "exact", head: true }).eq("event_id", eventId).then((r) => r.count ?? 0)
+        hasEnsembles(event.event_type)
+          ? supabase.from("bands").select("id", { count: "exact", head: true }).eq("event_id", eventId).is("scratched_at", null).then((r) => r.count ?? 0)
           : Promise.resolve(0),
       ])
     : [0, 0, 0];
@@ -302,17 +305,33 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
     ? `Your booking page is live${bookedNow ? `, and ${people(bookedNow, "person", "people")} booked` : ""}. Unpublishing hides the page and stops new bookings.${bookedNow ? " Their times stay booked, and nobody is emailed." : " Nobody is emailed."}`
     : event.event_type === "band_contest"
       ? `Your event is live${bandsNow || volunteersNow ? `, and ${[bandsNow ? people(bandsNow, "band", "bands").replace(/ ha(s|ve)$/, "") : null, volunteersNow ? people(volunteersNow, "volunteer", "volunteers").replace(/ ha(s|ve)$/, "") : null].filter(Boolean).join(" and ")} ${bandsNow + volunteersNow === 1 ? "has" : "have"} signed up` : ""}. Unpublishing hides its public pages and closes band registration and volunteer sign-up.${bandsNow || volunteersNow ? " They stay registered and signed up, and nobody is emailed." : " Nobody is emailed."} After you publish again, open volunteer sign-up again from the event page.`
+      : hasRooms(event.event_type)
+        ? `Your festival is live${bandsNow || volunteersNow ? `, and ${[bandsNow ? (bandsNow === 1 ? "1 group" : `${bandsNow} groups`) : null, volunteersNow ? (volunteersNow === 1 ? "1 volunteer" : `${volunteersNow} volunteers`) : null].filter(Boolean).join(" and ")} ${bandsNow + volunteersNow === 1 ? "has" : "have"} signed up` : ""}. Unpublishing hides the festival page and closes group registration and volunteer sign-up.${bandsNow || volunteersNow ? " They stay registered and signed up, and nobody is emailed." : " Nobody is emailed."}`
       : event.event_type === "volunteer"
         ? `Your event is live${volunteersNow ? `, and ${people(volunteersNow, "volunteer", "volunteers")} signed up` : ""}. Unpublishing hides its public pages and closes volunteer sign-up.${volunteersNow ? " They keep their shifts, and nobody is emailed." : " Nobody is emailed."}`
         : "Your event is live. Unpublishing hides its public pages and stops every sign-up and registration. Nobody is emailed.";
   // Deleting: what goes with it.
   const deleteWhat = hasConferences(event.event_type) && bookedNow
     ? `Removes the event and its ${bookedNow === 1 ? "1 booking" : `${bookedNow} bookings`}.`
-    : event.event_type === "band_contest" && (bandsNow || volunteersNow)
-      ? `Removes the event and its ${[bandsNow ? (bandsNow === 1 ? "1 registered band" : `${bandsNow} registered bands`) : null, volunteersNow ? (volunteersNow === 1 ? "1 volunteer" : `${volunteersNow} volunteers`) : null].filter(Boolean).join(" and ")}.`
+    : hasEnsembles(event.event_type) && (bandsNow || volunteersNow)
+      ? `Removes the event and its ${[bandsNow ? `${bandsNow} registered ${bandsNow === 1 ? words.one : words.many}` : null, volunteersNow ? (volunteersNow === 1 ? "1 volunteer" : `${volunteersNow} volunteers`) : null].filter(Boolean).join(" and ")}.`
       : usesJobs(event.event_type) && volunteersNow
         ? `Removes the event and its ${volunteersNow === 1 ? "1 volunteer" : `${volunteersNow} volunteers`}.`
         : null;
+  // A live festival's registration: open, closed early (reopens until the deadline), or past its deadline (reopens with a new one).
+  const today = utcToZonedDate(new Date().toISOString(), event.timezone);
+  const regDeadline = event.band_registration_deadline as string | null;
+  const regPast = Boolean(regDeadline && regDeadline < today);
+  const festivalRegistration = {
+    state: regPast ? ("past" as const) : event.band_registration_open ? ("open" as const) : ("closed" as const),
+    until: regDeadline ? `the end of ${formatDate(regDeadline, { year: undefined })}` : "you close it",
+    intro: regPast
+      ? `Registration closed at the end of ${formatDate(regDeadline!, { year: undefined })}. To give directors more time, reopen it with a new deadline before the festival.`
+      : event.band_registration_open
+        ? `Open${regDeadline ? ` through ${formatDate(regDeadline, { year: undefined })}` : ""}. It closes on its own after the deadline. Close it early if your festival is full.`
+        : `Closed early. ${regDeadline ? `You can reopen it until ${formatDate(regDeadline, { year: undefined })}.` : "You can reopen it any time."}`,
+    affected: `Directors can't register, change, or withdraw a group until you reopen it.${bandsNow ? ` The ${bandsNow === 1 ? "1 group" : `${bandsNow} groups`} already registered keep their place.` : ""} The registration link says registration is closed. Nobody is emailed. You can reopen it here.`,
+  };
   const afterUnpublish = republishBlocked
     ? `${republishBlocked} If you unpublish it, you can't publish it again until that changes.`
     : "You can publish again anytime.";
@@ -395,6 +414,8 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                         ? { href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Jobs and shifts" }
                         : event.event_type === "band_contest"
                           ? { href: `/dashboard/events/${eventId}/bands`, label: "Next up: Band registration" }
+                          : hasRooms(event.event_type)
+                            ? { href: `/dashboard/events/${eventId}/rooms`, label: "Next up: Rooms and schedule" }
                           : { href: `/dashboard/events/${eventId}/conferences/times`, label: "Next up: Meeting times" }
                       : undefined
                   }
@@ -413,7 +434,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                       : "One logo for your account, shown next to ours at the top of your public event pages and printed on volunteer badges."}{" "}
                     Print badges from{" "}
                     <Link href={`/dashboard/events/${eventId}/volunteering/badges`} className="font-medium text-brand underline">
-                      {usesJobs(event.event_type) ? "Jobs and shifts" : "Volunteer Setup"}
+                      {volunteerAreaName(event.event_type)}
                     </Link>
                     .
                   </p>
@@ -460,7 +481,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
               <p className="mb-4 mt-1 text-sm text-muted">
                 {conference
                   ? "Co-hosts share your account: they can see your bookings, and reschedule or cancel meetings."
-                  : `Everyone helping you run ${event.name}, one tab per role. ${leadWords(event.event_type).many} can also be added from each ${usesJobs(event.event_type) ? "job in Jobs and shifts" : "sign-up in Volunteer Setup"}.`}
+                  : `Everyone helping you run ${event.name}, one tab per role. ${leadWords(event.event_type).many} can also be added from each ${usesJobs(event.event_type) ? `job in ${volunteerAreaName(event.event_type)}` : "sign-up in Volunteer Setup"}.`}
               </p>
               <TeamRoles eventId={eventId} roles={conference ? ["hosts"] : ["hosts", "volunteer-leads", "section-leads"]} open={typeof tab === "string" ? tab : null}
                 href={(t) => `${guided ? setupHref(eventId, "team") : `/dashboard/events/${eventId}/edit?section=team`}&tab=${t}`}
@@ -566,6 +587,38 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                   </Link>
                 )}
               </Panel>
+
+              {/* A live festival closes (and reopens) registration here, away from its event page (owner, 2026-11-11). */}
+              {published && hasRooms(event.event_type) && (
+                <Panel id="registration" title="Group registration" intro={festivalRegistration.intro}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {festivalRegistration.state === "open" ? (
+                      <ActionButton
+                        action={setBandRegistrationOpen.bind(null, eventId, false)}
+                        // Reversible, so an outline: the confirm window says who's affected.
+                        variant="secondary"
+                        pendingText="Closing…"
+                        confirmMessage={`Close group registration? ${festivalRegistration.affected}`}
+                        confirmLabel="Close registration"
+                      >
+                        Close registration
+                      </ActionButton>
+                    ) : festivalRegistration.state === "closed" ? (
+                      <ActionButton
+                        action={setBandRegistrationOpen.bind(null, eventId, true)}
+                        variant="secondary"
+                        pendingText="Reopening…"
+                        confirmMessage={`Reopen group registration? Directors can register, change, or withdraw a group again until ${festivalRegistration.until}. Nobody is emailed.`}
+                        confirmLabel="Reopen registration"
+                      >
+                        Reopen registration
+                      </ActionButton>
+                    ) : (
+                      <ReopenRegistration action={reopenBandRegistration.bind(null, eventId)} today={today} deadlineRequired />
+                    )}
+                  </div>
+                </Panel>
+              )}
 
               <Panel id="kind" title="Kind of event" intro="What the event is for decides which pages and tools it has.">
                 <div className="space-y-3">

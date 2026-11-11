@@ -26,7 +26,12 @@ export type RegistrationField =
   | "mealsOffered"
   | "mealPrice"
   | "mealDetails"
-  | "mealOptions";
+  | "mealOptions"
+  // Festivals (the 20270129000000 update): a group limit, and what to ask each group.
+  | "maxGroups"
+  | "askChaperones"
+  | "askBuses"
+  | "askAvailability";
 
 const FIELDS: Record<RegistrationField, z.ZodType<string | number | boolean | string[] | null>> = {
   deadline: z.union([z.literal("").transform(() => null), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a valid date.")]),
@@ -85,6 +90,19 @@ const FIELDS: Record<RegistrationField, z.ZodType<string | number | boolean | st
     .refine((l) => l.length <= 10, "Up to 10 meal options.")
     .refine((l) => l.every((o) => o.length <= 30), "Keep each option under 30 characters.")
     .refine((l) => new Set(l.map((o) => o.toLowerCase())).size === l.length, "That option is already on the list."),
+  // Empty is no limit; a number box sends digits only.
+  maxGroups: z
+    .string()
+    .trim()
+    .transform((v, ctx) => {
+      if (!v) return null;
+      if (!/^\d+$/.test(v)) ctx.addIssue({ code: "custom", message: "Enter a number, or leave it empty for no limit." });
+      return Number(v);
+    })
+    .refine((v) => v === null || (v >= 1 && v <= 2000), "Use a number from 1 to 2,000, or leave it empty for no limit."),
+  askChaperones: z.enum(["true", "false"]).transform((v) => v === "true"),
+  askBuses: z.enum(["true", "false"]).transform((v) => v === "true"),
+  askAvailability: z.enum(["true", "false"]).transform((v) => v === "true"),
 };
 
 const EVENT_COLUMN: Partial<Record<RegistrationField, string>> = {
@@ -97,6 +115,10 @@ const EVENT_COLUMN: Partial<Record<RegistrationField, string>> = {
   mealPrice: "meal_price_cents",
   mealDetails: "meal_details",
   mealOptions: "meal_options",
+  maxGroups: "max_groups",
+  askChaperones: "ask_chaperones",
+  askBuses: "ask_buses",
+  askAvailability: "ask_availability",
 };
 const CONTACT_COLUMN: Partial<Record<RegistrationField, "name" | "phone" | "email">> = {
   contactName: "name",
@@ -140,6 +162,13 @@ export async function saveRegistrationField(eventId: string, field: Registration
     const openNow = event?.status === "published" && event.band_registration_open && (!event.band_registration_opens_on || event.band_registration_opens_on <= today);
     if (field === "opensOn" && openNow && String(parsed.data) > today)
       return { error: "Registration is already open, so the opening day can't move later. Close registration instead if you need to pause it." };
+  }
+
+  // A group limit can't drop below the groups already registered (they keep their place).
+  if (field === "maxGroups" && typeof parsed.data === "number") {
+    const { count } = await supabase.from("bands").select("id", { count: "exact", head: true }).eq("event_id", eventId).is("scratched_at", null);
+    if ((count ?? 0) > parsed.data)
+      return { error: `${count} groups have registered already. Set the limit to at least ${count}, or leave it empty for no limit.` };
   }
 
   const column = EVENT_COLUMN[field];

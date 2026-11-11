@@ -50,6 +50,8 @@ export type SetupFacts = {
   directorInfo: boolean;
   /** Band contests: a registration deadline is set, and how many classifications there are. */
   registrationDeadline?: boolean;
+  /** The registration deadline itself (YYYY-MM-DD), for saying when registration closes. */
+  registrationDeadlineOn?: string | null;
   /** A draft band contest's deadline has already passed: it needs a new one before publishing. */
   registrationDeadlinePast?: boolean;
   /** The day band registration opens (null: when the event is published). */
@@ -137,6 +139,22 @@ export function bandRegistrationMissing(f: Pick<SetupFacts, "registrationDeadlin
   return null;
 }
 
+/**
+ * What a festival's Registration step still needs before publishing ("Add a deadline"), or null. Only the
+ * deadline: classifications are optional (owner, 2026-11-11). The database checks it too.
+ */
+export function festivalRegistrationMissing(f: Pick<SetupFacts, "registrationDeadline" | "registrationDeadlinePast" | "published">) {
+  if (f.registrationDeadlinePast && !f.published) return "Pick a new deadline: it has passed";
+  if (!f.registrationDeadline) return "Add a deadline";
+  return null;
+}
+
+/** What a festival's Rooms and schedule step still needs before publishing ("Add a room"), or null. */
+export function festivalRoomsMissing(f: Pick<SetupFacts, "pathRooms" | "rooms">) {
+  if (f.pathRooms > 0) return null;
+  return f.rooms > 0 ? "Put a room in the rotation" : "Add a room";
+}
+
 export function emptyJobsNote(empty: { name: string; items: boolean }[]) {
   if (empty.length === 1) return `${empty[0].name} needs ${empty[0].items ? "a thing to bring" : "a shift"}`;
   return `${empty.length} jobs need a shift or a thing to bring`;
@@ -160,15 +178,28 @@ export function setupChecklist(f: SetupFacts): SetupChecklist {
     },
   ];
   if (hasRooms(f.eventType)) {
-    before.push({
-      id: "rooms",
-      label: "Add rooms and the path groups follow",
-      hint: "The schedule is built from your rooms.",
-      href: `${base}/rooms#rooms-heading`,
-      done: f.pathRooms > 0,
-      required: true,
-      partial: f.rooms > 0 ? { fraction: 0.5, note: `${f.rooms} room${f.rooms === 1 ? "" : "s"}, path not set yet` } : undefined,
-    });
+    // The same two required steps as the step bar along the top (Rooms and schedule, Registration).
+    const regMissing = festivalRegistrationMissing(f);
+    before.push(
+      {
+        id: "rooms",
+        label: "Add a room",
+        hint: "In Rooms and schedule: the rooms groups move through. Each group's times are worked out from them.",
+        href: `${base}/rooms`,
+        done: f.pathRooms > 0,
+        required: true,
+        partial: f.rooms > 0 ? { fraction: 0.5, note: `${f.rooms} room${f.rooms === 1 ? "" : "s"}, none in the rotation yet` } : undefined,
+      },
+      {
+        id: "registration",
+        label: "Set up registration",
+        hint: "A deadline is all publishing needs. Classifications and questions are optional.",
+        href: `${base}/bands`,
+        done: regMissing === null,
+        required: true,
+        partial: regMissing && f.registrationDeadline ? { fraction: 0.5, note: regMissing } : undefined,
+      },
+    );
   }
   if (f.eventType === "band_contest") {
     const missing = bandRegistrationMissing(f);
@@ -231,8 +262,8 @@ export function setupChecklist(f: SetupFacts): SetupChecklist {
     before.push(
       volunteerEvent
         ? jobsStep(f, base)
-        : f.eventType === "band_contest"
-          ? // A band contest's jobs work the same way, but publishing doesn't need them. (Once live, unfinished jobs move after publishing.)
+        : f.eventType === "band_contest" || hasRooms(f.eventType)
+          ? // A band contest's (and a festival's) jobs work the same way, but publishing doesn't need them. (Once live, unfinished jobs move after publishing.)
             { ...jobsStep(f, base), hint: "Only if you need volunteers.", required: false }
           : {
         id: "shifts",
@@ -269,13 +300,15 @@ export function setupChecklist(f: SetupFacts): SetupChecklist {
   const bandContest = f.eventType === "band_contest";
   const publish: SetupStep = {
     id: "publish",
-    // A band contest's publishing is what opens registration.
+    // A band contest's (and a festival's) publishing is what opens registration.
     label: "Publish your event",
     hint: bandContest
       ? f.registrationOpensOn
         ? `Puts your contest page online. Directors can register from ${formatDate(f.registrationOpensOn, { year: undefined })}.`
         : "Puts your contest page online, and directors can register."
-      : "Puts your public page online. You can unpublish at any time.",
+      : hasRooms(f.eventType)
+        ? "Puts your festival page online, and group directors can register."
+        : "Puts your public page online. You can unpublish at any time.",
     href: `${base}#publish`,
     done: f.published,
     required: true,
@@ -314,8 +347,8 @@ export function setupChecklist(f: SetupFacts): SetupChecklist {
     });
   }
   if (groups) {
-    // A band contest opens registration when it publishes: no separate step for it.
-    if (f.eventType !== "band_contest")
+    // A band contest (and a festival) opens registration when it publishes: no separate step for it.
+    if (f.eventType !== "band_contest" && !hasRooms(f.eventType))
       after.push({
         id: "registration",
         label: `Open ${words.one} registration`,
@@ -327,16 +360,18 @@ export function setupChecklist(f: SetupFacts): SetupChecklist {
     after.push(
       {
         id: "schedule",
-        label: hasRooms(f.eventType) ? "Build and post the room schedule" : "Build and publish the performance schedule",
+        label: hasRooms(f.eventType) ? "Post the schedule" : "Build and publish the performance schedule",
         hint:
           f.eventType === "band_contest"
             ? "Directors are emailed their times when you publish it, so they can book buses."
-            : "Directors are emailed their times when you publish the schedule.",
+            : hasRooms(f.eventType)
+              ? "In Rooms and schedule, once registration closes. Posting emails each director their group's times."
+              : "Directors are emailed their times when you publish the schedule.",
         due: f.eventType === "band_contest" && f.startsOn ? `Due ${formatDate(twoWeeksBefore(f.startsOn), { year: undefined })}` : undefined,
-        href: hasRooms(f.eventType) ? `${base}/rooms#order-heading` : `${base}/schedule`,
+        href: hasRooms(f.eventType) ? `${base}/rooms` : `${base}/schedule`,
         done: f.scheduleShared,
         required: false,
-        partial: f.scheduleSlots > 0 ? { fraction: 0.75, note: "Built, not published yet" } : undefined,
+        partial: f.scheduleSlots > 0 ? { fraction: 0.75, note: hasRooms(f.eventType) ? "Groups have times, not posted yet" : "Built, not published yet" } : undefined,
       },
     );
   }
@@ -351,9 +386,9 @@ export function setupChecklist(f: SetupFacts): SetupChecklist {
     });
   }
 
-  // A live band contest: volunteer jobs still being finished belong with the after-publishing steps,
+  // A live band contest (or festival): volunteer jobs still being finished belong with the after-publishing steps,
   // just before opening sign-up; finished ones simply drop out of "before".
-  if (f.eventType === "band_contest" && f.published) {
+  if ((f.eventType === "band_contest" || hasRooms(f.eventType)) && f.published) {
     const jobs = before.findIndex((s) => s.id === "shifts");
     if (jobs >= 0) {
       const [step] = before.splice(jobs, 1);
@@ -363,7 +398,9 @@ export function setupChecklist(f: SetupFacts): SetupChecklist {
       }
     }
   }
-  before.sort((a, b) => BEFORE_ORDER.indexOf(a.id) - BEFORE_ORDER.indexOf(b.id));
+  // A festival's steps go Rooms and schedule, then Registration, as along the step bar.
+  const order = hasRooms(f.eventType) ? ["details", "rooms", ...BEFORE_ORDER.filter((id) => id !== "details" && id !== "rooms")] : BEFORE_ORDER;
+  before.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   // Only open steps can be part-way; a finished one just shows done.
   for (const st of [...before, ...after]) if (st.done) delete st.partial;
   const all = [...before, publish, ...after];
@@ -420,6 +457,20 @@ function rank(s: SetupStep) {
 /** What publishing changes for this event, in plain words (shown next to the Publish button). */
 export function publishEffects(f: SetupFacts): string[] {
   const words = groupWords(f.eventType);
+  if (hasRooms(f.eventType)) {
+    // A festival: what opens, through when, and what comes after (owner decisions and light check, 2026-11-11).
+    const through = f.registrationDeadlineOn ? ` and stays open through ${formatDate(f.registrationDeadlineOn, { year: undefined })}` : "";
+    return [
+      "The festival page goes online for families and group directors.",
+      `Group registration opens${through}.`,
+      ...(f.stations > 0
+        ? [f.volunteerSignupOpen ? "Volunteer sign-up opens right away (it was left on)." : "Volunteer sign-up stays closed until you open it."]
+        : []),
+      "Nobody is emailed. Share the registration link with directors when you're ready.",
+      "After registration closes, you set the groups' order and post the schedule.",
+      "You can unpublish from Event settings.",
+    ];
+  }
   const lines = ["Your public page goes online, so anyone with the link can see it."];
   if (isMeeting(f.eventType)) {
     return [

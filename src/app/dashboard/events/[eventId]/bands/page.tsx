@@ -28,12 +28,13 @@ import { RegisteredBands } from "./registered-bands";
 import { SetupTabs } from "../../_components/setup-tabs";
 import { ReopenRegistration } from "./reopen-registration";
 import { RegistrationSettings } from "./registration-settings";
+import { FestivalRegistration } from "./festival-registration";
 
 export async function generateMetadata({ params }: PageProps<"/dashboard/events/[eventId]/bands">): Promise<Metadata> {
   const { eventId } = await params;
   const { data } = await (await createClient()).from("events").select("event_type").eq("id", eventId).maybeSingle();
-  // The page's own heading: "Band registration", or a group event's word for its groups.
-  return { title: `${groupWords(data?.event_type).One} registration` };
+  // The page's own heading: "Band registration", or a festival's "Registration" (its step's name).
+  return { title: hasRooms(data?.event_type) ? "Registration" : `${groupWords(data?.event_type).One} registration` };
 }
 // Sending a long list of invitations finishes after the page answers; give it time.
 export const maxDuration = 300;
@@ -206,6 +207,56 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
     />
   );
 
+  // A festival: its own registration settings (the 20270129000000 update), with what it asks each group and a group limit.
+  const festival = roomsHere
+    ? (((await supabase.from("events").select("max_groups, ask_chaperones, ask_buses, ask_availability").eq("id", eventId).maybeSingle()).data ?? null) as {
+        max_groups: number | null;
+        ask_chaperones: boolean;
+        ask_buses: boolean;
+        ask_availability: boolean;
+      } | null)
+    : null;
+  const festivalForm = (next?: { href: string; label: string }) => (
+    <FestivalRegistration
+      eventId={eventId}
+      initial={{
+        deadline: event.band_registration_deadline ?? "",
+        maxGroups: festival?.max_groups ?? null,
+        classifications: event.classifications ?? [],
+        askChaperones: festival?.ask_chaperones ?? true,
+        askBuses: festival?.ask_buses ?? true,
+        askAvailability: festival?.ask_availability ?? true,
+        directorInfo: event.director_info ?? "",
+        paymentLink: event.payment_link ?? "",
+      }}
+      groupsIn={bandsIn}
+      next={next}
+      draft={!published}
+      today={today}
+      festival={{
+        label: formatDate(event.starts_on, { weekday: undefined, year: undefined }),
+        lastDeadline: dayBefore(event.starts_on),
+        multiDay: event.ends_on > event.starts_on,
+      }}
+    />
+  );
+
+  // A festival before it's published: step 3 of its setup (the steps sit above, from the layout; board 5, 2026-11-11).
+  if (roomsHere && !published) {
+    return (
+      <div data-required-marks>
+        {/* No "Back to" link while setting up: it would jump ahead to Publish. The step bar is the way around. */}
+        <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">Registration</h1>
+        <SavedBy eventId={eventId} area="bands" className="mt-2" />
+        <p className="mt-2 max-w-3xl text-muted">What group directors fill in when they register their group. Registration opens when you publish.</p>
+        <a href={`/e/${event.slug}/bands`} target="_blank" className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4">
+          Preview what directors see <span className="sr-only">(opens in a new tab)</span>
+        </a>
+        <div className="mt-6">{festivalForm({ href: `/dashboard/events/${eventId}/volunteering`, label: "Volunteers" })}</div>
+      </div>
+    );
+  }
+
   // A band contest before it's published: step 2 of its setup (the steps sit above, from the layout).
   if (contest && !published) {
     // Just started from a previous contest: what came over (or that it didn't), and what to check.
@@ -294,7 +345,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
       <Link href={`/dashboard/events/${eventId}`} className="text-sm text-muted hover:text-foreground">
         ← Back to {event.name}
       </Link>
-      <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">{w.One} registration</h1>
+      <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">{roomsHere ? "Registration" : `${w.One} registration`}</h1>
       <SavedBy eventId={eventId} area="bands" className="mt-2" />
 
       {/* Where registration stands, its link, and the one button for what's next. */}
@@ -303,7 +354,15 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
           <div className="space-y-1">
             <p className="flex flex-wrap items-center gap-2 text-sm">
               <Badge tone={!published ? "neutral" : regOpen ? "live" : "neutral"}>
-                {!published ? "Event not published" : regOpen ? "Registration open" : regLater ? `Opens ${formatDate(event.band_registration_opens_on!, { weekday: undefined, year: undefined })}` : "Registration closed"}
+                {!published
+                  ? "Event not published"
+                  : regOpen
+                    ? "Registration open"
+                    : regLater
+                      ? `Opens ${formatDate(event.band_registration_opens_on!, { weekday: undefined, year: undefined })}`
+                      : roomsHere && !pastDeadline && event.band_registration_deadline && !deadlinePassed(event)
+                        ? "Closed early"
+                        : "Registration closed"}
               </Badge>
               <span className="text-muted">
                 {[
@@ -328,7 +387,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
               </p>
             )}
           </div>
-          {!settingsDone && !regOpen && (
+          {!settingsDone && !regOpen && !roomsHere && (
             <p className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm">
               Save your{" "}
               <Link href={`${base}?tab=settings`} scroll={false} className="font-medium underline">
@@ -343,9 +402,9 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
             <div className="mt-2 flex flex-wrap gap-2">
               <CopyLinkButton url={registrationUrl} label="Copy link" />
               <a href={`/e/${event.slug}/bands`} target="_blank" className="inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand">
-                Preview page
+                {roomsHere ? "Preview the form" : "Preview page"}
               </a>
-              {!published && (
+              {!published && !roomsHere && (
                 <ActionButton
                   action={publishAndOpenBandRegistration.bind(null, eventId)}
                   variant="go"
@@ -372,7 +431,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
                   </Link>
                 </>
               )}
-              {published && !regLater && !pastDeadline && (
+              {published && !regLater && !pastDeadline && !roomsHere && (
                 <ActionButton
                   action={setBandRegistrationOpen.bind(null, eventId, !event.band_registration_open)}
                   variant={event.band_registration_open ? "quiet-stop" : "go"}
@@ -387,8 +446,17 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
                 </ActionButton>
               )}
               {/* Opens a new-deadline box, which takes its own line. */}
-              {published && pastDeadline && <ReopenRegistration action={reopenBandRegistration.bind(null, eventId)} today={today} deadlineRequired={contest} />}
+              {published && pastDeadline && !roomsHere && <ReopenRegistration action={reopenBandRegistration.bind(null, eventId)} today={today} deadlineRequired={contest} />}
             </div>
+            {/* A festival closes and reopens registration in Event settings, away from the link (owner, 2026-11-11). */}
+            {roomsHere && published && (
+              <p className="mt-2 text-sm">
+                {regOpen ? "Need to close registration early? " : "Need to reopen registration? "}
+                <Link href={`/dashboard/events/${eventId}/edit?section=more#registration`} className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
+                  Go to Event settings
+                </Link>
+              </p>
+            )}
             <p className="mt-2 text-sm text-muted">
               Directors who use this link confirm their email with a code after they fill in the form. Directors you{" "}
               <Link href={`${base}?tab=invite`} scroll={false} className="font-medium text-brand underline-offset-4 hover:underline">
@@ -430,8 +498,8 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
             {
               key: "settings",
               label: "Registration settings",
-              status: settingsDone ? "Saved" : "Needs to be done",
-              mark: settingsDone ? ("done" as const) : ("todo" as const),
+              status: roomsHere ? (event.band_registration_deadline ? "Saved" : "Needs a deadline") : settingsDone ? "Saved" : "Needs to be done",
+              mark: (roomsHere ? Boolean(event.band_registration_deadline) : settingsDone) ? ("done" as const) : ("todo" as const),
               href: `${base}?tab=settings`,
               active: current === "settings",
             },
@@ -456,7 +524,14 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
               {registrationForm()}
             </div>
           )}
-          {current === "settings" && !contest && (
+          {current === "settings" && roomsHere && (
+            <div>
+              <h2 className="text-lg font-semibold">Registration settings</h2>
+              <p className="mt-1 mb-4 text-sm text-muted">What group directors fill in when they register their group.</p>
+              {festivalForm()}
+            </div>
+          )}
+          {current === "settings" && !contest && !roomsHere && (
             <Card>
               <h2 className="text-lg font-semibold">Registration settings</h2>
               <p className="mt-1 mb-4 text-sm text-muted">What directors pick and read when they register.</p>

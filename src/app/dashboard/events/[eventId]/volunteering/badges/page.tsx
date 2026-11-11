@@ -15,7 +15,7 @@ import { eachDate, formatDate, formatDateRange } from "@/lib/time";
 import { BadgeColorScope, PrintBadgesButton } from "./badge-controls";
 import { MapBack } from "./map-back";
 import { LineIcon } from "@/components/line-icon";
-import { usesJobs } from "@/lib/event-types";
+import { volunteerAreaName } from "@/lib/event-types";
 
 export const metadata: Metadata = { title: "Volunteer badges" };
 
@@ -94,7 +94,7 @@ export default async function BadgesPage({ params, searchParams }: PageProps<"/d
 
       <div className="print:hidden">
         <Link href={`/dashboard/events/${eventId}/volunteering`} className="text-sm text-muted hover:text-foreground">
-          ← Back to {usesJobs(event.event_type) ? "Jobs and shifts" : "Volunteer Setup"}
+          ← Back to {volunteerAreaName(event.event_type)}
         </Link>
         <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">Volunteer badges</h1>
         <p className="mt-2 max-w-2xl text-muted">

@@ -37,7 +37,7 @@ type Failure = { message: string; retry: boolean } | null;
  * - A value the server refuses says why next to the box. Retry is offered only when trying again
  *   could work (a dropped connection). `restore` puts the last saved value back instead (a date).
  */
-function useAutosave(
+export function useAutosave(
   eventId: string,
   field: RegistrationField,
   initial: string,
@@ -128,10 +128,10 @@ function useAutosave(
   return { value, change, blur, state, failure, retry: save };
 }
 
-type Saver = ReturnType<typeof useAutosave>;
+export type Saver = ReturnType<typeof useAutosave>;
 
 /** A field's label, hint, box, and, if its save failed, the reason (with Retry when it could help) right beside it. */
-function AutoField({
+export function AutoField({
   label,
   hint,
   required = false,
@@ -176,7 +176,7 @@ function AutoField({
 }
 
 /** Props that mark a box whose save failed, in red even while it has focus. */
-function marked(id: string, s: Saver, hint = true) {
+export function marked(id: string, s: Saver, hint = true) {
   const bad = Boolean(s.failure);
   return {
     id,
@@ -701,6 +701,6 @@ export function RegistrationSettings({
 }
 
 /** Adds layout classes to a box's own (the failed-save marking comes first, so it wins). */
-function withClass<T extends { className: string }>(p: T, extra: string): T {
+export function withClass<T extends { className: string }>(p: T, extra: string): T {
   return { ...p, className: `${extra} ${p.className}`.trim() };
 }

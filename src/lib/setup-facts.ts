@@ -74,6 +74,7 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
     finalistsRevealed: Boolean(event.finalists_revealed),
     directorInfo: Boolean(event.director_info?.trim()),
     registrationDeadline: Boolean(event.band_registration_deadline),
+    registrationDeadlineOn: event.band_registration_deadline ?? null,
     startsOn: event.starts_on,
     // Only a day still to come: one that's here already just means "open".
     registrationOpensOn:
