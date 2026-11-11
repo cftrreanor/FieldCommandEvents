@@ -2729,9 +2729,16 @@ begin
          'marking it in a room clears "didn''t come"';
   perform public.group_room_handoff(warm, '40000000-0000-0000-0000-0000000000d2', '40000000-0000-0000-0000-0000000000d1');
   assert exists (select 1 from public.group_checkins where band_id = '40000000-0000-0000-0000-0000000000d2' and room_id = warm and kind = 'done')
-     and not exists (select 1 from public.group_checkins where band_id = '40000000-0000-0000-0000-0000000000d2' and room_id = warm and kind = 'in')
      and exists (select 1 from public.group_checkins where band_id = '40000000-0000-0000-0000-0000000000d1' and room_id = warm and kind = 'in'),
          '"done, next group is in" marks both';
+  -- Done keeps the mark that it went in (20270131000000), so Undo puts it back with its first time.
+  assert exists (select 1 from public.group_checkins where band_id = '40000000-0000-0000-0000-0000000000d2' and room_id = warm and kind = 'in'),
+         'done in a room keeps when it went in';
+  perform public.group_mark('40000000-0000-0000-0000-0000000000d2', warm, 'done', false);
+  assert exists (select 1 from public.group_checkins where band_id = '40000000-0000-0000-0000-0000000000d2' and room_id = warm and kind = 'in')
+     and not exists (select 1 from public.group_checkins where band_id = '40000000-0000-0000-0000-0000000000d2' and room_id = warm and kind = 'done'),
+         'undoing done leaves the group in the room';
+  perform public.group_mark('40000000-0000-0000-0000-0000000000d2', warm, 'done', true);
   begin
     perform public.group_mark('40000000-0000-0000-0000-0000000000d1', warm, 'no_show', true);
     raise exception 'FAIL: "didn''t come" for one room';

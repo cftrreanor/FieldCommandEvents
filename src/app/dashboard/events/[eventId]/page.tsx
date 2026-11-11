@@ -249,7 +249,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   const groupStatus = roomsHere
     ? await Promise.all([
         supabase.from("room_slots").select("room_id, band_id, starts_at, ends_at").eq("event_id", eventId),
-        supabase.from("group_checkins").select("band_id, room_id, created_at, actor_name").eq("event_id", eventId),
+        supabase.from("group_checkins").select("band_id, room_id, created_at, actor_name, kind").eq("event_id", eventId),
       ]).then(([{ data: gs }, { data: gc }]) =>
         (gs ?? []).length ? groupDaySummary(groupDay((gs ?? []) as GroupSlot[], (gc ?? []) as GroupCheckin[], now, isEventDay)) : null,
       )
@@ -358,7 +358,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           {
             who: `${words.One} directors`,
             what: "Registration",
-            url: `${publicUrl}/bands`,
+            url: `${publicUrl}/${roomsHere ? "register" : "bands"}`,
             on: roomsHere ? registrationIsOpen(event) : event.band_registration_open,
             off: "Registration is closed",
             // A festival reopens registration in Event settings (owner, 2026-11-11).
@@ -1991,8 +1991,8 @@ async function festivalFacts(
   return {
     eventId,
     slug: event.slug,
-    registrationUrl: `${publicUrl}/bands`,
-    previewHref: `/e/${event.slug}/bands`,
+    registrationUrl: `${publicUrl}/register`,
+    previewHref: `/e/${event.slug}/register`,
     published: ctx.published,
     regOpen,
     closedEarly: ctx.published && !event.band_registration_open && !deadlinePast,

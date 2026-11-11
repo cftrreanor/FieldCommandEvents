@@ -61,6 +61,8 @@ export default async function BandRegistrationPage({ params }: Params) {
   if (!event) missing();
   // Only band contests and group events take registrations.
   if (!hasEnsembles(event.event_type)) redirect(`/e/${slug}`);
+  // Festivals register at /register (owner, 2026-11-11); old /bands links keep working.
+  if (hasRooms(event.event_type)) redirect(`/e/${slug}/register`);
   const w = groupWords(event.event_type);
   const kind = hasRooms(event.event_type) ? "group" : "band";
   const user = await getUser();

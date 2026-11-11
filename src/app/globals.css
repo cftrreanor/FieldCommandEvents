@@ -300,6 +300,32 @@ form[data-missing] label:has([data-picker-box]:invalid:placeholder-shown)::after
   font-weight: 600;
 }
 
+/* Example text in an empty box never looks typed (lesson L27): quieter than an answer, and in italics. In dark
+   mode it's a softer blue-grey (7.9:1 on a box, 6.9:1 on a raised window): the one allowed exception to "no
+   grey in dark mode" (owner, 2026-11-11). Outside any layer, so it holds over every box's own classes. */
+:root {
+  --placeholder: #5b6b7b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --placeholder: #a3b5c9;
+  }
+}
+::placeholder {
+  color: var(--placeholder);
+  font-style: italic;
+  opacity: 1;
+}
+/* A pick-one box still on its "Choose…" line (a disabled empty option) is empty too. */
+select:has(> option[value=""][disabled]:checked) {
+  color: var(--placeholder);
+  font-style: italic;
+}
+select:has(> option[value=""][disabled]:checked) option {
+  color: var(--foreground);
+  font-style: normal;
+}
+
 /* Dark mode: no grey text, so anything faded with opacity elsewhere (past
    events, finished shifts, small notes) shows at full strength. Outside any
    layer, so it wins over the utility classes. */

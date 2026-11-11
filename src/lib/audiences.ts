@@ -181,11 +181,11 @@ export const audiences = {
     name: "Choir and group festivals",
     metaTitle: "Choir, Orchestra & Group Festival Scheduling Software",
     metaDescription:
-      "Run a choir or orchestra festival, theater, or speech and debate event: groups register online and move through your rooms on a schedule built for you, while directors and families follow every room live.",
+      "Run a choir or orchestra festival, theater, or speech and debate event: groups register online and move through your rooms on a schedule worked out for you, directors are emailed their times, and families follow each room as your team marks it.",
     eyebrow: "For choir directors and fine arts directors",
     headline: "Festivals that stay on time",
     intro:
-      "For choir and orchestra festivals, theater, UIL academics, and speech and debate, groups register online and move through your rooms on a schedule built for you. Directors and families follow every room live.",
+      "For choir and orchestra festivals, theater, and speech and debate, groups register online and move through your rooms on a schedule worked out for you. Families follow each room as your team marks it, and directors see their group's times.",
     replaces: [
       "Room rotations worked out by hand in a spreadsheet",
       "Runners sent to see whether a room is ready",
@@ -195,11 +195,11 @@ export const audiences = {
     sections: [
       {
         title: "Registration for every group",
-        body: "Share one link, and directors fill in their school, group, classification, directors, participant and chaperone counts, buses, and any conflicts or staging needs. They confirm with a code we email them, with no account to set up first.",
+        body: "Share one link, and directors fill in their group, school, and performers, plus a classification, chaperones, buses, and when their group can come, only if you ask. They confirm with a code we email them, with no account to set up first.",
         points: [
           "Import last year's directors from a spreadsheet, and their details are filled in for them",
           "See every registered group with totals for participants, chaperones, and buses, filter by classification, and download the list",
-          "Set a chaperone limit and a deadline that closes on its own, then reopen with a new deadline if a director asks for more time",
+          "Set a deadline that closes on its own and a limit on how many groups can register, then reopen with a new deadline if a director asks for more time",
           "Headcounts only: student names are never collected",
         ],
       },
@@ -208,8 +208,9 @@ export const audiences = {
         body: "Add your rooms, such as warm-up, performance, sight-reading, or a clinic, and the order groups move through them. Set the start time, the minutes between groups, and the passing time, and every group's itinerary is worked out for you.",
         points: [
           "Add a note to each room, like “Room 112, east hallway”, and list hospitality rooms that aren't part of the rotation",
-          "Change a group's starting order, skip a room for one group, add a lunch break, or adjust any time by hand",
-          "Publish, and every director is emailed their group's times. Change a time later, and you can email only the directors it affects",
+          "Change the order, skip a room for one group, or add a break, and every later time updates for you",
+          "Post the schedule, and every director is emailed their group's times. Change a time later, and you can email only the directors it affects",
+          "Running behind? Push the rest of the schedule back in one step",
         ],
       },
       {
@@ -217,8 +218,8 @@ export const audiences = {
         body: "Every director has one page for their group: each room and time, your information for directors, and your maps and documents. Fewer calls and emails land on you.",
         points: [
           "Their room-by-room itinerary, added to their calendar in one tap",
-          "A checklist of what's next, then their group's progress live on the day",
-          "Changes allowed until your deadline, and a withdraw button if plans change, which emails you",
+          "Their group's progress on the day, as your team marks it",
+          "Changes and withdrawing allowed until registration closes, and you're emailed if a group withdraws",
         ],
         screen: {
           src: "/screens/group-director-itinerary.webp",
@@ -227,11 +228,11 @@ export const audiences = {
       },
       {
         title: "Every room on time",
-        body: "On the day, anyone on your team taps a group Arrived when it reaches the building and Done as it finishes each room, on any phone, tablet, or laptop.",
+        body: "On the day, your team marks each group arrived, in each room, and done, on any phone, tablet, or laptop. A private link for each room's door lets whoever is there mark that room's groups, with no sign-in.",
         points: [
-          "One view of all groups, plus a view for each room, with any group running over shown at a glance",
+          "One list of every group with its next tap, plus a view for each room, with any group behind its time shown at a glance",
           "Running behind? Push the rest of the schedule back in one step, and email the directors it affects",
-          "Every tap shows who made it, and can be undone",
+          "Every mark shows who made it, and each tap can be undone right after",
           "Volunteers sign up for shifts on their phone without making an account, get a reminder the day before, and wear printable badges that carry your logo",
         ],
         screen: {
@@ -241,7 +242,7 @@ export const audiences = {
       },
       {
         title: "Families follow each room live",
-        body: "The public event page shows who's on now and up next in every room, under your logo and colors, so families know where to be.",
+        body: "The public festival page shows who's in each room now and who's up next, as your team marks it, under your logo and colors, so families know where to be.",
         points: [
           "Families never see contact details or headcounts",
           "Post a banner when something changes, and anyone with the schedule open is told it was updated",
@@ -258,23 +259,23 @@ export const audiences = {
         title: "Set up rooms and the order",
         body: "Add the rooms every group visits. Each group's times are worked out for you, room by room.",
         screen: "/screens/group-rooms-schedule.webp",
-        alt: "Rooms & Schedule Setup: each choir's warm-up, main stage, and sight-reading times.",
+        alt: "Rooms and schedule: each choir's warm-up, main stage, and sight-reading times.",
       },
       {
         title: "Groups register",
-        body: "Directors fill in their school, group, directors, and headcounts, then confirm with a code. They can update it until registration closes.",
+        body: "Directors fill in their group, school, and headcounts, then confirm with a code we email. They can change it until registration closes.",
         screen: "/screens/group-registration-confirm-code.webp",
         alt: "The group registration form on a phone, with a note that it takes about 5 minutes and is confirmed with an emailed code.",
       },
       {
         title: "Families follow each room live",
-        body: "The public page shows who's on now and up next in every room.",
+        body: "The public page shows who's in each room now and up next, as your team marks it.",
         screen: "/screens/group-room-schedule-live.webp",
         alt: "The public schedule, room by room, with the group on now and the group up next.",
       },
       {
         title: "Run the day",
-        body: "Tap groups Arrived and Done in each room, and see who's running over.",
+        body: "Mark each group arrived, in each room, and done, and see who's behind.",
         screen: "/screens/group-event-day.webp",
         alt: "The event day page: which groups are here, which are running over, and Done buttons for each room.",
       },
@@ -288,7 +289,7 @@ export const audiences = {
     faqs: [
       {
         q: "How is the room schedule built?",
-        a: "Add your rooms in the order groups move through them and how long each takes, then set the start time, the minutes between groups, and the passing time. Every group's itinerary is worked out for you, and you can change the order, skip rooms, add breaks, or adjust any time before you publish.",
+        a: "Add your rooms in the order groups move through them and how long each takes, then set the start time, the minutes between groups, and the passing time. Every group's times are worked out for you. Change the order, skip a room for one group, or add a break, and every later time updates. When you post the schedule, every director is emailed their group's times. Change a time later, and you can email only the directors it affects.",
       },
       {
         q: "Does it work for orchestra, theater, or speech and debate?",
@@ -296,15 +297,15 @@ export const audiences = {
       },
       {
         q: "What if a room falls behind?",
-        a: "Your team taps each group Arrived and Done, so you can see where every room stands and which groups are running over. If the day runs late, push the rest of the schedule back by however many minutes you need, and email the directors whose times moved. The public page updates for families.",
+        a: "Your team marks each group arrived, in each room, and done, so you can see where every room stands and which groups are behind. If the day runs late, push the rest of the schedule back by however many minutes you need, and email the directors whose times moved. Families follow each room on the public page as your team marks it.",
       },
       {
         q: "What if a group needs to withdraw, or asks for more time?",
-        a: "Directors can withdraw from their own page, and you're emailed. While registration is open and before you publish room times, their registration is removed. After that, the group is marked withdrawn on your group list, and its room times stay in place until you change the schedule. If a director asks for more time after your deadline, reopen registration with a new deadline in one step.",
+        a: "Until registration closes, directors can change or withdraw from their own page, and you're emailed when a group withdraws. Before you post the schedule, their registration is removed. After that, the group is marked withdrawn on your group list, and its room times stay in place until you change the schedule. If a director asks for more time after your deadline, reopen registration with a new deadline.",
       },
       {
         q: "Can families see where their child's group is?",
-        a: "Yes. The public event page shows each room's current and next group on the day, on any phone, with no app to download.",
+        a: "Yes. On the day, the public festival page shows who's in each room now and who's up next, as your team marks it, on any phone, with no app to download.",
       },
       {
         q: "Do visiting directors pay or need an app?",

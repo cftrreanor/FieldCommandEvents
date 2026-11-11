@@ -16,6 +16,7 @@ import { emailLayout, pause, sendEmail } from "@/lib/email";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { customWords, loadSystemEmail } from "@/lib/system-email-overrides";
 import { createRegistration } from "@/lib/band-registration";
+import { parseFestival } from "@/lib/festival-registration";
 import { sendBandInvites } from "./band-invite-actions";
 import { setEventPublished } from "./actions";
 import { formatDate, formatTime, utcToZonedDate, zoneAbbreviation, zonedToUtc } from "@/lib/time";
@@ -82,6 +83,32 @@ export async function updateBand(bandId: string, _prev: ActionState, formData: F
   if (!data?.length) return { error: "Registration is closed, so changes have to go through the organizer." };
   revalidatePath(`/dashboard/bands/${bandId}`);
   revalidatePath(`/dashboard/events/${data[0].event_id}/bands`);
+  redirect(`/dashboard/bands/${bandId}?saved=1`);
+}
+
+/** A director changes their festival group's answers (the short form), while registration is open. */
+export async function updateFestivalGroup(bandId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const { data: band } = await supabase.from("bands").select("event_id, head_director_email").eq("id", bandId).maybeSingle();
+  if (!band) return { error: "We couldn't find this group." };
+  const { data: event } = await supabase
+    .from("events")
+    .select("classifications, ask_chaperones, ask_buses, ask_availability, chaperone_limit, starts_on, ends_on")
+    .eq("id", band.event_id)
+    .single();
+  if (!event) return { error: "We couldn't find this festival." };
+  const parsed = parseFestival(formData, event, band.head_director_email ?? user.email);
+  if ("error" in parsed) return { error: parsed.error };
+  // The email stays the one they registered with.
+  const columns: Record<string, unknown> = { ...parsed.columns };
+  delete columns.contact_email;
+  delete columns.head_director_email;
+  const { data, error } = await supabase.from("bands").update(columns).eq("id", bandId).select("id");
+  if (error) return { error: friendlyDbError(error) };
+  if (!data?.length) return { error: "Registration is closed, so changes have to go through the organizer." };
+  revalidatePath(`/dashboard/bands/${bandId}`);
+  revalidatePath(`/dashboard/events/${band.event_id}/bands`);
   redirect(`/dashboard/bands/${bandId}?saved=1`);
 }
 
@@ -240,7 +267,7 @@ async function registrationShare(eventId: string): Promise<ActionState> {
     ok: true,
     share: await shareLink(
       `${w.One} registration is open`,
-      `/e/${event.slug}/bands`,
+      `/e/${event.slug}/${hasRooms(event.event_type) ? "register" : "bands"}`,
       `Send this link to ${w.one} directors. Directors you invite by email start from their invitation, with their details filled in.`,
     ),
   };

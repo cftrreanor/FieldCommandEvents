@@ -15,7 +15,8 @@ import { formatDate, formatDateRange, formatTime, utcToZonedDate, zoneAbbreviati
 import { AutoRefresh } from "@/components/auto-refresh";
 import { DayStatusPill } from "@/components/day-status";
 import { eventPhase, type BandDay } from "@/lib/contest-day";
-import { bandSteps, dayStatus, groupSteps, type DayStatus, type ProgressRow } from "@/lib/director-day";
+import { bandSteps, dayStatus, type DayStatus, type ProgressRow } from "@/lib/director-day";
+import { groupState, type Mark, type Tone } from "@/lib/festival-day";
 import { eventTypeLabel, groupWords, hasConferences, hasEnsembles, hasRooms } from "@/lib/event-types";
 import type { createClient as CreateClient } from "@/lib/supabase/server";
 import { RequestAccess } from "@/components/request-access";
@@ -64,6 +65,8 @@ type MyBand = {
   // Only readable once the host publishes, so these double as "times are posted".
   performance_slots: { perform_at: string | null } | { perform_at: string | null }[] | null;
   finals_slots: { perform_at: string | null }[];
+  /** Festivals: the group's room times (readable once posted). */
+  room_slots?: { starts_at: string }[];
 };
 
 type DraftStatus = {
@@ -172,7 +175,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       .select(
         `id, band_name, school_name,
          events(${EVENT_COLUMNS}, band_registration_open, band_registration_deadline, band_registration_opens_on, performance_order_published, finalists_revealed, ready_minutes_before, finals_ready_minutes_before),
-         performance_slots(perform_at), finals_slots(perform_at)`,
+         performance_slots(perform_at), finals_slots(perform_at), room_slots(starts_at)`,
       )
       .eq("director_user_id", user.id),
   ]);
@@ -188,7 +191,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           .filter((b) => b.events.performance_order_published && eventPhase(b.events, now) === "day")
           .map(async (b) => [b.id, await liveStatus(b, now)] as const),
       )
-    ).filter((x): x is readonly [string, DayStatus] => x[1] != null),
+    ).filter((x): x is readonly [string, LiveStatus] => x[1] != null),
   );
   const helping = ((staffRows ?? []) as unknown as StaffEvent[])
     .filter((r): r is StaffEvent & { events: EventSummary } => r.events != null)
@@ -393,9 +396,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       {live.size > 0 && <AutoRefresh seconds={30} />}
       {myBands.length > 0 && (
         <Section
-          icon="band"
-          title="Competing"
-          description="Your bands' registrations at contests."
+          icon={myBands.some((b) => hasRooms(b.events.event_type)) ? "group" : "band"}
+          title={myBands.some((b) => hasRooms(b.events.event_type)) ? "Your groups" : "Competing"}
+          description={
+            myBands.some((b) => hasRooms(b.events.event_type)) ? "Festivals and contests your groups are registered for" : "Your bands' registrations at contests."
+          }
           items={bandsByEvent.map((bands) => ({
             key: bands[0].events.id,
             past: isPast(bands[0].events),
@@ -666,6 +671,10 @@ function bandStatus(b: DirectorBand): { text: string; tone: "brand" | "accent" |
   const at = (iso: string) =>
     `${e.starts_on !== e.ends_on ? `${formatDate(utcToZonedDate(iso, e.timezone), { year: undefined })}, ` : ""}${formatTime(iso, e.timezone)} ${zoneAbbreviation(iso, e.timezone)}`;
   if (isPast(e)) return { text: "Completed", tone: "neutral" };
+  if (hasRooms(e.event_type)) {
+    const first = e.performance_order_published ? (b.room_slots ?? []).map((s) => s.starts_at).sort()[0] : undefined;
+    return first ? { text: `First room ${at(first)}`, tone: "brand" } : { text: "Times not posted yet", tone: "neutral" };
+  }
   const finals = e.finalists_revealed ? b.finals_slots[0] : undefined;
   if (finals) return { text: finals.perform_at ? `Finalist · performs ${at(finals.perform_at)}` : "Finalist", tone: "accent" };
   const slot = Array.isArray(b.performance_slots) ? b.performance_slots[0] : b.performance_slots;
@@ -675,18 +684,32 @@ function bandStatus(b: DirectorBand): { text: string; tone: "brand" | "accent" |
 }
 
 /** A band's (or group's) steps today, from the host team's taps. Null when there's nothing to track. */
-async function liveStatus(b: DirectorBand, now: Date): Promise<DayStatus | null> {
+type FestivalStatus = { festival: true; text: string; tone: Tone; line: string };
+type LiveStatus = DayStatus | FestivalStatus;
+
+async function liveStatus(b: DirectorBand, now: Date): Promise<LiveStatus | null> {
   const supabase = await createClient();
   const e = b.events;
   const time = (iso: string) => formatTime(iso, e.timezone);
   if (hasRooms(e.event_type)) {
-    const [{ data: slots }, { data: rooms }, { data: checkins }] = await Promise.all([
-      supabase.from("room_slots").select("room_id, starts_at, ends_at").eq("band_id", b.id),
-      supabase.from("rooms").select("id, name, note").eq("event_id", e.id),
-      supabase.from("group_checkins").select("room_id, created_at").eq("band_id", b.id),
+    // Festivals: the same words as the team's Event day, from the team's marks (never "late"; "Now" only from a mark).
+    const [{ data: slots }, { data: rooms }, { data: marks }] = await Promise.all([
+      supabase.from("room_slots").select("room_id, band_id, starts_at, ends_at").eq("band_id", b.id),
+      supabase.from("rooms").select("id, name").eq("event_id", e.id),
+      supabase.from("group_checkins").select("band_id, room_id, kind, created_at").eq("band_id", b.id),
     ]);
-    const steps = groupSteps({ slots: slots ?? [], rooms: new Map((rooms ?? []).map((r) => [r.id, r])), checkins: checkins ?? [], time });
-    return steps.length ? dayStatus(steps, now, time) : null;
+    if (!(slots ?? []).length) return null;
+    const names = new Map((rooms ?? []).map((r) => [r.id, r.name]));
+    const st = groupState({
+      bandId: b.id,
+      slots: slots ?? [],
+      marks: (marks ?? []) as Mark[],
+      now,
+      live: true,
+      roomName: (id) => names.get(id) ?? "A room",
+      time,
+    });
+    return { festival: true, text: st.status.text, tone: st.status.tone, line: st.line.replace(/ by .*?( ·|$)/, "$1") };
   }
   const [{ data: day }, { data: prelims }, { data: finals }, { data: rows }] = await Promise.all([
     supabase
@@ -716,7 +739,7 @@ async function liveStatus(b: DirectorBand, now: Date): Promise<DayStatus | null>
 type DirectorBand = MyBand & { events: NonNullable<MyBand["events"]> };
 
 /** One contest, with a row per band you brought (each opens that band's page). */
-function BandCard({ bands, live }: { bands: DirectorBand[]; live: Map<string, DayStatus> }) {
+function BandCard({ bands, live }: { bands: DirectorBand[]; live: Map<string, LiveStatus> }) {
   const e = bands[0].events;
   const one = bands.length === 1;
   return (
@@ -725,18 +748,28 @@ function BandCard({ bands, live }: { bands: DirectorBand[]; live: Map<string, Da
         {bands.map((b) => {
           const status = bandStatus(b);
           const now = live.get(b.id);
+          const waiting = hasRooms(e.event_type) && status.text === "Times not posted yet";
           const row = (
             <>
               <span className="block text-sm">
                 <span className="font-medium">{b.band_name}</span> <span className="text-muted">· {b.school_name}</span>
               </span>
               <span className="mt-2 block">
-                {now ? (
+                {now && "festival" in now ? (
+                  <>
+                    <Badge tone={now.tone}>
+                      {now.tone === "warning" && <span aria-hidden>◆&nbsp;</span>}
+                      {now.text}
+                    </Badge>
+                    <span className="mt-1 block text-sm">{now.line}</span>
+                  </>
+                ) : now ? (
                   <DayStatusPill status={now} doneText={hasRooms(e.event_type) ? "Finished every room" : "Performed"} />
                 ) : (
                   <Badge tone={status.tone}>{status.text}</Badge>
                 )}
               </span>
+              {waiting && <span className="mt-1 block text-sm">Your times come by email once the organizer posts the schedule</span>}
             </>
           );
           return (

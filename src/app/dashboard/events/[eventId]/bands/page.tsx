@@ -145,7 +145,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
   const pastDeadline = event.band_registration_open && deadlinePassed(event);
   const bands = (bandData ?? []) as BandRow[];
   const origin = await getOrigin();
-  const registrationUrl = `${origin}/e/${event.slug}/bands`;
+  const registrationUrl = `${origin}/e/${event.slug}/${hasRooms(event.event_type) ? "register" : "bands"}`;
 
 
 
@@ -249,7 +249,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
         <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">Registration</h1>
         <SavedBy eventId={eventId} area="bands" className="mt-2" />
         <p className="mt-2 max-w-3xl text-muted">What group directors fill in when they register their group. Registration opens when you publish.</p>
-        <a href={`/e/${event.slug}/bands`} target="_blank" className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4">
+        <a href={`/e/${event.slug}/${hasRooms(event.event_type) ? "register" : "bands"}`} target="_blank" className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4">
           Preview what directors see <span className="sr-only">(opens in a new tab)</span>
         </a>
         <div className="mt-6">{festivalForm({ href: `/dashboard/events/${eventId}/volunteering`, label: "Volunteers" })}</div>
@@ -281,7 +281,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
         <p className="mt-2 max-w-2xl text-muted">
           What directors pick and read when they register. You can invite directors and share the link once you publish.
         </p>
-        <a href={`/e/${event.slug}/bands`} target="_blank" className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4">
+        <a href={`/e/${event.slug}/${hasRooms(event.event_type) ? "register" : "bands"}`} target="_blank" className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4">
           Preview what directors see <span className="sr-only">(opens in a new tab)</span>
         </a>
         {copiedFrom && copyNote && (
@@ -401,7 +401,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
             <p className="mt-1 break-all text-sm text-muted">{registrationUrl}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               <CopyLinkButton url={registrationUrl} label="Copy link" />
-              <a href={`/e/${event.slug}/bands`} target="_blank" className="inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand">
+              <a href={`/e/${event.slug}/${hasRooms(event.event_type) ? "register" : "bands"}`} target="_blank" className="inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand">
                 {roomsHere ? "Preview the form" : "Preview page"}
               </a>
               {!published && !roomsHere && (

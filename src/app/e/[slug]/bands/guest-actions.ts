@@ -7,13 +7,14 @@ import { bandColumns, parseBand, registrationIsOpen } from "@/lib/bands";
 import { getOrigin } from "@/lib/data";
 import { emailLayout, sendEmail } from "@/lib/email";
 import { groupWords } from "@/lib/event-types";
+import { parseFestival, type FestivalColumns } from "@/lib/festival-registration";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 // Register first, confirm after: directors who aren't signed in fill in the
 // form, then confirm with a code we email them (or that email's button).
 // Nothing is registered until they do. See 20261208000000_pending_band_registrations.sql.
 
-type Details = ReturnType<typeof bandColumns>;
+type Details = ReturnType<typeof bandColumns> | FestivalColumns;
 type Pending = { id: string; event_id: string; email: string; details: Details; sent_at: string };
 
 export type GuestState = ActionState & { pending?: { id: string; email: string; bandName: string } };
@@ -24,7 +25,9 @@ const RESEND_SECONDS = 60;
 async function loadEvent(eventId: string) {
   const { data } = await createAdminClient()
     .from("events")
-    .select("id, slug, name, status, event_type, timezone, band_registration_open, band_registration_deadline, band_registration_opens_on, chaperone_limit, classifications")
+    .select(
+      "id, slug, name, status, event_type, timezone, starts_on, ends_on, band_registration_open, band_registration_deadline, band_registration_opens_on, chaperone_limit, classifications, ask_chaperones, ask_buses, ask_availability",
+    )
     .eq("id", eventId)
     .maybeSingle();
   return data;
@@ -73,8 +76,14 @@ export async function startGuestRegistration(eventId: string, _prev: GuestState,
     return { error: `This event allows up to ${event.chaperone_limit} chaperones per ${groupWords(event.event_type).one}.` };
   }
 
+  return hold(event, details.head_director_email, details);
+}
+
+/** Hold the answers and email a code; nothing is registered until it's confirmed. */
+async function hold(event: NonNullable<Awaited<ReturnType<typeof loadEvent>>>, address: string, details: Details): Promise<GuestState> {
+  const eventId = event.id;
   const admin = createAdminClient();
-  const email = details.head_director_email.trim().toLowerCase();
+  const email = address.trim().toLowerCase();
   const cutoff = new Date(Date.now() - KEEP_DAYS * 86400000).toISOString();
   await admin.from("pending_band_registrations").delete().lt("created_at", cutoff);
   // Their latest try replaces an earlier one for the same band.
@@ -93,6 +102,21 @@ export async function startGuestRegistration(eventId: string, _prev: GuestState,
 
   if (!(await sendCode(data as Pending, event))) return { error: "We couldn't send the email. Please try again in a moment." };
   return { ok: true, pending: { id: data.id, email, bandName: details.band_name } };
+}
+
+/** A festival's short form (board 16): signed in, it registers; otherwise hold it and email a code. */
+export async function startFestivalGuest(eventId: string, _prev: GuestState, formData: FormData): Promise<GuestState> {
+  const event = await loadEvent(eventId);
+  if (!event || !registrationIsOpen(event)) return { error: "Registration for this festival is closed. Please contact the organizer." };
+  const user = await getUser();
+  const email = user?.email ?? String(formData.get("headDirectorEmail") ?? "").trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: "Your email: enter an email address we can send the code to" };
+  const parsed = parseFestival(formData, event, email);
+  if ("error" in parsed) return { error: parsed.error };
+  if (user) return createRegistration(eventId, user, parsed.columns);
+  const { data: full } = await createAdminClient().rpc("group_event_full", { ev: eventId });
+  if (full) return { error: "This festival is full. Contact the organizer to ask about a spot." };
+  return hold(event, email, parsed.columns);
 }
 
 async function loadPending(id: string) {
