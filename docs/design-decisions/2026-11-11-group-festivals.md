@@ -62,3 +62,20 @@ Owner decisions:
   - Phone fixes, and the website words corrected (posting emails directors; "as your team marks it").
 
 Next: round 2 of the mock-ups for the changed screens, a light check, then build.
+
+## Light check on round 2 (2026-11-11)
+
+Report: `docs/design-reviews/2026-11-11-group-festivals-mockups-2.md`. Owner decisions:
+
+- **Room doors:** each room gets its own private link for whoever is at the door, no sign-in. It can only mark groups
+  in that one room (in, done, next in), shows only that room's list, and the organizer can turn it off or make a new
+  one. Pushing the schedule back stays hosts and co-hosts only.
+- **Dark mode example text:** an exception to "no grey in dark mode": example text in empty boxes gets a softer
+  blue-grey that still reads easily, plus italics. App-wide.
+- **Director edits:** directors can change or withdraw their group until registration closes. After that the page
+  says "To change your registration, contact the organizer".
+- **Event day buttons:** each group card keeps its own solid next-tap button (an exception to one main button per
+  screen), because checking groups in fast on a phone matters more.
+- **Everything else from the light check as recommended:** "Now" comes only from the team's marks; a break is a gap
+  in start times, shown with the next group's start; per-day running orders; a draft copy while posted; the other
+  fixes in the report.
