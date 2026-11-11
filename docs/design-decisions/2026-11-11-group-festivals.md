@@ -79,3 +79,13 @@ Report: `docs/design-reviews/2026-11-11-group-festivals-mockups-2.md`. Owner dec
 - **Everything else from the light check as recommended:** "Now" comes only from the team's marks; a break is a gap
   in start times, shown with the next group's start; per-day running orders; a draft copy while posted; the other
   fixes in the report.
+
+## Light check on the built update (2026-11-11)
+
+Report: `docs/design-reviews/2026-11-11-group-festivals-built.md`. Owner decisions:
+
+- **Shortening a festival's dates:** refused while groups are on a day that would drop off, naming them ("Move these 4
+  groups to another day first"). Nothing moves without the organizer seeing it.
+- **Start and end times:** empty on every new event, of every kind (pattern rule 2), not 7:00 AM to 10:00 PM.
+- **Door links:** stop working at the end of the day after the festival's last day, or sooner when turned off.
+- **Everything else as the reviewers suggested.**
