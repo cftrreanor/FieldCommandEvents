@@ -46,7 +46,7 @@ export async function notificationPeople(eventId: string, kind: NotifyKind): Pro
     event && ids.length
       ? await Promise.all([
           admin.from("organization_members").select("user_id, profiles(email)").eq("organization_id", event.organization_id).in("user_id", ids),
-          admin.from("event_staff").select("user_id, profiles(email)").eq("event_id", eventId).eq("role", "volunteer_director").in("user_id", ids),
+          admin.from("event_staff").select("user_id, profiles(email)").eq("event_id", eventId).in("role", ["volunteer_director", "co_host"]).in("user_id", ids),
         ])
       : [{ data: [] }, { data: [] }];
   type Member = { user_id: string; profiles: { email: string | null } | null };

@@ -21,6 +21,12 @@ const ROLE = {
     label: "Coordinator",
     blurb: "You'll see who's assigned to your sign-up. Their phone numbers unlock on event day.",
   },
+  co_host: {
+    // A non-breaking hyphen keeps "co‑host" on one line in the heading.
+    label: "a co\u2011host",
+    blurb:
+      "You'll help run this event: setup, publishing, sign-ups, volunteers, and the event day. You won't see the account's other events, and your access ends 10 days after the event.",
+  },
 } as const;
 
 export default async function InvitePage({ params, searchParams }: PageProps<"/invite/[token]">) {

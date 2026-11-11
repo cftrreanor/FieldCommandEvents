@@ -8,7 +8,7 @@ import { utcToZonedDate } from "@/lib/time";
 // Everything My team shows, worked out once (docs/design-lessons.md, L1). What each person
 // may read is limited by the database; this only arranges it.
 
-export type StaffRole = "volunteer_director" | "section_lead";
+export type StaffRole = "volunteer_director" | "section_lead" | "co_host";
 export type Profile = { full_name: string; email: string; phone: string | null };
 export type TeamEvent = { id: string; name: string; starts_on: string; ends_on: string; timezone: string; ended: boolean };
 
@@ -47,6 +47,8 @@ export type Removal = {
   left: boolean;
   /** You removed them in the last few minutes: until when Undo puts them back. */
   undoUntil: string | null;
+  /** A co-host of one event (not one of every event taken off one): invited again to that event only. */
+  oneEvent?: boolean;
 };
 
 /** How long Undo stays offered after removing someone. */
@@ -241,6 +243,7 @@ function recentRemovals(rows: RemovalRow[], events: Map<string, TeamEvent>, back
       event: r.event_id ? (events.get(r.event_id) ?? null) : null,
       removedAt: r.removed_at,
       left: r.removed_by === r.user_id,
+      oneEvent: r.role === "co_host" && !!r.event_id && !(r as { was_every?: boolean }).was_every,
       undoUntil:
         r.removed_by === me && r.removed_by !== r.user_id && new Date(r.removed_at).getTime() >= undoFrom
           ? new Date(new Date(r.removed_at).getTime() + UNDO_MINUTES * 60_000).toISOString()
@@ -289,7 +292,7 @@ export async function loadMyTeam(userId: string, origin: string, accountId?: str
       id,
       name: teamNames.get(id) ?? "Another account",
       role: "team" as const,
-      label: [...new Set(myStaff.filter((st) => st.events!.organization_id === id).map((st) => (st.role === "volunteer_director" ? "Volunteer Lead" : "Coordinator")))].join(" and "),
+      label: [...new Set(myStaff.filter((st) => st.events!.organization_id === id).map((st) => (st.role === "volunteer_director" ? "Volunteer Lead" : st.role === "co_host" ? "co-host" : "Coordinator")))].join(" and "),
     })),
   ].sort((x, y) => rank[x.role] - rank[y.role] || x.name.localeCompare(y.name));
   const current = accounts.find((a) => a.id === accountId) ?? accounts[0] ?? null;
@@ -354,7 +357,7 @@ async function loadHostView(org: { id: string; name: string; timezone: string },
       .order("created_at"),
     supabase
       .from("team_removals")
-      .select("id, role, user_id, email, full_name, removed_by, removed_at, event_id")
+      .select("id, role, user_id, email, full_name, removed_by, removed_at, event_id, was_every")
       .eq("organization_id", org.id)
       .gte("removed_at", removedSince())
       .order("removed_at", { ascending: false }),

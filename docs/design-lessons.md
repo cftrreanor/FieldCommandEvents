@@ -104,6 +104,8 @@ a word for two things on one screen.
 - **Again in:** Meetings final check ("confirmation email" and "calendar invite" for the same email on
   one page, so people expect two; 2 of 3). One email, one name, with what's in it listed once.
 
+- **Again in:** co-hosts of one event as built ("Fall Cleanup Day only" meant "off this event" in Remove and "only
+  this event" in Change…, on the same row). Choices that remove say "Just from"; choices that keep say "only".
 ## L6. Dark mode: muted text is white
 In dark mode `--muted` is pure white, so anything that relies on grey looks live or filled in.
 - Greyed-out controls use `text-disabled` and a dashed border, plus a reason in words.

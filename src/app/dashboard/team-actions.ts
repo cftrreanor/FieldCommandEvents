@@ -8,7 +8,7 @@ import { friendlyDbError, type ActionState } from "@/lib/action-state";
 import { requireUser } from "@/lib/auth";
 import { getOrigin } from "@/lib/data";
 import { sendEmail } from "@/lib/email";
-import { hostOfferAnsweredEmail, hostOfferEmail, hostOfferEndedEmail, leftEventEmail, removedEmail, undoneEmail } from "@/lib/team-emails";
+import { addedEmail, cohostChangedEmail, hostOfferAnsweredEmail, hostOfferEmail, hostOfferEndedEmail, leftEventEmail, removedEmail, undoneEmail } from "@/lib/team-emails";
 import { invitationEmail, invitationEmailKey, type InvitationDetails } from "@/lib/invitation-email";
 import { loadSystemEmail } from "@/lib/system-email-overrides";
 import { hasBands, leadWords } from "@/lib/event-types";
@@ -17,7 +17,7 @@ import { utcToZonedDate } from "@/lib/time";
 
 const inviteSchema = z.object({
   email: z.string().trim().toLowerCase().email("Please enter a valid email address."),
-  role: z.enum(["volunteer_director", "section_lead", "host"]),
+  role: z.enum(["volunteer_director", "section_lead", "host", "co_host"]),
   stationId: z.string().uuid().or(z.literal("")).optional(),
 });
 
@@ -38,15 +38,17 @@ export async function inviteCoordinator(eventId: string, stationId: string, _pre
 export async function reinviteMember(eventId: string, removalId: string): Promise<ActionState> {
   await requireUser();
   const supabase = await createClient();
-  const { data: removal } = await supabase.from("team_removals").select("email, role").eq("id", removalId).maybeSingle();
+  const { data: removal } = await supabase.from("team_removals").select("email, role, event_id, was_every").eq("id", removalId).maybeSingle();
   if (!removal) return { error: "You don't have permission to do that." };
-  return invite(eventId, removal.email, removal.role === "co_host" ? "host" : removal.role, null);
+  // A co-host of one event is invited back to that event; a co-host of every event to the account.
+  const role = removal.role === "co_host" ? (removal.event_id && !removal.was_every ? "co_host" : "host") : removal.role;
+  return invite(eventId, removal.email, role, null);
 }
 
 async function invite(
   eventId: string,
   email: string,
-  role: "volunteer_director" | "section_lead" | "host",
+  role: "volunteer_director" | "section_lead" | "host" | "co_host",
   stationId: string | null,
 ): Promise<ActionState> {
   const user = await requireUser();
@@ -281,6 +283,13 @@ export async function inviteAgain(orgId: string, email: string, role: "co_host" 
   return result;
 }
 
+/** Invite again: a co-host of one event, back to that event only. */
+export async function inviteCoHostAgain(eventId: string, email: string): Promise<ActionState> {
+  const result = await invite(eventId, email, "co_host", null);
+  revalidatePath("/dashboard/team");
+  return result;
+}
+
 export async function resendTeamInvitation(invitationId: string): Promise<ActionState> {
   await requireUser();
   const sent = await sendInvitation(invitationId);
@@ -309,7 +318,7 @@ export async function removeFromEvents(userId: string, name: string, _prev: Acti
   const pairs = formData
     .getAll("pick")
     .map((p) => String(p).split(":"))
-    .filter(([eventId, role]) => UUID.test(eventId ?? "") && STAFF_ROLES.includes(role as StaffRole));
+    .filter(([eventId, role]) => UUID.test(eventId ?? "") && (STAFF_ROLES.includes(role as StaffRole) || role === "co_host"));
   if (!pairs.length) return { error: "Choose what to remove them from." };
   const { data: events } = await supabase
     .from("events")
@@ -334,9 +343,9 @@ export async function removeFromEvents(userId: string, name: string, _prev: Acti
     .select("event_id, role");
   if (error) return { error: friendlyDbError(error) };
   if (!data?.length) return { error: `${name} wasn't removed. They may have been removed already, or it isn't yours to do.` };
-  const label = { volunteer_director: "Volunteer Lead", section_lead: "Coordinator" } as const;
+  const label = { volunteer_director: "Volunteer Lead", section_lead: "Coordinator", co_host: "co-host" } as const;
   // The email names what was actually removed (not what was asked for).
-  const roleNames = data.map((d) => `${label[d.role as StaffRole]} of ${(events ?? []).find((e) => e.id === d.event_id)?.name ?? "an event"}`);
+  const roleNames = data.map((d) => `${label[d.role as StaffRole | "co_host"]} of ${(events ?? []).find((e) => e.id === d.event_id)?.name ?? "an event"}`);
   const toldPerson = await tellRemoved(formData, userId, (events ?? [])[0]?.organization_id ?? null, roleNames);
   // The event's Volunteer Leads (and the Account Host, if someone else did it) hear about the gap.
   const remover = await requireUser();
@@ -349,7 +358,7 @@ export async function removeFromEvents(userId: string, name: string, _prev: Acti
         d.event_id,
         userId,
         name,
-        d.role as StaffRole,
+        d.role as StaffRole | "co_host",
         d.role === "section_lead" ? led.filter((l) => l.event_id === d.event_id).map((l) => l.stations?.name ?? "").filter(Boolean) : [],
         { id: remover.id, name: removerProfile?.full_name || remover.email },
         (toldHosts[d.event_id] ??= []),
@@ -438,7 +447,7 @@ async function tellHostsSomeoneLeft(
   eventId: string,
   personId: string,
   who: string,
-  role: StaffRole,
+  role: StaffRole | "co_host",
   jobs: string[],
   removedBy: { id: string; name: string } | null = null,
   /** Filled with the addresses the email went to (so Undo can tell them). */
@@ -500,8 +509,8 @@ async function tellRemoved(formData: FormData, removedId: string, orgId: string 
         .eq("events.organization_id", orgId)
         .gte("events.ends_on", today)
     : { data: [] };
-  const label = { volunteer_director: "Volunteer Lead", section_lead: "Coordinator" } as const;
-  const keeps = ((kept ?? []) as unknown as { role: StaffRole; events: { name: string } }[]).map((k) => `${label[k.role]} of ${k.events.name}`);
+  const label = { volunteer_director: "Volunteer Lead", section_lead: "Coordinator", co_host: "co-host" } as const;
+  const keeps = ((kept ?? []) as unknown as { role: StaffRole | "co_host"; events: { name: string } }[]).map((k) => `${label[k.role]} of ${k.events.name}`);
   const { subject, html, text } = removedEmail({
     remover: me?.full_name || user.email,
     organization: org?.name ?? null,
@@ -782,4 +791,168 @@ export async function undoRemoval(removalIds: string[]): Promise<ActionState> {
 /** "a, b, and c". */
 function listAnd(items: string[]) {
   return items.length < 3 ? items.join(" and ") : `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
+// -----------------------------------------------------------------------------
+// Co-hosts of one event, and adding people already on the team (20270128000100_event_cohosts.sql).
+// -----------------------------------------------------------------------------
+
+const ADD_ROLES = ["co_host", "co_host_every", "volunteer_director", "section_lead"] as const;
+const addSchema = z.object({ userId: z.string().regex(UUID), name: z.string().max(200), role: z.enum(ADD_ROLES) });
+
+/** "From your team": add someone already on the team, right away, and email them. */
+export async function addTeamMember(eventId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = addSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: "Something went wrong. Please try again." };
+  const { userId, name, role } = parsed.data;
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("add_team_member", { p_event: eventId, p_user: userId, p_role: role });
+  if (error) return { error: teamDbError(error) };
+  const admin = createAdminClient();
+  const [{ data: event }, { data: person }, { data: me }] = await Promise.all([
+    admin.from("events").select("name, event_type, organizations(name)").eq("id", eventId).maybeSingle(),
+    admin.from("profiles").select("email").eq("id", userId).maybeSingle(),
+    admin.from("profiles").select("full_name").eq("id", user.id).maybeSingle(),
+  ]);
+  const ev = event as unknown as { name: string; event_type: string; organizations: { name: string } | null } | null;
+  const lead = leadWords(ev?.event_type ?? "volunteer").one;
+  const label =
+    role === "co_host_every"
+      ? "co-host of every event"
+      : role === "co_host"
+        ? `co-host of ${ev?.name}`
+        : role === "volunteer_director"
+          ? `Volunteer Lead of ${ev?.name}`
+          : `${lead} at ${ev?.name}`;
+  const powers =
+    role === "co_host_every"
+      ? "You can see and run every event on the account, and any added later, except invite or remove co-hosts, or delete events."
+      : role === "co_host"
+        ? `You can do everything on ${ev?.name} except invite or remove co-hosts, or delete it. Your access ends 10 days after the event.`
+        : role === "volunteer_director"
+          ? "You'll set up sign-ups and shifts, see who's signed up, check people in, and help run the event day."
+          : "You'll see who's on your sign-up's shifts, and their phone numbers unlock on the day of the event.";
+  let told = false;
+  if (person?.email) {
+    const { subject, html, text } = addedEmail({
+      adder: me?.full_name || user.email,
+      organization: ev?.organizations?.name ?? "your organizer",
+      role: label,
+      powers,
+      url: `${await getOrigin()}/dashboard`,
+      contact: user.email,
+    });
+    told = await sendEmail({ to: person.email, subject, html, text, replyTo: user.email });
+  }
+  revalidatePath(`/dashboard/events/${eventId}`, "layout");
+  revalidatePath("/dashboard/team");
+  return { ok: true, message: told ? `Added ${name}. We emailed them.` : `Added ${name}. Our email didn't go out, so let them know yourself.` };
+}
+
+/**
+ * Remove… on a co-host from an event's team setup. A co-host of every event: "event" takes them off this event (they
+ * stay a co-host of each other open event), "all" off the account. A co-host of one event: off this event.
+ */
+export async function removeEventCoHost(
+  eventId: string,
+  userId: string,
+  name: string,
+  every: boolean,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const user = await requireUser();
+  const pick = formData.get("pick");
+  if (every ? pick !== "event" && pick !== "all" : pick !== "event") return { error: "Choose what to remove them from." };
+  const supabase = await createClient();
+  const { data: event } = await supabase.from("events").select("name, organization_id").eq("id", eventId).maybeSingle();
+  if (!event) return { error: "Event not found." };
+  if (every && pick === "all") {
+    return removeAccountCoHost(event.organization_id, userId, name, _prev, formData);
+  }
+  if (every) {
+    const { error } = await supabase.rpc("remove_cohost_from_event", { p_event: eventId, p_user: userId });
+    if (error) return { error: teamDbError(error) };
+  } else {
+    const { data, error } = await supabase
+      .from("event_staff")
+      .delete()
+      .eq("event_id", eventId)
+      .eq("user_id", userId)
+      .eq("role", "co_host")
+      .select("user_id");
+    if (error) return { error: friendlyDbError(error) };
+    if (!data?.length) return { error: "Only the Account Host can remove a co-host." };
+  }
+  const told = await tellRemoved(formData, userId, event.organization_id, [`a co-host of ${event.name}`]);
+  await noteWhoWasTold(userId, user.id, [{ eventId, role: "co_host", hosts: [] }], told, event.organization_id);
+  revalidatePath(`/dashboard/events/${eventId}`, "layout");
+  revalidatePath("/dashboard/team");
+  return { ok: true, message: `Removed ${name} from ${event.name}. Undo is on My team for 10 minutes.` };
+}
+
+/** Change… : a co-host of one event (or some) to every event, or a co-host of every event to just this one. */
+export async function changeCoHost(
+  orgId: string,
+  userId: string,
+  name: string,
+  to: "every" | "only",
+  eventId: string | null,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("change_cohost", { p_org: orgId, p_user: userId, p_to: to, p_event: eventId });
+  if (error) return { error: teamDbError(error) };
+  if (formData.get("notify") === "on") {
+    const admin = createAdminClient();
+    const [{ data: person }, { data: me }, { data: org }, { data: ev }] = await Promise.all([
+      admin.from("profiles").select("email").eq("id", userId).maybeSingle(),
+      admin.from("profiles").select("full_name").eq("id", user.id).maybeSingle(),
+      admin.from("organizations").select("name").eq("id", orgId).maybeSingle(),
+      eventId ? admin.from("events").select("name").eq("id", eventId).maybeSingle() : Promise.resolve({ data: null }),
+    ]);
+    if (person?.email) {
+      const { subject, html, text } = cohostChangedEmail({
+        changer: me?.full_name || user.email,
+        organization: org?.name ?? "your organizer",
+        every: to === "every",
+        eventName: ev?.name ?? null,
+        url: `${await getOrigin()}/dashboard`,
+        contact: user.email,
+      });
+      await sendEmail({ to: person.email, subject, html, text, replyTo: user.email });
+    }
+  }
+  revalidatePath("/dashboard", "layout");
+  return {
+    ok: true,
+    message: to === "every" ? `${name} is now a co-host of every event.` : `${name} now co-hosts just that event. To undo, use Change… again.`,
+  };
+}
+
+/** A co-host of one event stops co-hosting it. The Account Host is told. */
+export async function stopCohosting(eventId: string): Promise<ActionState> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const [{ data: led }, { data: me }] = await Promise.all([
+    supabase.from("station_leads").select("stations(name)").eq("event_id", eventId).eq("user_id", user.id),
+    supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle(),
+  ]);
+  const { data, error } = await supabase
+    .from("event_staff")
+    .delete()
+    .eq("event_id", eventId)
+    .eq("user_id", user.id)
+    .eq("role", "co_host")
+    .select("event_id");
+  if (error) return { error: friendlyDbError(error) };
+  if (!data?.length) return { error: "You've already stopped co-hosting that event." };
+  const jobs = ((led ?? []) as unknown as { stations: { name: string } | null }[]).map((l) => l.stations?.name).filter((n): n is string => !!n);
+  const { data: ev } = await createAdminClient().from("events").select("name").eq("id", eventId).maybeSingle();
+  await tellHostsSomeoneLeft(eventId, user.id, me?.full_name || user.email, "co_host", jobs);
+  revalidatePath("/dashboard", "layout");
+  redirect(`/dashboard?stopped=${encodeURIComponent(ev?.name ?? "that event")}`);
 }

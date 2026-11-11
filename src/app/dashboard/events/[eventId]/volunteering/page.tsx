@@ -36,9 +36,9 @@ export async function generateMetadata({ params }: PageProps<"/dashboard/events/
 }
 
 type HostRow = { user_id: string; role: "owner" | "admin"; profiles: { full_name: string; email: string } | null };
-type StaffRow = { user_id: string; role: "volunteer_director" | "section_lead"; profiles: { full_name: string; email: string } | null };
-const roleLabel = (role: "volunteer_director" | "section_lead", type: string | null) =>
-  role === "volunteer_director" ? "Volunteer Lead" : leadWords(type).one;
+type StaffRow = { user_id: string; role: "volunteer_director" | "section_lead" | "co_host"; profiles: { full_name: string; email: string } | null };
+const roleLabel = (role: StaffRow["role"], type: string | null) =>
+  role === "volunteer_director" ? "Volunteer Lead" : role === "co_host" ? "Co-host" : leadWords(type).one;
 const HOST_LABEL = { owner: "Host", admin: "Co-host" } as const;
 
 /** Volunteer sign-up and one tab per station (section) with its own shift schedule. */

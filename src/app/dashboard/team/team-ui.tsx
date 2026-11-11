@@ -11,13 +11,13 @@ import type { ActionState } from "@/lib/action-state";
 type Action = (prev: ActionState, formData: FormData) => Promise<ActionState>;
 
 /** The secondary look for a row's buttons: 44 px tall, 14 px words (L12). */
-const ROW_BUTTON = "min-h-11 px-3 text-sm";
+export const ROW_BUTTON = "min-h-11 px-3 text-sm";
 
 /**
  * After a row is removed, keep keyboard and screen-reader users in place: focus moves to the
  * heading of the section the row was in (the row itself is gone), not the top of the page.
  */
-function focusSection(from: HTMLElement | null) {
+export function focusSection(from: HTMLElement | null) {
   const heading = from?.closest("section")?.querySelector<HTMLElement>("h2") ?? document.querySelector<HTMLElement>("main h1");
   if (!heading) return;
   heading.tabIndex = -1;
@@ -25,7 +25,7 @@ function focusSection(from: HTMLElement | null) {
 }
 
 /** A window opened by a button, closed by Escape, a click outside, or its way-out button. */
-function useWindow() {
+export function useWindow() {
   const ref = useRef<HTMLDialogElement>(null);
   const [key, setKey] = useState(0);
   return {
@@ -40,7 +40,7 @@ function useWindow() {
   };
 }
 
-function Window({
+export function Window({
   dialogRef,
   formKey,
   close,
@@ -54,6 +54,12 @@ function Window({
   children: ReactNode;
 }) {
   const id = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
+  // Opening rebuilds the form (a fresh one each time), which drops the focus showModal() gave it: put it on the
+  // window's question, so screen readers hear it and keyboards start inside the window.
+  useEffect(() => {
+    if (formKey && dialogRef.current?.open) heading.current?.focus();
+  }, [formKey, dialogRef]);
   return (
     <dialog
       ref={dialogRef}
@@ -62,7 +68,7 @@ function Window({
       className="team-window m-auto w-[calc(100%-2rem)] max-w-md rounded-xl border border-border p-0 text-left text-foreground shadow-elevated"
     >
       <div key={formKey} className="p-6">
-        <h2 id={id} className="text-lg font-semibold leading-7 [overflow-wrap:anywhere]">
+        <h2 id={id} ref={heading} tabIndex={-1} className="text-lg font-semibold leading-7 outline-none [overflow-wrap:anywhere]">
           {title}
         </h2>
         {children}
@@ -240,7 +246,7 @@ export function ConfirmButton({
 }
 
 /** "Let Marcus know by email": ticked to start; the email says who removed them and who to ask. */
-function NotifyBox({ label }: { label: string }) {
+export function NotifyBox({ label }: { label: string }) {
   return (
     <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm font-medium">
       <input type="checkbox" name="notify" defaultChecked className="size-4 shrink-0 accent-[var(--brand)]" />
@@ -250,7 +256,7 @@ function NotifyBox({ label }: { label: string }) {
 }
 
 /** What happens, as short bullets in body text. */
-function Points({ items }: { items: ReactNode[] }) {
+export function Points({ items }: { items: ReactNode[] }) {
   return (
     <ul className="list-disc space-y-1 pl-5 text-sm leading-6">
       {items.map((item, i) => (
@@ -261,9 +267,10 @@ function Points({ items }: { items: ReactNode[] }) {
 }
 
 /** The way out (outlined, naming what you keep), then the action. */
-function WindowButtons({ keep, close, children }: { keep: string; close: () => void; children: ReactNode }) {
+export function WindowButtons({ keep, close, children }: { keep: string; close: () => void; children: ReactNode }) {
   return (
-    <div className="flex flex-wrap justify-end gap-2">
+    // On phones: full width, the action on top; wider: one row, the way out first.
+    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end [&>*]:w-full sm:[&>*]:w-auto">
       <Button type="button" variant="secondary" onClick={close}>
         {keep}
       </Button>

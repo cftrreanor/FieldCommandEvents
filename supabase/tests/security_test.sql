@@ -8786,4 +8786,244 @@ select set_config('app.package_change', '', false);
 delete from public.plan_tiers where code = 'booster_command';
 delete from public.platform_admins where user_id = '00000000-0000-0000-0000-000000000006';
 
+
+-- ---------------------------------------------------------------------------
+-- Co-hosts of one event (20270128000100): access to their event only, until 10 days after it;
+-- only the Account Host adds, changes, or removes co-hosts, and deletes events; "From your team";
+-- taking a co-host of every event off one event, Undo, and Change.
+-- ---------------------------------------------------------------------------
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('0000008c-0000-0000-0000-000000000001', 'ecowner@example.com', '{"full_name":"Eve Owner"}'),
+  ('0000008c-0000-0000-0000-000000000002', 'ecevery@example.com', '{"full_name":"Al Every"}'),
+  ('0000008c-0000-0000-0000-000000000003', 'econe@example.com', '{"full_name":"Di One"}'),
+  ('0000008c-0000-0000-0000-000000000004', 'ecvl@example.com', '{"full_name":"Jo Lead"}'),
+  ('0000008c-0000-0000-0000-000000000005', 'ecother@example.com', '{"full_name":"Ot Other"}');
+update public.profiles set phone = '+15555550101' where id::text like '0000008c%';
+insert into public.organizations (id, name, slug, subscription_status, free_until)
+values ('8c000000-0000-0000-0000-000000000001', 'Event Cohost Boosters', 'ec-boosters', 'comped', date '2099-01-01');
+insert into public.organization_members (organization_id, user_id, role) values
+  ('8c000000-0000-0000-0000-000000000001', '0000008c-0000-0000-0000-000000000001', 'owner'),
+  ('8c000000-0000-0000-0000-000000000001', '0000008c-0000-0000-0000-000000000002', 'admin');
+insert into public.events (id, organization_id, name, slug, status, event_type, starts_on, ends_on, window_start, window_end, venue_address, timezone) values
+  ('8c000000-0000-0000-0000-0000000000e1', '8c000000-0000-0000-0000-000000000001', 'Drumline', 'ec-drumline', 'draft', 'volunteer',
+   current_date + 20, current_date + 20, now() + interval '20 days', now() + interval '20 days 6 hours', '1 Band Rd', 'America/Chicago'),
+  ('8c000000-0000-0000-0000-0000000000e2', '8c000000-0000-0000-0000-000000000001', 'Spring Concert', 'ec-spring', 'draft', 'volunteer',
+   current_date + 60, current_date + 60, now() + interval '60 days', now() + interval '60 days 6 hours', '1 Band Rd', 'America/Chicago'),
+  ('8c000000-0000-0000-0000-0000000000e3', '8c000000-0000-0000-0000-000000000001', 'Old Car Wash', 'ec-old', 'draft', 'volunteer',
+   current_date - 20, current_date - 20, now() - interval '20 days', now() - interval '20 days' + interval '6 hours', '1 Band Rd', 'America/Chicago'),
+  ('8c000000-0000-0000-0000-0000000000e4', '8c000000-0000-0000-0000-000000000001', 'Throwaway', 'ec-throwaway', 'draft', 'volunteer',
+   current_date + 90, current_date + 90, now() + interval '90 days', now() + interval '90 days 6 hours', '1 Band Rd', 'America/Chicago');
+insert into public.stations (id, event_id, name) values
+  ('8c000000-0000-0000-0000-0000000000b1', '8c000000-0000-0000-0000-0000000000e1', 'Parking');
+insert into public.event_staff (event_id, user_id, role) values
+  ('8c000000-0000-0000-0000-0000000000e1', '0000008c-0000-0000-0000-000000000004', 'volunteer_director'),
+  ('8c000000-0000-0000-0000-0000000000e2', '0000008c-0000-0000-0000-000000000005', 'section_lead');
+insert into public.station_leads (station_id, user_id, event_id)
+values ('8c000000-0000-0000-0000-0000000000b1', '0000008c-0000-0000-0000-000000000002', '8c000000-0000-0000-0000-0000000000e1');
+reset role;
+insert into public.platform_admins (user_id) values ('00000000-0000-0000-0000-000000000006') on conflict do nothing;
+set role authenticated;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000006","email":"stranger@example.com"}';
+select public.set_account_package('8c000000-0000-0000-0000-000000000001', 'event', 'standard', null, 'admin');
+reset role;
+delete from public.platform_admins where user_id = '00000000-0000-0000-0000-000000000006';
+
+-- A co-host of every event can't invite or add a co-host of one event.
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000008c-0000-0000-0000-000000000002","email":"ecevery@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    insert into public.invitations (event_id, email, role, invited_by)
+    values ('8c000000-0000-0000-0000-0000000000e1', 'econe@example.com', 'co_host', '0000008c-0000-0000-0000-000000000002');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'only the Account Host invites a co-host of one event';
+  ok := false;
+  begin
+    perform public.add_team_member('8c000000-0000-0000-0000-0000000000e1', '0000008c-0000-0000-0000-000000000004', 'co_host');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'only the Account Host adds a co-host from the team';
+  -- Co-hosts of every event no longer delete events.
+  delete from public.events where id = '8c000000-0000-0000-0000-0000000000e4';
+  assert exists (select 1 from public.events where id = '8c000000-0000-0000-0000-0000000000e4'), 'a co-host can''t delete an event';
+end $$;
+
+-- The Account Host invites Di to co-host Drumline only; Di accepts.
+set request.jwt.claims = '{"sub":"0000008c-0000-0000-0000-000000000001","email":"ecowner@example.com"}';
+insert into public.invitations (event_id, email, role, invited_by)
+values ('8c000000-0000-0000-0000-0000000000e1', 'econe@example.com', 'co_host', '0000008c-0000-0000-0000-000000000001');
+reset role;
+select set_config('test.ec_token', (select token::text from public.invitations where email = 'econe@example.com'), false);
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000008c-0000-0000-0000-000000000003","email":"econe@example.com"}';
+select public.accept_invitation(current_setting('test.ec_token')::uuid) \g /dev/null
+do $$
+declare ok boolean := false; n int;
+begin
+  assert public.is_event_admin('8c000000-0000-0000-0000-0000000000e1'), 'a co-host of one event hosts it';
+  assert not public.is_event_admin('8c000000-0000-0000-0000-0000000000e2'), 'but not the account''s other events';
+  assert not public.is_org_admin('8c000000-0000-0000-0000-000000000001'), 'and isn''t an account host';
+  assert not exists (select 1 from public.events where id = '8c000000-0000-0000-0000-0000000000e2'), 'they can''t see other drafts';
+  assert not exists (select 1 from public.organization_members where organization_id = '8c000000-0000-0000-0000-000000000001'),
+         'they can''t read the account''s members';
+  assert not exists (select 1 from public.event_staff where event_id = '8c000000-0000-0000-0000-0000000000e2'),
+         'or other events'' teams';
+  -- They run the event: edit it, but not move it to another account, or delete it.
+  update public.events set name = 'Drumline Invitational' where id = '8c000000-0000-0000-0000-0000000000e1';
+  assert (select name from public.events where id = '8c000000-0000-0000-0000-0000000000e1') = 'Drumline Invitational', 'they can edit it';
+  begin
+    update public.events set organization_id = '7d000000-0000-0000-0000-000000000001' where id = '8c000000-0000-0000-0000-0000000000e1';
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'they can''t move it to another account';
+  delete from public.events where id = '8c000000-0000-0000-0000-0000000000e1';
+  assert exists (select 1 from public.events where id = '8c000000-0000-0000-0000-0000000000e1'), 'or delete it';
+  -- The hosts: names and emails, no phone numbers but their own.
+  select count(*) into n from public.event_hosts('8c000000-0000-0000-0000-0000000000e1') h where h.phone is not null;
+  assert n = 1, 'a co-host of one event sees only their own phone number';
+  -- From your team: only this event's people.
+  assert not exists (select 1 from public.team_options('8c000000-0000-0000-0000-0000000000e1') o
+                      where o.user_id in ('0000008c-0000-0000-0000-000000000005', '0000008c-0000-0000-0000-000000000002')),
+         'their team list shows only people on this event';
+  ok := false;
+  begin
+    perform public.add_team_member('8c000000-0000-0000-0000-0000000000e1', '0000008c-0000-0000-0000-000000000005', 'section_lead');
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'they can''t add someone from another event';
+  ok := false;
+  begin
+    insert into public.invitations (event_id, email, role, invited_by)
+    values ('8c000000-0000-0000-0000-0000000000e1', 'ecnew@example.com', 'co_host', '0000008c-0000-0000-0000-000000000003');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'they can''t invite co-hosts';
+  ok := false;
+  begin
+    perform public.team_spots('8c000000-0000-0000-0000-000000000001');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'or see the account''s team count';
+end $$;
+
+-- A co-host of every event can't remove a co-host of one event; the Account Host can see them and add from the team.
+set request.jwt.claims = '{"sub":"0000008c-0000-0000-0000-000000000002","email":"ecevery@example.com"}';
+do $$ begin
+  delete from public.event_staff where user_id = '0000008c-0000-0000-0000-000000000003';
+  assert exists (select 1 from public.event_staff where user_id = '0000008c-0000-0000-0000-000000000003'),
+         'only the Account Host removes a co-host of one event';
+end $$;
+set request.jwt.claims = '{"sub":"0000008c-0000-0000-0000-000000000001","email":"ecowner@example.com"}';
+do $$
+declare n int;
+begin
+  select count(*) into n from public.event_hosts('8c000000-0000-0000-0000-0000000000e1');
+  assert n = 3, 'the Account Host sees all three hosts of the event';
+  assert exists (select 1 from public.team_options('8c000000-0000-0000-0000-0000000000e1') o
+                  where o.user_id = '0000008c-0000-0000-0000-000000000005' and o.event_id = '8c000000-0000-0000-0000-0000000000e2'),
+         'the Account Host''s team list includes other events'' people';
+  -- Making the Volunteer Lead a co-host replaces the Volunteer Lead role.
+  perform public.add_team_member('8c000000-0000-0000-0000-0000000000e1', '0000008c-0000-0000-0000-000000000004', 'co_host');
+  assert (select array_agg(role::text) from public.event_staff
+           where user_id = '0000008c-0000-0000-0000-000000000004' and event_id = '8c000000-0000-0000-0000-0000000000e1') = array['co_host'],
+         'co-host replaces Volunteer Lead';
+  assert not exists (select 1 from public.team_removals where user_id = '0000008c-0000-0000-0000-000000000004'),
+         'and isn''t recorded as a removal';
+end $$;
+
+-- Taking the co-host of every event off Drumline: they keep the other open events, one by one; Undo restores.
+do $$
+declare rid uuid;
+begin
+  rid := public.remove_cohost_from_event('8c000000-0000-0000-0000-0000000000e1', '0000008c-0000-0000-0000-000000000002');
+  assert not exists (select 1 from public.organization_members where user_id = '0000008c-0000-0000-0000-000000000002'),
+         'off one event, they''re no longer a co-host of every event';
+  assert exists (select 1 from public.event_staff where user_id = '0000008c-0000-0000-0000-000000000002'
+                  and event_id = '8c000000-0000-0000-0000-0000000000e2' and role = 'co_host'), 'they stay on Spring Concert';
+  assert not exists (select 1 from public.event_staff where user_id = '0000008c-0000-0000-0000-000000000002'
+                      and event_id = '8c000000-0000-0000-0000-0000000000e1'), 'and are off Drumline';
+  assert not exists (select 1 from public.station_leads where user_id = '0000008c-0000-0000-0000-000000000002'),
+         'their job on Drumline needs a new Coordinator';
+  assert (select count(*) from public.team_removals where user_id = '0000008c-0000-0000-0000-000000000002') = 1,
+         'one removal is recorded (Drumline)';
+  perform public.undo_team_removals(array[rid]);
+  assert exists (select 1 from public.organization_members where user_id = '0000008c-0000-0000-0000-000000000002' and role = 'admin'),
+         'Undo makes them a co-host of every event again';
+  assert not exists (select 1 from public.event_staff where user_id = '0000008c-0000-0000-0000-000000000002'),
+         'without the one-event rows';
+  assert exists (select 1 from public.station_leads where user_id = '0000008c-0000-0000-0000-000000000002'),
+         'and back on their job';
+  -- Change: a co-host of one event to every event, and back to one.
+  perform public.change_cohost('8c000000-0000-0000-0000-000000000001', '0000008c-0000-0000-0000-000000000003', 'every');
+  assert exists (select 1 from public.organization_members where user_id = '0000008c-0000-0000-0000-000000000003'),
+         'Change makes them a co-host of every event';
+  assert not exists (select 1 from public.event_staff where user_id = '0000008c-0000-0000-0000-000000000003'), 'with no one-event row';
+  perform public.change_cohost('8c000000-0000-0000-0000-000000000001', '0000008c-0000-0000-0000-000000000003', 'only',
+                               '8c000000-0000-0000-0000-0000000000e1');
+  assert not exists (select 1 from public.organization_members where user_id = '0000008c-0000-0000-0000-000000000003'),
+         'and back to one event';
+  assert exists (select 1 from public.event_staff where user_id = '0000008c-0000-0000-0000-000000000003' and role = 'co_host'),
+         'on Drumline';
+  -- The Account Host deletes events.
+  delete from public.events where id = '8c000000-0000-0000-0000-0000000000e4';
+  assert not exists (select 1 from public.events where id = '8c000000-0000-0000-0000-0000000000e4'), 'the Account Host deletes events';
+end $$;
+
+-- A co-host of one event can leave; access ends 10 days after their event.
+set request.jwt.claims = '{"sub":"0000008c-0000-0000-0000-000000000004","email":"ecvl@example.com"}';
+do $$ begin
+  delete from public.event_staff where user_id = '0000008c-0000-0000-0000-000000000004';
+  assert not exists (select 1 from public.event_staff where user_id = '0000008c-0000-0000-0000-000000000004'),
+         'a co-host of one event can leave';
+end $$;
+reset role;
+insert into public.event_staff (event_id, user_id, role)
+values ('8c000000-0000-0000-0000-0000000000e3', '0000008c-0000-0000-0000-000000000005', 'co_host');
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000008c-0000-0000-0000-000000000005","email":"ecother@example.com"}';
+do $$ begin
+  assert not public.is_event_admin('8c000000-0000-0000-0000-0000000000e3'), 'access ends 10 days after the event';
+end $$;
+-- Light-check fixes (20270128000200): the Account Host's name, volunteer history like a Volunteer Lead, no
+-- account-wide lists, no changing co-hosts, and leaving until access ends.
+reset role;
+update public.events set ends_on = current_date - 3, starts_on = current_date - 3 where id = '8c000000-0000-0000-0000-0000000000e3';
+insert into public.event_staff (event_id, user_id, role)
+values ('8c000000-0000-0000-0000-0000000000e3', '0000008c-0000-0000-0000-000000000004', 'co_host');
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000008c-0000-0000-0000-000000000003","email":"econe@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  assert (select count(*) from public.account_host('8c000000-0000-0000-0000-000000000001')) = 1,
+         'a co-host of one event can see who the Account Host is';
+  assert public.can_see_volunteer_history('8c000000-0000-0000-0000-000000000001'),
+         'a co-host of one event sees volunteer history, like a Volunteer Lead';
+  assert not exists (select 1 from public.past_band_directors('8c000000-0000-0000-0000-0000000000e1')),
+         'but not the account''s past band directors';
+  begin
+    perform public.change_cohost('8c000000-0000-0000-0000-000000000001', '0000008c-0000-0000-0000-000000000003', 'every');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'a co-host of one event can''t change co-hosts (even themself)';
+  ok := false;
+  begin
+    perform public.remove_cohost_from_event('8c000000-0000-0000-0000-0000000000e1', '0000008c-0000-0000-0000-000000000002');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'or take a co-host of every event off an event';
+end $$;
+set request.jwt.claims = '{"sub":"0000008c-0000-0000-0000-000000000004","email":"ecvl@example.com"}';
+do $$ begin
+  assert public.is_event_admin('8c000000-0000-0000-0000-0000000000e3'), 'three days after the event, a co-host still has access';
+  delete from public.event_staff where user_id = '0000008c-0000-0000-0000-000000000004';
+  assert not exists (select 1 from public.event_staff where user_id = '0000008c-0000-0000-0000-000000000004'),
+         'and can stop co-hosting until it ends';
+end $$;
+reset role;
+delete from public.organizations where id = '8c000000-0000-0000-0000-000000000001';
+
 \echo 'All database security tests passed.'

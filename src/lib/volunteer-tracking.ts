@@ -13,7 +13,8 @@ export async function trackingAccounts(userId: string): Promise<TrackingAccount[
   const [{ data: hosted }, { data: leads }] = await Promise.all([
     // RLS shows only the accounts you host or co-host.
     supabase.from("organizations").select("id, name").order("created_at"),
-    supabase.from("event_staff").select("events(organization_id)").eq("user_id", userId).eq("role", "volunteer_director"),
+    // Volunteer Leads and co-hosts of one event see their accounts' volunteer history (the database checks the 10 days).
+    supabase.from("event_staff").select("events(organization_id)").eq("user_id", userId).in("role", ["volunteer_director", "co_host"]),
   ]);
   const accounts: TrackingAccount[] = (hosted ?? []).map((o) => ({ id: o.id, name: o.name, isHost: true }));
   const seen = new Set(accounts.map((a) => a.id));

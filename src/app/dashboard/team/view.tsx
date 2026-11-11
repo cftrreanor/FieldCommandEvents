@@ -11,6 +11,9 @@ import {
   inviteAgain,
   inviteCoHost,
   leaveEvent,
+  changeCoHost,
+  inviteCoHostAgain,
+  stopCohosting,
   removeAccountCoHost,
   removeFromEvents,
   resendTeamInvitation,
@@ -22,6 +25,7 @@ import {
   withdrawAccountHostOffer,
 } from "../team-actions";
 import { personName, UNDO_MINUTES, type HostView, type Invite, type LeadView, type MyRole, type MyTeam, type TeamAccount, type Person, type Removal, type RoleOn, type StaffRole, type TeamEvent } from "./load";
+import { ChoiceWindowButton } from "../events/[eventId]/team/team-windows";
 import { ConfirmButton, CopyInviteLink, InviteAgainButton, InviteCoHostButton, RemovePersonButton, RowButton, UndoNote, type RemoveChoice } from "./team-ui";
 
 /** Events offered in Invite again, with their dates. */
@@ -152,7 +156,7 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
       <header>
         <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">My team</h1>
         <p className="mt-2 text-muted">
-          Everyone who helps run {org.name}&apos;s events.{" "}
+          Everyone who helps run events for {org.name}.{" "}
           {spots.max !== null ? (
             <>
               <strong className="font-semibold text-foreground">
@@ -368,8 +372,8 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
         <Card className="space-y-3">
           <h2 className="text-lg font-semibold">It&apos;s just you so far</h2>
           <p className="text-sm leading-6">
-            A co-host shares the whole load: every event, start to finish. For one event, add a Volunteer Lead to run volunteers, or Coordinators to
-            lead single jobs like parking or the gate.
+            A co-host of every event shares the whole load, start to finish. For one event, use that event&apos;s team setup: add a co-host of
+            just that event, a Volunteer Lead to run volunteers, or Coordinators to lead single jobs like parking or the gate.
           </p>
           {isAccountHost && !view.offer && (
             <p className="text-sm leading-6">
@@ -385,14 +389,14 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
           </h2>
           {spots.eventStaff && (
             <p className="text-sm leading-6 text-muted">
-              Volunteer Leads run volunteers for one event. Coordinators lead one job on the day, like parking or the gate.
+              Co-hosts here run only the events listed with them. Volunteer Leads run volunteers for one event. Coordinators lead one job on the day, like parking or the gate.
               {spots.max !== null && " Each holds a team spot until their event is over."}
             </p>
           )}
           {view.people.length || view.eventInvites.length ? (
             <ul className="divide-y divide-border rounded-lg border border-border bg-surface">
               {view.people.map((p) => (
-                <PersonRow key={p.userId} person={p} limited={spots.max !== null} />
+                <PersonRow key={p.userId} person={p} limited={spots.max !== null} orgId={org.id} isAccountHost={isAccountHost} />
               ))}
               {view.eventInvites.map((inv) => (
                 <InviteRow key={inv.id} invite={inv} manage what={ROLE[inv.role ?? "section_lead"]} full={full} limited={spots.max !== null} />
@@ -430,10 +434,10 @@ function HostSections({ view, me, becameHost }: { view: HostView; me: string; be
                         lastTime={[ROLE[last.role], last.event.name, last.jobs.length ? `led ${last.jobs.join(", ")}` : null].filter(Boolean).join(" · ")}
                         events={againEvents(view.upcoming)}
                         jobs={view.jobs}
-                        lastRole={last.role}
+                        lastRole={last.role === "co_host" ? undefined : last.role}
                         lastJob={last.jobs[0] ?? null}
                         spotNote={spotLine(spots)}
-                        action={inviteAgain.bind(null, org.id, p.profile.email, last.role)}
+                        action={inviteAgain.bind(null, org.id, p.profile.email, last.role === "co_host" ? "volunteer_director" : last.role)}
                       />
                     ) : (
                       <p className="text-sm text-muted">{spots.eventStaff ? "Free a team spot to invite again" : "Not on your plan"}</p>
@@ -558,8 +562,9 @@ function AddStaffLinks({ view, canAdd }: { view: HostView; canAdd: boolean }) {
 }
 
 /** One Volunteer Lead or Coordinator, every role they have, and one "Remove…". */
-function PersonRow({ person, limited }: { person: Person; limited: boolean }) {
+function PersonRow({ person, limited, orgId, isAccountHost }: { person: Person; limited: boolean; orgId: string; isAccountHost: boolean }) {
   const name = personName(person.profile);
+  const coHosting = person.roles.filter((r) => r.role === "co_host" && !r.event.ended);
   const choices: RemoveChoice[] = person.roles.map((r) => ({
     value: `${r.event.id}:${r.role}`,
     label: `${ROLE[r.role]} of ${r.event.name}`,
@@ -570,7 +575,33 @@ function PersonRow({ person, limited }: { person: Person; limited: boolean }) {
       title={name}
       detail={[person.profile.email, formatPhone(person.profile.phone)]}
       actions={
-        <RemovePersonButton name={name} firstName={first(name)} choices={choices} limited={limited} action={removeFromEvents.bind(null, person.userId, name)} />
+        <>
+          {isAccountHost && coHosting.length > 0 && (
+            <ChoiceWindowButton
+              label={`Change… ${name}`}
+              title={`Change what ${name} co-hosts`}
+              choices={[
+                {
+                  value: "every",
+                  label: "Every event",
+                  points: [
+                    `${first(name)} sees and runs every event on the account right away, and any you add later`,
+                    "No extra team spot",
+                  ],
+                  confirmLabel: `Make ${first(name)} a co-host of every event`,
+                },
+              ]}
+              action={changeCoHost.bind(null, orgId, person.userId, name, "every", null)}
+              keepLabel="Keep as is"
+              notifyLabel={`Let ${first(name)} know by email`}
+              pendingText="Changing…"
+              danger={false}
+            >
+              Change…
+            </ChoiceWindowButton>
+          )}
+          <RemovePersonButton name={name} firstName={first(name)} choices={choices} limited={limited} action={removeFromEvents.bind(null, person.userId, name)} />
+        </>
       }
     >
       <RoleLines roles={person.roles} link={(e) => `/dashboard/events/${e.id}/edit?section=team`} />
@@ -726,6 +757,23 @@ function RemovedRecently({
                 <p className="text-sm text-muted">Undo is at the top of the page</p>
               ) : blocked(r) ? (
                 <p className="text-sm text-muted">{blocked(r)}</p>
+              ) : r.role === "co_host" && r.oneEvent && r.event ? (
+                <ConfirmButton
+                  action={inviteCoHostAgain.bind(null, r.event.id, r.email)}
+                  label={`Invite again… ${r.name}`}
+                  title={`Invite ${r.name} again as co-host of ${r.event.name} only?`}
+                  points={[
+                    `We'll email ${r.email} an invitation to co-host ${r.event.name} only, not your other events`,
+                    "To make them a co-host of every event, use Change… after they accept",
+                    spotNote,
+                  ]}
+                  keepLabel="Not now"
+                  confirmLabel="Send invitation"
+                  pendingText="Sending…"
+                  danger={false}
+                >
+                  Invite again…
+                </ConfirmButton>
               ) : (
                 <InviteAgainButton
                   name={r.name}
@@ -733,7 +781,7 @@ function RemovedRecently({
                   lastTime={r.event ? `${ROLE[r.role]} · ${r.event.name}` : null}
                   events={r.role === "co_host" ? null : againEvents(events)}
                   jobs={jobs}
-                  roles={roles}
+                  roles={roles?.filter((x): x is "volunteer_director" | "section_lead" => x !== "co_host")}
                   lastRole={r.role === "co_host" ? undefined : r.role}
                   spotNote={spotNote}
                   action={inviteAgain.bind(null, orgId, r.email, r.role)}
@@ -871,7 +919,7 @@ function MyRoles({ roles, other }: { roles: MyRole[]; other: boolean }) {
             }
             actions={
               <ConfirmButton
-                action={leaveEvent.bind(null, r.event.id, r.role, r.event.name)}
+                action={r.role === "co_host" ? stopCohosting.bind(null, r.event.id) : leaveEvent.bind(null, r.event.id, r.role, r.event.name)}
                 label={`Leave this event: ${r.event.name}`}
                 title={`Leave ${r.event.name}?`}
                 points={[

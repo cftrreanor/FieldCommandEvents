@@ -12,7 +12,7 @@ type Role = keyof typeof ROLE;
 /** "Tasha Brooks left Lone Star Marching Invitational": what's now without anyone, and where to fix it. */
 export function leftEventEmail(o: {
   who: string;
-  role: Exclude<Role, "co_host">;
+  role: Role;
   event: { name: string; starts_on: string; ends_on: string };
   /** The jobs they led there. */
   jobs: string[];
@@ -32,7 +32,7 @@ export function leftEventEmail(o: {
     ...emailLayout({
       heading: o.removedBy ? `${o.removedBy} removed ${o.who} from ${o.event.name}` : `${o.who} left ${o.event.name}`,
       paragraphs: [
-        `${o.who} is no longer the ${ROLE[o.role]}${o.jobs.length ? ` for ${o.jobs.join(", ")}` : ""} at ${o.event.name} (${when}).`,
+        `${o.who} is no longer ${o.role === "co_host" ? "a" : "the"} ${ROLE[o.role]}${o.jobs.length ? ` for ${o.jobs.join(", ")}` : ""} at ${o.event.name} (${when}).`,
         ...gaps,
         "You can invite someone from the event's team setup.",
       ],
@@ -58,7 +58,7 @@ export function removedEmail(o: {
   contact: string;
 }) {
   const coHost = o.roles.length === 1 && o.roles[0] === "co-host";
-  const what = coHost ? `a co-host${o.organization ? ` for ${o.organization}` : ""}` : o.roles.join(" and ");
+  const what = coHost ? `a co-host${o.organization ? ` for ${o.organization}` : ""}` : listAnd(o.roles);
   const title = `You're no longer ${what}`;
   return {
     subject: title,
@@ -66,7 +66,7 @@ export function removedEmail(o: {
       heading: title,
       paragraphs: [
         `${o.remover} removed you as ${what}.`,
-        ...(o.keeps.length ? [`You're still ${o.keeps.join(" and ")}.`] : []),
+        ...(o.keeps.length ? [`You're still ${keepsInWords(o.keeps)}.`] : []),
         `Questions? Contact ${o.remover} at ${o.contact}.`,
       ],
       footer: "Your own account and any volunteer sign-ups you made stay as they are.",
@@ -155,4 +155,59 @@ export function undoneEmail(o: { who: string; remover: string; roles: string[]; 
           paragraphs: [`${o.remover} put ${o.who} back a few minutes after removing them, so you can ignore the earlier email. Their jobs are as they were.`],
         }),
       };
+}
+
+/** "Pat Lee added you to Drumline Invitational": someone added from the team, right away (no invitation to accept). */
+export function addedEmail(o: {
+  adder: string;
+  organization: string;
+  /** "co-host of Drumline Invitational", "co-host of every event", "Volunteer Lead of Drumline Invitational". */
+  role: string;
+  /** What they can do now, in one sentence. */
+  powers: string;
+  url: string;
+  contact: string;
+}) {
+  const title = `${o.adder} made you ${/^[aeiou]/i.test(o.role) ? "an" : "a"} ${o.role}`;
+  return {
+    subject: title,
+    ...emailLayout({
+      heading: title,
+      paragraphs: [`${o.adder} from ${o.organization} made you ${/^[aeiou]/i.test(o.role) ? "an" : "a"} ${o.role}.`, o.powers, `Questions? Contact ${o.adder} at ${o.contact}.`],
+      button: { label: "Open your dashboard", url: o.url },
+      footer: "You're getting this because you're on this organizer's team.",
+    }),
+  };
+}
+
+/** A co-host's reach changed: every event, or one event only. */
+export function cohostChangedEmail(o: { changer: string; organization: string; every: boolean; eventName: string | null; url: string; contact: string }) {
+  const title = o.every ? `You're now a co-host of every ${o.organization} event` : `You're now a co-host of ${o.eventName} only`;
+  return {
+    subject: title,
+    ...emailLayout({
+      heading: title,
+      paragraphs: [
+        o.every
+          ? `${o.changer} made you a co-host of every event for ${o.organization}, including any added later.`
+          : `${o.changer} changed what you co-host for ${o.organization} to ${o.eventName} only. You no longer see other events from ${o.organization}, and your access ends 10 days after ${o.eventName}.`,
+        `Questions? Contact ${o.changer} at ${o.contact}.`,
+      ],
+      button: { label: "Open your dashboard", url: o.url },
+      footer: "Your own account and any volunteer sign-ups you made stay as they are.",
+    }),
+  };
+}
+
+/** "A, B, and C". */
+function listAnd(items: string[]) {
+  return items.length <= 2 ? items.join(" and ") : `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
+/** The roles someone keeps, in words: many co-host roles read as one line ("a co-host of 10 other events"). */
+function keepsInWords(keeps: string[]) {
+  const cohost = keeps.filter((k) => k.startsWith("co-host of "));
+  const rest = keeps.filter((k) => !k.startsWith("co-host of "));
+  const parts = cohost.length > 3 ? [`a co-host of ${cohost.length} other events`, ...rest] : [...cohost.map((k) => `a ${k}`), ...rest];
+  return listAnd(parts);
 }
