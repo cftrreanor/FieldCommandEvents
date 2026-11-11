@@ -27,3 +27,17 @@ Full panel on the mock-ups (`docs/design-reviews/2026-11-11-event-cohosts.md`). 
 New, from the owner: **pick from your team.** Every team tab on an event (Co-hosts, Volunteer Leads, Coordinators)
 offers a list of people already on your team as well as inviting someone new by email. Picking someone adds them right
 away and emails them that you did, as picking a Coordinator for a sign-up does today. Mock-ups again before building.
+
+Light check on the round-2 mock-ups (UX Designer, UI Designer, Content Manager, Product Owner, consultant;
+`docs/design-reviews/2026-11-11-event-cohosts-mockups-2/`). Owner decisions:
+- **A co-host of one event's "From your team" list:** only people already on their event. Nothing about the account's
+  other events or wider team shows (severity 3, the consultant and UX Designer).
+- **A Volunteer Lead made co-host of the same event:** co-host replaces the Volunteer Lead role (it includes it). Jobs
+  they coordinate stay theirs.
+- **People from past events when team spots are full:** shown with "Takes a team spot", their Add turned off.
+- **Everything else as recommended:** a "Some events" group for co-hosts of a few events; Change… both ways, listing
+  what's lost; the 10 days after the event shown with the end date (email, invitation page, dashboard, the host's
+  row); today's team-spot rule written down (the Account Host, co-hosts of every event, waiting invitations, and people
+  on events that aren't over each count once); a check before adding someone as co-host of every event; the same
+  "Let them know by email" box in Change…; the wording fixes ("other events from North Ridge Band Boosters", "plan"
+  not "package", "Remove Sam from the team", and the rest).
