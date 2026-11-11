@@ -45,7 +45,8 @@ export default async function EventLayout({ children, params }: LayoutProps<"/da
       {day && <DayBar day={day} />}
       {steps && kind && <SetupSteps eventId={eventId} kind={kind} facts={steps} />}
       {/* A meetings draft's Meeting setup page only redirects to a step: no setup bar there either, or it flashes on the way. */}
-      {facts && <SetupStrip eventId={eventId} initial={setupChecklist(facts)} skip={kind ? (kind === "meeting" ? [...STEP_PATHS.meeting, "/conferences"] : STEP_PATHS[kind]) : undefined} />}
+      {/* Festivals: the step bar while setting up, the event page's next step once live; no setup strip (owner, 2026-11-11). */}
+      {facts && facts.eventType !== "group_event" && <SetupStrip eventId={eventId} initial={setupChecklist(facts)} skip={kind ? (kind === "meeting" ? [...STEP_PATHS.meeting, "/conferences"] : STEP_PATHS[kind]) : undefined} />}
       {children}
       {/* Room for the tab bar along the bottom of a phone. */}
       {day && <div aria-hidden className="h-16 lg:hidden print:hidden" />}

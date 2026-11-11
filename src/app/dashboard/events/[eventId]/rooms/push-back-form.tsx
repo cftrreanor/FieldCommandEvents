@@ -114,8 +114,8 @@ export function PushBackButton({
             <Select value={first.id} onChange={(e) => setFrom(e.target.value)}>
               {groups.map((g) => (
                 <option key={g.id} value={g.id}>
-                  {multiDay ? `${g.dayLabel}, ` : ""}
-                  {g.startLabel} · {g.name}
+                  {g.name} · {multiDay ? `${g.dayLabel} ` : ""}
+                  {g.startLabel}
                 </option>
               ))}
             </Select>

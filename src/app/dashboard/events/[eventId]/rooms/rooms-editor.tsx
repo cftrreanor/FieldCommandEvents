@@ -455,6 +455,7 @@ export function RoomsEditor({
         next={next}
         todo={todo}
         notPosted={!next && !posted}
+        postedIdle={posted}
         posted={posted && dirty ? { summary: `${labels.join("; ")}.`, onSave: openSave, onUndo: undo, busy: saving.busy } : null}
       />
 

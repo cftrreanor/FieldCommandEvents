@@ -26,7 +26,10 @@ export function SaveFooter({
   notPosted = false,
   posted,
   inCard = true,
+  postedIdle = false,
 }: {
+  /** Posted, with nothing to save: no bar (a grey Save says nothing), only "Saved" just after a save. */
+  postedIdle?: boolean;
   status: SaveStatus;
   retry?: () => void;
   /** During setup: the next step ("Registration"). */
@@ -60,6 +63,7 @@ export function SaveFooter({
       </div>
     );
   }
+  if (postedIdle && status.kind !== "saved" && status.kind !== "failed") return null;
   const tail = notPosted ? " · not posted yet" : "";
   return (
     <div className={`${BAR} ${edge}`}>

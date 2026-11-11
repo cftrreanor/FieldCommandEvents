@@ -461,6 +461,7 @@ export function ScheduleEditor({
         status={saver.status}
         retry={() => void saver.fire()}
         notPosted={!posted}
+        postedIdle={posted}
         posted={posted && ops.length ? { summary: `${summarize(labels)}.`, onSave: () => setSaving({ open: true, busy: false, error: null }), onUndo: () => setOps([]), busy: saving.busy } : null}
       />
 

@@ -40,6 +40,8 @@ export type ScheduleEmailInput = {
 };
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+/** "Lakeview Chamber Singers'" or "Summit Treble Choir's". */
+const possessive = (name: string) => (/s$/i.test(name) ? `${name}'` : `${name}'s`);
 const P = "font-size:16px;line-height:24px;margin:0 0 16px";
 
 /** The email's subject, words, and links. */
@@ -54,13 +56,13 @@ export async function composeScheduleEmail(m: ScheduleEmailInput) {
   // An admin's own wording (/admin/emails), if they saved one: its subject and opening.
   const key = m.kind === "changed" ? "director_rooms_changed" : "director_rooms_posted";
   const custom = customWords(key, await loadSystemEmail(key), { band_name: group, school: "", event_name: m.event.name });
-  const subject = custom?.subject || (m.kind === "changed" ? `New times for ${group} at ${m.event.name}` : `${group}'s times at ${m.event.name}`);
+  const subject = custom?.subject || (m.kind === "changed" ? `New times for ${group} at ${m.event.name}` : `${possessive(group)} times at ${m.event.name}`);
 
   const opening =
     m.kind === "changed"
-      ? [`${organizer} changed the schedule for ${m.event.name}. What changed for ${group}: ${m.whatChanged ?? "new times"}.`, `${group}'s times now, on ${when}:`]
-      : [`${organizer} posted the schedule for ${m.event.name}. ${group}'s times on ${when}:`];
-  const paragraphs = custom?.paragraphs?.length ? [...custom.paragraphs, `${group}'s times on ${when}:`] : opening;
+      ? [`${organizer} changed the schedule for ${m.event.name}. What changed for ${group}: ${m.whatChanged ?? "new times"}.`, `${possessive(group)} times now, on ${when}:`]
+      : [`${organizer} posted the schedule for ${m.event.name}. ${possessive(group)} times on ${when}:`];
+  const paragraphs = custom?.paragraphs?.length ? [...custom.paragraphs, `${possessive(group)} times on ${when}:`] : opening;
 
   const lines = m.times.map((t) => {
     const r = byId.get(t.roomId);
