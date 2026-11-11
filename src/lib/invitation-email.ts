@@ -10,7 +10,7 @@ import { formatDate, formatDateRange } from "@/lib/time";
 /** What prepare_invitation_email() returns. */
 export type InvitationDetails = {
   email: string;
-  role: "volunteer_director" | "section_lead" | null;
+  role: "volunteer_director" | "section_lead" | "co_host" | null;
   as_host: boolean;
   token: string;
   expires_at: string;
@@ -36,7 +36,16 @@ export function invitationEmail(inv: InvitationDetails, acceptUrl: string, bands
   const eventName = inv.event_name ?? `${inv.organization}'s events`;
   const station = inv.station_name ?? "a sign-up";
 
-  const { subject, heading, paragraphs } = inv.as_host
+  const { subject, heading, paragraphs } = inv.role === "co_host"
+    ? {
+        subject: `You're invited to co-host ${inv.event_name} on ${brand.name}`,
+        heading: `Co-host ${inv.event_name}`,
+        paragraphs: [
+          `${who} invited you to co-host ${inv.event_name} (${when}) on ${brand.name}.`,
+          `As a co-host, you'll help run this event: setup, publishing, sign-ups, volunteers, and the event day. You can do everything ${inv.inviter_name ?? "the organizer"} can on it, except invite or remove co-hosts, or delete it. You won't see other events from ${inv.organization}, and your access ends 10 days after the event.`,
+        ],
+      }
+    : inv.as_host
     ? {
         subject: `You're invited to co-host ${inv.organization} on ${brand.name}`,
         heading: `Co-host events for ${inv.organization}`,
@@ -100,4 +109,10 @@ export function invitationEmail(inv: InvitationDetails, acceptUrl: string, bands
 
 /** Which system email (src/lib/system-emails.ts) an invitation is. */
 export const invitationEmailKey = (inv: Pick<InvitationDetails, "as_host" | "role">) =>
-  inv.as_host ? "team_invite_cohost" : inv.role === "volunteer_director" ? "team_invite_volunteer_lead" : "team_invite_section_lead";
+  inv.as_host
+    ? "team_invite_cohost"
+    : inv.role === "co_host"
+      ? "team_invite_event_cohost"
+      : inv.role === "volunteer_director"
+        ? "team_invite_volunteer_lead"
+        : "team_invite_section_lead";

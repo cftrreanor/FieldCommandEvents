@@ -167,16 +167,21 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const [{ data: replyRow, error: replyError }, { data: creator }, { data: org }] = await Promise.all([
     supabase.from("event_email_settings").select("replies, reply_to, sender_id").eq("event_id", eventId).maybeSingle(),
     event.created_by ? admin.from("profiles").select("full_name, email").eq("id", event.created_by).maybeSingle() : Promise.resolve({ data: null }),
-    supabase.from("organizations").select("name, account_kind, school").eq("id", event.organization_id).maybeSingle(),
+    // Read on the server: a co-host of one event can't read the account itself.
+    admin.from("organizations").select("name, account_kind, school").eq("id", event.organization_id).maybeSingle(),
   ]);
+  // Only the Account Host deletes events.
+  const { data: isAccountHost } = await supabase.rpc("is_org_owner", { org: event.organization_id });
   const conference = hasConferences(event.event_type);
   // Notifications: each kind of email the event sends its organizers, and who gets it.
   const kinds = notifyKinds(event.event_type);
   const [{ data: memberRows }, { data: leadRows }, { data: notifyRows, error: notifyError }] = await Promise.all([
     admin.from("organization_members").select("user_id, role, profiles(full_name, email)").eq("organization_id", event.organization_id),
-    conference
-      ? Promise.resolve({ data: [] })
-      : admin.from("event_staff").select("user_id, profiles(full_name, email)").eq("event_id", eventId).eq("role", "volunteer_director"),
+    admin
+      .from("event_staff")
+      .select("user_id, role, profiles(full_name, email)")
+      .eq("event_id", eventId)
+      .in("role", conference ? ["co_host"] : ["co_host", "volunteer_director"]),
     supabase.from("event_notification_recipients").select("kind, member_ids, extra_emails").eq("event_id", eventId),
   ]);
   type PersonRow = { user_id: string; role?: string; profiles: { full_name: string | null; email: string | null } | null };
@@ -191,7 +196,9 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
     .sort((a, b) => Number(b.role === "Account Host") - Number(a.role === "Account Host"));
   const members: TeamMember[] = [
     ...hostMembers,
-    ...((leadRows ?? []) as unknown as PersonRow[]).filter((l) => !hostMembers.some((h) => h.id === l.user_id)).map((l) => person(l, "Volunteer Lead")),
+    ...((leadRows ?? []) as unknown as PersonRow[])
+      .filter((l) => !hostMembers.some((h) => h.id === l.user_id))
+      .map((l) => person(l, l.role === "co_host" ? "Co-host" : "Volunteer Lead")),
   ];
   const savedKinds = new Map(
     ((notifyRows ?? []) as { kind: NotifyKind; member_ids: string[]; extra_emails: string[] }[]).map((r) => [r.kind, r]),
@@ -656,7 +663,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
 
               {guided ? (
                 stepFooter
-              ) : (
+              ) : !isAccountHost ? null : (
                 <Panel title="Delete this event" intro={`${deleteWhat ?? "Removes the event and everything in it."} This can't be undone.`}>
                   <DeleteEventButton name={event.name} action={deleteEvent.bind(null, eventId)} />
                 </Panel>

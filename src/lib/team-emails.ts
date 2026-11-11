@@ -12,7 +12,7 @@ type Role = keyof typeof ROLE;
 /** "Tasha Brooks left Lone Star Marching Invitational": what's now without anyone, and where to fix it. */
 export function leftEventEmail(o: {
   who: string;
-  role: Exclude<Role, "co_host">;
+  role: Role;
   event: { name: string; starts_on: string; ends_on: string };
   /** The jobs they led there. */
   jobs: string[];
@@ -32,7 +32,7 @@ export function leftEventEmail(o: {
     ...emailLayout({
       heading: o.removedBy ? `${o.removedBy} removed ${o.who} from ${o.event.name}` : `${o.who} left ${o.event.name}`,
       paragraphs: [
-        `${o.who} is no longer the ${ROLE[o.role]}${o.jobs.length ? ` for ${o.jobs.join(", ")}` : ""} at ${o.event.name} (${when}).`,
+        `${o.who} is no longer ${o.role === "co_host" ? "a" : "the"} ${ROLE[o.role]}${o.jobs.length ? ` for ${o.jobs.join(", ")}` : ""} at ${o.event.name} (${when}).`,
         ...gaps,
         "You can invite someone from the event's team setup.",
       ],
@@ -155,4 +155,46 @@ export function undoneEmail(o: { who: string; remover: string; roles: string[]; 
           paragraphs: [`${o.remover} put ${o.who} back a few minutes after removing them, so you can ignore the earlier email. Their jobs are as they were.`],
         }),
       };
+}
+
+/** "Pat Lee added you to Drumline Invitational": someone added from the team, right away (no invitation to accept). */
+export function addedEmail(o: {
+  adder: string;
+  organization: string;
+  /** "co-host of Drumline Invitational", "co-host of every event", "Volunteer Lead of Drumline Invitational". */
+  role: string;
+  /** What they can do now, in one sentence. */
+  powers: string;
+  url: string;
+  contact: string;
+}) {
+  const title = `${o.adder} made you ${/^[aeiou]/i.test(o.role) ? "an" : "a"} ${o.role}`;
+  return {
+    subject: title,
+    ...emailLayout({
+      heading: title,
+      paragraphs: [`${o.adder} from ${o.organization} made you ${/^[aeiou]/i.test(o.role) ? "an" : "a"} ${o.role}.`, o.powers, `Questions? Contact ${o.adder} at ${o.contact}.`],
+      button: { label: "Open your dashboard", url: o.url },
+      footer: "You're getting this because you're on this organizer's team.",
+    }),
+  };
+}
+
+/** A co-host's reach changed: every event, or one event only. */
+export function cohostChangedEmail(o: { changer: string; organization: string; every: boolean; eventName: string | null; url: string; contact: string }) {
+  const title = o.every ? `You're now a co-host of every ${o.organization} event` : `You're now a co-host of ${o.eventName} only`;
+  return {
+    subject: title,
+    ...emailLayout({
+      heading: title,
+      paragraphs: [
+        o.every
+          ? `${o.changer} made you a co-host of every event for ${o.organization}, including any they add later.`
+          : `${o.changer} changed what you co-host for ${o.organization}: now just ${o.eventName}. You no longer see their other events, and your access ends 10 days after it.`,
+        `Questions? Contact ${o.changer} at ${o.contact}.`,
+      ],
+      button: { label: "Open your dashboard", url: o.url },
+      footer: "Your own account and any volunteer sign-ups you made stay as they are.",
+    }),
+  };
 }

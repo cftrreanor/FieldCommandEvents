@@ -321,7 +321,7 @@ export async function startContestOver(eventId: string): Promise<ActionState> {
   }
   const { data, error } = await supabase.from("events").delete().eq("id", eventId).select("id");
   if (error) return { error: friendlyDbError(error) };
-  if (!data?.length) return { error: "Only the contest's host can start it over." };
+  if (!data?.length) return { error: "Only the Account Host can start a contest over: ask them, or keep editing this one." };
   revalidatePath("/dashboard", "layout");
   redirect(`/dashboard/events/new?type=band_contest&on=${ev.starts_on}`);
 }
@@ -337,7 +337,7 @@ export async function deleteEvent(eventId: string): Promise<ActionState> {
   const { data: files } = await supabase.from("event_files").select("path").eq("event_id", eventId);
   const { data, error } = await supabase.from("events").delete().eq("id", eventId).select("id");
   if (error) return { error: friendlyDbError(error) };
-  if (!data?.length) return { error: "Only the event's host can delete it." };
+  if (!data?.length) return { error: "Only the Account Host can delete events." };
   const paths = (files ?? []).map((f) => f.path);
   if (paths.length) {
     const { error: removeError } = await createAdminClient().storage.from(FILES_BUCKET).remove(paths);

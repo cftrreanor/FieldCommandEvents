@@ -72,7 +72,7 @@ type Invitation = {
 /** Everything saved on the event, for the one "Last change" line under its name. */
 const SAVE_AREAS = ["details", "publish", "volunteers", "bands", "schedule", "parents", "booths", "conference", "team", "files", "announcements"] as const;
 
-const ROLE_LABEL = { volunteer_director: "Volunteer Lead", section_lead: "Coordinator" } as const;
+const ROLE_LABEL = { volunteer_director: "Volunteer Lead", section_lead: "Coordinator", co_host: "Co-host" } as const;
 
 export default async function EventPage({ params, searchParams }: PageProps<"/dashboard/events/[eventId]">) {
   const { eventId } = await params;

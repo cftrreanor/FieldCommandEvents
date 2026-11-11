@@ -8,7 +8,7 @@ import { utcToZonedDate } from "@/lib/time";
 // Everything My team shows, worked out once (docs/design-lessons.md, L1). What each person
 // may read is limited by the database; this only arranges it.
 
-export type StaffRole = "volunteer_director" | "section_lead";
+export type StaffRole = "volunteer_director" | "section_lead" | "co_host";
 export type Profile = { full_name: string; email: string; phone: string | null };
 export type TeamEvent = { id: string; name: string; starts_on: string; ends_on: string; timezone: string; ended: boolean };
 
@@ -289,7 +289,7 @@ export async function loadMyTeam(userId: string, origin: string, accountId?: str
       id,
       name: teamNames.get(id) ?? "Another account",
       role: "team" as const,
-      label: [...new Set(myStaff.filter((st) => st.events!.organization_id === id).map((st) => (st.role === "volunteer_director" ? "Volunteer Lead" : "Coordinator")))].join(" and "),
+      label: [...new Set(myStaff.filter((st) => st.events!.organization_id === id).map((st) => (st.role === "volunteer_director" ? "Volunteer Lead" : st.role === "co_host" ? "co-host" : "Coordinator")))].join(" and "),
     })),
   ].sort((x, y) => rank[x.role] - rank[y.role] || x.name.localeCompare(y.name));
   const current = accounts.find((a) => a.id === accountId) ?? accounts[0] ?? null;

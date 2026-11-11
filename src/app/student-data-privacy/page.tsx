@@ -164,12 +164,13 @@ export default function StudentDataPrivacyPage() {
               Children&apos;s and families&apos; details from visitor days: the event&apos;s Hosts, Co-hosts, and Volunteer Leads, who run the
               door, and Coordinators on event day only
             </li>
-            <li>Conference bookings, parents&apos; notes, and the number to call for phone calls: only the teacher who set up the conference and the hosts and co-hosts on their account, who can reschedule or cancel a meeting.</li>
+            <li>Conference bookings, parents&apos; notes, and the number to call for phone calls: only the teacher who set up the conference and the event&apos;s hosts and co-hosts, who can reschedule or cancel a meeting</li>
             <li>Volunteers&apos; phone numbers: Hosts, Co-hosts, and Volunteer Leads, and Coordinators on event day only</li>
             <li>
-              An organizer&apos;s volunteer history (who volunteered and how many shifts they kept): that organizer&apos;s Hosts, Co-hosts, and
+              An organizer&apos;s volunteer history (who volunteered and how many shifts they kept): that organizer&apos;s Hosts, co-hosts of every event, and
               Volunteer Leads only, never other organizers
             </li>
+            <li>A co-host of one event sees only that event, and only until 10 days after it</li>
             <li>Visiting directors see their own registration, never other schools&apos; contact details</li>
             <li>Families never see who else registered or booked</li>
             <li>These rules are enforced inside the database, with an automated test for each one</li>

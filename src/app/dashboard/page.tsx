@@ -92,7 +92,7 @@ async function publishBlockOnly(supabase: Awaited<ReturnType<typeof CreateClient
 /** How many drafts on My events show their next step (each reads that event's setup). */
 const MAX_DRAFT_STEPS = 6;
 
-type StaffEvent = { role: "volunteer_director" | "section_lead"; events: EventSummary | null };
+type StaffEvent = { role: "volunteer_director" | "section_lead" | "co_host"; events: EventSummary | null };
 
 const EVENT_COLUMNS = "id, organization_id, name, status, timezone, starts_on, ends_on, venue_name, venue_address, event_type";
 
@@ -755,7 +755,14 @@ function BandCard({ bands, live }: { bands: DirectorBand[]; live: Map<string, Da
   );
 }
 
-const ROLE_LABEL = { volunteer_director: "Volunteer Lead", section_lead: "Coordinator" } as const;
+const ROLE_LABEL = { volunteer_director: "Volunteer Lead", section_lead: "Coordinator", co_host: "Co-host" } as const;
+
+/** A co-host of one event keeps access 10 days after it ends: the last day, once the event is over. */
+function accessEnds(ends: string) {
+  const d = new Date(`${ends}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 10);
+  return d.toISOString().slice(0, 10);
+}
 
 function HelpingCard({ row: r, showType }: { row: StaffEvent & { events: EventSummary }; showType: boolean }) {
   return (
@@ -768,6 +775,9 @@ function HelpingCard({ row: r, showType }: { row: StaffEvent & { events: EventSu
       badge={<Badge tone="info">{ROLE_LABEL[r.role]}</Badge>}
     >
       {isToday(r.events) && <p className="text-sm font-semibold text-brand">Happening today</p>}
+      {r.role === "co_host" && r.events.ends_on < new Date().toISOString().slice(0, 10) && (
+        <p className="text-sm">Event over · Your access ends {formatDate(accessEnds(r.events.ends_on))}</p>
+      )}
     </EventCard>
   );
 }
