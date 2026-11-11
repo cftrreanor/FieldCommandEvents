@@ -51,17 +51,18 @@ as $$
    order by max(past.starts_on) desc, p.full_name;
 $$;
 
-do $$
-declare
-  src text;
-begin
-  select pg_get_functiondef('public.other_published_conference(uuid)'::regprocedure) into src;
-  src := replace(src, 'public.is_event_admin(', 'public.is_org_admin(public.event_org(ev)) and public.is_event_admin(');
-  if src not like '%public.is_org_admin(public.event_org(ev)) and public.is_event_admin(%' then
-    raise exception 'other_published_conference changed shape; update this migration';
-  end if;
-  execute src;
-end $$;
+CREATE OR REPLACE FUNCTION public.other_published_conference(ev uuid)
+ RETURNS text
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select o.name from events e
+    join events o on o.organization_id = e.organization_id
+   where e.id = ev and public.is_org_admin(public.event_org(ev)) and public.is_event_admin(ev)
+     and o.event_type::text = 'conference' and o.status = 'published' and o.id <> ev
+   limit 1;
+$function$;
 
 create or replace function public.can_see_volunteer_history(p_org uuid)
 returns boolean
@@ -73,7 +74,7 @@ as $$
                     and (now() at time zone e.timezone)::date <= e.ends_on + 10);
 $$;
 
-drop policy "staff: leave" on public.event_staff;
+drop policy if exists "staff: leave" on public.event_staff;
 create policy "staff: leave" on public.event_staff
   for delete to authenticated
   using (user_id = auth.uid()
@@ -93,16 +94,47 @@ as $$
    limit 1;
 $$;
 
-do $$
+CREATE OR REPLACE FUNCTION public.remove_cohost_from_event(p_event uuid, p_user uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
 declare
-  src text;
+  org uuid := public.event_org(p_event);
+  person profiles;
+  rid uuid;
 begin
-  select pg_get_functiondef('public.remove_cohost_from_event(uuid, uuid)'::regprocedure) into src;
-  src := replace(src,
-    'delete from team_removals where organization_id = org and user_id = p_user and role = ''co_host'';',
-    'delete from team_removals where organization_id = org and user_id = p_user and role = ''co_host'' and (event_id is null or event_id = p_event);');
-  if src not like '%and (event_id is null or event_id = p_event);%' then
-    raise exception 'remove_cohost_from_event changed shape; update this migration';
+  if org is null or not public.is_org_owner(org) then
+    raise exception 'Only the Account Host can remove co-hosts' using errcode = '42501';
   end if;
-  execute src;
-end $$;
+  select * into person from profiles where id = p_user;
+  if not exists (select 1 from organization_members m where m.organization_id = org and m.user_id = p_user and m.role = 'admin') then
+    raise exception 'They aren''t a co-host of every event' using errcode = 'P0001';
+  end if;
+  perform set_config('app.team_change', 'on', true);
+  insert into event_staff (event_id, user_id, role)
+  select e.id, p_user, 'co_host' from events e
+   where e.organization_id = org and e.id <> p_event
+     and (now() at time zone e.timezone)::date <= e.ends_on + 10
+  on conflict do nothing;
+  -- After the rows above (the trigger checks they aren't a co-host of every event).
+  update account_host_handoffs set cancelled_at = now(), closed_reason = 'changed'
+   where organization_id = org and to_user = p_user and accepted_at is null and cancelled_at is null;
+  delete from team_removals where organization_id = org and user_id = p_user and role = 'co_host' and (event_id is null or event_id = p_event);
+  insert into team_removals (organization_id, event_id, role, user_id, email, full_name, removed_by, was_every)
+  values (org, p_event, 'co_host', p_user, person.email, person.full_name, auth.uid(), true)
+  returning id into rid;
+  insert into team_removal_jobs (removal_id, station_id)
+  select rid, sl.station_id from station_leads sl
+   where sl.event_id = p_event and sl.user_id = p_user
+     and not exists (select 1 from event_staff s where s.event_id = p_event and s.user_id = p_user)
+  on conflict do nothing;
+  insert into team_removal_senders (removal_id, event_id)
+  select rid, s.event_id from event_email_settings s where s.event_id = p_event and s.sender_id = p_user
+  on conflict do nothing;
+  delete from organization_members where organization_id = org and user_id = p_user;
+  perform set_config('app.team_change', 'off', true);
+  return rid;
+end;
+$function$;
