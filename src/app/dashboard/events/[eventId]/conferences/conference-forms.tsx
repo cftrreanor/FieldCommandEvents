@@ -36,6 +36,8 @@ import {
 } from "@/lib/conferences";
 import { displayTime, formatDuration } from "@/lib/schedule";
 import { formatDate } from "@/lib/time";
+import { DateField } from "@/components/date-field";
+import { TimeField } from "@/components/time-field";
 
 type Action = (prev: ActionState, formData: FormData) => Promise<ActionState>;
 
@@ -418,10 +420,10 @@ function TimesForm({
           <div className="grid gap-4 sm:grid-cols-2">
             {/* Not red before anyone's had a go, but say these are what's holding up the save (light check, 2026-11-09). */}
             <Field label="First day" hint={autosave && !firstDay ? "Needed before your times save." : undefined}>
-              <Input type="date" name="weeklyFrom" required value={firstDay} onChange={(e) => setFirstDay(e.target.value)} />
+              <DateField name="weeklyFrom" required value={firstDay} onChange={(e) => setFirstDay(e.target.value)} />
             </Field>
             <Field label="Last day" hint={autosave && !lastDay ? "Needed before your times save. For example, the last day of the semester." : "For example, the last day of the semester."}>
-              <Input type="date" name="weeklyTo" required min={firstDay} value={lastDay} onChange={(e) => setLastDay(e.target.value)} />
+              <DateField name="weeklyTo" required min={firstDay} value={lastDay} onChange={(e) => setLastDay(e.target.value)} />
             </Field>
           </div>
 
@@ -455,10 +457,10 @@ function TimesForm({
                   </div>
                   <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-[10.5rem_10.5rem_auto]">
                     <Field label="From">
-                      <Input type="time" required value={g.start} onChange={(e) => changeGroup(g.key, { start: e.target.value })} />
+                      <TimeField required value={g.start} onChange={(e) => changeGroup(g.key, { start: e.target.value })} />
                     </Field>
                     <Field label="To">
-                      <Input type="time" required value={g.end} onChange={(e) => changeGroup(g.key, { end: e.target.value })} />
+                      <TimeField required after={g.start} requireAfter value={g.end} onChange={(e) => changeGroup(g.key, { end: e.target.value })} />
                     </Field>
                     {groups.length > 1 && (
                       <Button
@@ -511,13 +513,13 @@ function TimesForm({
       ) : !basics ? null : askDay ? (
         <div className="grid gap-4 rounded-lg border border-border p-3 sm:grid-cols-3">
           <Field label={forMeetings ? "Day" : "Conference day"}>
-            <Input type="date" name="conferenceDay" required value={day} onChange={(e) => setDay(e.target.value)} />
+            <DateField name="conferenceDay" required value={day} onChange={(e) => setDay(e.target.value)} />
           </Field>
           <Field label="First meeting starts">
-            <Input type="time" name="startTime" required value={from} onChange={(e) => setFrom(e.target.value)} />
+            <TimeField name="startTime" required value={from} onChange={(e) => setFrom(e.target.value)} />
           </Field>
           <Field label="Last meeting ends by">
-            <Input type="time" name="endTime" required value={to} onChange={(e) => setTo(e.target.value)} />
+            <TimeField name="endTime" required after={from} requireAfter value={to} onChange={(e) => setTo(e.target.value)} />
           </Field>
           {booked > 0 && day !== date && initial.schedule === "one_day" && (
             <p className="text-sm text-muted sm:col-span-3">
@@ -583,7 +585,7 @@ function TimesForm({
             {breaks.map((b) => (
               <li key={b.key} className="grid grid-cols-2 items-end gap-3 rounded-lg border border-border p-3 sm:grid-cols-[10.5rem_7rem_1fr_auto]">
                 <Field label="Starts">
-                  <Input type="time" name="breakStart" required value={b.start} onChange={(e) => change(b.key, { start: e.target.value })} />
+                  <TimeField name="breakStart" required value={b.start} onChange={(e) => change(b.key, { start: e.target.value })} />
                 </Field>
                 <Field label="Minutes">
                   <NumberInput name="breakMinutes" required maxLength={3} value={b.minutes} onChange={(e) => change(b.key, { minutes: e.target.value })} />
@@ -805,18 +807,16 @@ function DaysOffFields({
       {daysOff.length > 0 ? (
         <ul className="space-y-3">
           {daysOff.map((d) => (
-            <li key={d.key} className="grid grid-cols-2 items-end gap-3 rounded-lg border border-border p-3 sm:grid-cols-[10rem_10rem_auto]">
+            <li key={d.key} className="grid grid-cols-2 items-end gap-3 rounded-lg border border-border p-3 sm:grid-cols-[13rem_13rem_auto]">
               <Field label="Day off">
-                <Input
-                  type="date"
+                <DateField
                   required
                   value={d.from}
                   onChange={(e) => setDaysOff((ds) => ds.map((x) => (x.key === d.key ? { ...x, from: e.target.value } : x)))}
                 />
               </Field>
               <Field label="Through (optional)">
-                <Input
-                  type="date"
+                <DateField
                   min={d.from}
                   value={d.to === d.from ? "" : d.to}
                   onChange={(e) => setDaysOff((ds) => ds.map((x) => (x.key === d.key ? { ...x, to: e.target.value } : x)))}

@@ -3,12 +3,13 @@
 import { useMemo, useRef, useState, useTransition } from "react";
 import { markChanged, markSaved, SaveFooter } from "./save-footer";
 import { NumberInput } from "@/components/number-input";
-import { Button, Card, Field, FormMessage, Input, Select } from "@/components/ui";
+import { Button, Card, Field, FormMessage, Select } from "@/components/ui";
 import type { ActionState } from "@/lib/action-state";
 import { pathRooms, roomTimes, tooLongRooms, type GroupPlan, type Room } from "@/lib/rooms";
 import { formatDate, formatTime, zonedToUtc } from "@/lib/time";
 import type { ScheduleInput } from "./actions";
 import { LineIcon } from "@/components/line-icon";
+import { TimeField } from "@/components/time-field";
 
 export type ScheduleGroup = { id: string; name: string; school: string; classification: string; conflicts: string | null };
 
@@ -141,7 +142,7 @@ export function ScheduleEditor({
             </Select>
           </Field>
           <Field label="First group starts">
-            <Input type="time" value={time} onChange={(e) => (setTime(e.target.value), touch())} />
+            <TimeField value={time} onChange={(e) => (setTime(e.target.value), touch())} />
           </Field>
           <Field label="Minutes between groups">
             <NumberInput value={interval} onChange={(e) => (setIntervalMinutes(e.target.value), touch())} maxLength={3} />

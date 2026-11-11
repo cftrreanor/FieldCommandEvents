@@ -279,15 +279,25 @@ form[data-missing]::after {
 form[data-missing="fix"]::after {
   content: "Check the marked boxes.";
 }
-form[data-missing] label:has(:is(input, select, textarea):invalid:not([type="checkbox"], [type="radio"]))::after,
-form label:has(:is(input, select, textarea)[data-left]:invalid:not([type="checkbox"], [type="radio"]))::after {
+form[data-missing] label:has(:is(input, select, textarea):invalid:not([type="checkbox"], [type="radio"], [data-picker-box]))::after,
+form label:has(:is(input, select, textarea)[data-left]:invalid:not([type="checkbox"], [type="radio"], [data-picker-box]))::after {
   content: "▲ Fill this in";
   color: var(--danger);
   font-size: 0.875rem;
   font-weight: 600;
 }
-form label:has(:is(input, select, textarea)[data-why="fix"]:invalid)::after {
+form label:has(:is(input, select, textarea)[data-why="fix"]:invalid:not([data-picker-box]))::after,
+form[data-missing] label:has(:is(input, select, textarea)[data-why="fix"]:invalid:not([data-picker-box]))::after {
   content: "▲ Check this answer";
+}
+/* A date or time box with its own message (a typo, out of range) doesn't need the shared one; an empty
+   required one does. */
+form label:has([data-picker-box][data-left]:invalid:placeholder-shown)::after,
+form[data-missing] label:has([data-picker-box]:invalid:placeholder-shown)::after {
+  content: "▲ Fill this in";
+  color: var(--danger);
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 
 /* Dark mode: no grey text, so anything faded with opacity elsewhere (past

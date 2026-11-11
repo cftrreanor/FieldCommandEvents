@@ -8,6 +8,8 @@ import { SubmitButton } from "@/components/submit-button";
 import type { ActionState } from "@/lib/action-state";
 import { BANNER_AUDIENCES, BANNER_TONES, HOST_FILTERS, type BannerTone, type SiteBanner } from "@/lib/banner-types";
 import { confirmDialog } from "@/components/confirm-dialog";
+import { DateField } from "@/components/date-field";
+import { TimeField } from "@/components/time-field";
 
 const field =
   "w-full rounded-sm border border-border bg-surface px-2.5 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/25";
@@ -110,14 +112,8 @@ export function BannerBuilder({
           )}
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block space-y-1">
-            <span className="text-xs font-semibold text-muted">Starts (Central time)</span>
-            <input name="starts_at" type="datetime-local" defaultValue={banner?.startsLocal ?? defaults.startsLocal} className={`${field} h-9`} />
-          </label>
-          <label className="block space-y-1">
-            <span className="text-xs font-semibold text-muted">Ends (leave blank to keep it up)</span>
-            <input name="ends_at" type="datetime-local" defaultValue={banner ? banner.endsLocal : defaults.endsLocal} className={`${field} h-9`} />
-          </label>
+          <DayAndTime name="starts_at" label="Starts (Central time)" initial={banner?.startsLocal ?? defaults.startsLocal} />
+          <DayAndTime name="ends_at" label="Ends (leave blank to keep it up)" initial={banner ? banner.endsLocal : defaults.endsLocal} />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
           <div className="flex gap-3 text-sm">
@@ -169,5 +165,22 @@ export function BannerBuilder({
         </p>
       </div>
     </div>
+  );
+}
+
+/** A day box and a time box side by side, sent as one "2026-11-16T15:30" value (as the browser's box did). */
+function DayAndTime({ name, label, initial }: { name: string; label: string; initial: string }) {
+  const [day, setDay] = useState(initial.slice(0, 10));
+  const [time, setTime] = useState(initial.slice(11, 16));
+  return (
+    <fieldset className="space-y-1">
+      <legend className="text-xs font-semibold text-muted">{label}</legend>
+      <div className="grid gap-2">
+        <DateField value={day} onChange={(e) => setDay(e.target.value)} aria-label={`${label}: day`} />
+        {/* A day needs its time: an empty one would quietly mean midnight. */}
+        <TimeField value={time} required={Boolean(day)} onChange={(e) => setTime(e.target.value)} aria-label={`${label}: time`} />
+      </div>
+      <input type="hidden" name={name} value={day && time ? `${day}T${time}` : ""} />
+    </fieldset>
   );
 }

@@ -29,15 +29,15 @@ const START = "#join" as const;
 const steps: HowStep[] = [
   {
     title: "Set your hours",
-    body: "One day of meetings, or the same hours every week. Pick how long each meeting runs and add breaks or days off.",
+    body: "One day of meetings, or weekly hours, with different hours on different days if you like. Pick how long each meeting runs and add breaks or days off.",
     screen: "/screens/meeting-setup.webp",
-    alt: "Meeting Setup on a phone: every week on Tuesdays and Thursdays, from a first day to a last day.",
+    alt: "Setting weekly hours on a phone: Mondays 8 to 11 AM, Wednesdays 1 to 4 PM, and Thursdays 3:30 to 6 PM.",
   },
   {
     title: "People pick a time",
     body: "Share one link. People pick a day, then an open time, and how they'd like to meet. Taken times aren't shown, so no one is double-booked.",
     screen: "/screens/meeting-booking-page.webp",
-    alt: "Booking a meeting on a phone: a month calendar with open days circled, under the organizer's weekly hours.",
+    alt: "Booking a meeting on a phone: weekly hours that differ by day, a month calendar with open days circled, and Thursday's open times from 3:30 PM.",
   },
   {
     title: "Run your meetings",

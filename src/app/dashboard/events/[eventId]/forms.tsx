@@ -16,6 +16,7 @@ import { onRetry, setPending, useUnadded } from "@/components/pending-edits";
 import { StepNotice, useStepEdits } from "./volunteering/station-steps";
 import { copyDialog } from "@/components/confirm-dialog";
 import { CO_HOST_POWERS } from "@/lib/team-words";
+import { TimeField } from "@/components/time-field";
 
 type Action = (prev: ActionState, formData: FormData) => Promise<ActionState>;
 
@@ -367,13 +368,13 @@ export function GenerateShiftsForm({
       </p>
       <div className="grid grid-cols-2 gap-4">
         <Field label="From">
-          <Input name="fromTime" type="time" required value={from} onChange={(e) => setFrom(e.target.value)} />
+          <TimeField name="fromTime" required value={from} onChange={(e) => setFrom(e.target.value)} />
         </Field>
         <Field label="To" error={backwards ? "To has to be later than From" : undefined} errorId="to-error">
-          <Input
+          <TimeField
             name="toTime"
-            type="time"
             required
+            after={from}
             value={to}
             onChange={(e) => setTo(e.target.value)}
             aria-invalid={backwards || undefined}
@@ -480,6 +481,9 @@ export function ShiftForm({
   // A new shift: the button turns green once every required answer is in.
   const setEdited = useStepEdits(initial ? undefined : "shifts");
   const unadded = useUnadded();
+  // The end reads a bare hour as the first one after the start ("7" after 4:00 PM is 7:00 PM). Shifts can run
+  // past midnight, so an earlier end isn't refused here.
+  const [shiftStart, setShiftStart] = useState(initial?.startTime ?? "");
   return (
     <ActionForm
       action={action}
@@ -509,10 +513,10 @@ export function ShiftForm({
         <input type="hidden" name="day" value={initial?.day ?? days[0]} />
       )}
       <Field label="Start time">
-        <Input name="startTime" type="time" required defaultValue={initial?.startTime} />
+        <TimeField name="startTime" required value={shiftStart} onChange={(e) => setShiftStart(e.target.value)} />
       </Field>
       <Field label="End time">
-        <Input name="endTime" type="time" required defaultValue={initial?.endTime} />
+        <TimeField name="endTime" required defaultValue={initial?.endTime} after={shiftStart} />
       </Field>
       <Field
         label="Volunteers needed"

@@ -28,10 +28,16 @@ const RULES = [
     fix: "Use NumberInput (src/components/number-input.tsx).",
   },
   {
+    id: "date-time-input",
+    lesson: "CLAUDE.md: date and time fields use DateField and TimeField (#347)",
+    pattern: /type=["'](?:date|time|datetime-local)["']/g,
+    fix: "Use DateField (src/components/date-field.tsx) or TimeField (src/components/time-field.tsx).",
+  },
+  {
     id: "muted-disabled",
     lesson: "L6 Greyed out must look greyed out in dark mode",
     // A greyed-out control coloured with text-muted: muted is white in dark mode, so it looks live.
-    pattern: /className=(?:"[^"]*|\{`[^`]*)(?:cursor-not-allowed|aria-disabled)[^"`]*\btext-muted\b|className=(?:"[^"]*|\{`[^`]*)\btext-muted\b[^"`]*cursor-not-allowed/g,
+    pattern: /className=(?:"[^"]*|\{`[^`]*)(?:cursor-not-allowed|aria-disabled)[^"`]*\btext-muted\b|className=(?:"[^"]*|\{`[^`]*)\btext-muted\b[^"`]*cursor-not-allowed|\b(?:placeholder|aria-disabled|disabled):text-muted\b/g,
     fix: "Use text-disabled for greyed-out controls.",
   },
   {

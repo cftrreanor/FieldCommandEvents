@@ -6,6 +6,7 @@ import { NumberInput } from "@/components/number-input";
 import { SubmitButton } from "@/components/submit-button";
 import { Field, Input, Textarea } from "@/components/ui";
 import type { ActionState } from "@/lib/action-state";
+import { DateField } from "@/components/date-field";
 
 /**
  * Band Registration → Registration settings: what directors see and agree to.
@@ -43,7 +44,7 @@ export function BandSettingsForm({
       onSuccess={() => setDirty(false)}
     >
       <Field label="Registration deadline" hint="Optional. Registration closes automatically at the end of this day.">
-        <Input type="date" name="deadline" defaultValue={deadline} />
+        <DateField name="deadline" defaultValue={deadline} />
       </Field>
       <Field label={`Chaperone limit per ${one}`}>
         <NumberInput name="chaperoneLimit" defaultValue={chaperoneLimit} required />

@@ -6,6 +6,7 @@ import { Field, Input, Select } from "@/components/ui";
 import { displayTime, formatDuration, toMinutes, toTime, type Span } from "@/lib/schedule";
 import { formatDate } from "@/lib/time";
 import { LineIcon } from "@/components/line-icon";
+import { TimeField } from "@/components/time-field";
 
 // Pieces shared by the schedule builder (editing) and the schedule view
 // (published, read-only with per-band edits).
@@ -72,7 +73,7 @@ export function TimesEditor({
           </Field>
         )}
         <Field label="Warm-up starts">
-          <Input type="time" value={v.warmUp} onChange={(e) => onChange({ warmUp: e.target.value })} />
+          <TimeField value={v.warmUp} onChange={(e) => onChange({ warmUp: e.target.value })} />
         </Field>
         <Field label="Warm-up length">
           <Select value={v.warmUpMinutes || ""} onChange={(e) => onChange({ warmUpMinutes: Number(e.target.value) || 0 })}>
@@ -85,7 +86,7 @@ export function TimesEditor({
           </Select>
         </Field>
         <Field label="Performs">
-          <Input type="time" value={v.perform} onChange={(e) => onChange({ perform: e.target.value })} />
+          <TimeField value={v.perform} onChange={(e) => onChange({ perform: e.target.value })} />
         </Field>
         <Field label="Warm-up location" className="col-span-2 sm:col-span-4">
           <Input value={v.location} onChange={(e) => onChange({ location: e.target.value })} />
@@ -218,7 +219,7 @@ export function BreakForm({
         </Field>
       )}
       <Field label={`Starts (${zoneLabel})`}>
-        <Input type="time" required value={b.start} onChange={(e) => onChange({ start: e.target.value })} />
+        <TimeField required value={b.start} onChange={(e) => onChange({ start: e.target.value })} />
       </Field>
       <Field label="Minutes">
         <NumberInput maxLength={3} value={b.minutes} onChange={(e) => onChange({ minutes: e.target.value })} />

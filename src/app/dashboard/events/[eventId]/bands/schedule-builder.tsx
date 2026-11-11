@@ -26,6 +26,7 @@ import { RoundRows, RowEditor, type Row } from "./schedule-view";
 import { confirmDialog, confirmFromText, shareDialog } from "@/components/confirm-dialog";
 import { folderTab, folderTabNote, folderTabRow } from "@/components/folder-tabs";
 import { LineIcon } from "@/components/line-icon";
+import { TimeField } from "@/components/time-field";
 
 export type { FinalsSlot, OrderBand, ScheduleBreak };
 
@@ -1152,7 +1153,7 @@ function AutoFill({
           </Field>
         )}
         <Field label={`First performance (${zoneLabel})`}>
-          <Input type="time" value={auto.first} onChange={(e) => setAuto({ ...auto, first: e.target.value })} />
+          <TimeField value={auto.first} onChange={(e) => setAuto({ ...auto, first: e.target.value })} />
         </Field>
         <Field label="Minutes between bands" hint={dayBreaks.length ? `Skips ${dayBreaks.map((b) => b.label).join(", ")}.` : undefined}>
           <NumberInput maxLength={3} value={auto.slot} onChange={(e) => setAuto({ ...auto, slot: e.target.value })} />

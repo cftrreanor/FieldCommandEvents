@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { ActionForm } from "@/components/action-form";
 import { SubmitButton } from "@/components/submit-button";
-import { Button, Field, Input } from "@/components/ui";
+import { Button, Field } from "@/components/ui";
 import type { ActionState } from "@/lib/action-state";
+import { DateField } from "@/components/date-field";
+import { TimeField } from "@/components/time-field";
 
 /**
  * Parent Registration → Registration settings: when registration closes on
@@ -37,10 +39,10 @@ export function ParentSettingsForm({
         <p className="mt-1 text-sm text-muted">{zone}. Registration closes on its own then; you can still open or close it yourself.</p>
         <div className="mt-3 flex flex-wrap items-end gap-3">
           <Field label="Close registration on">
-            <Input type="date" name="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-44" />
+            <DateField name="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-56" />
           </Field>
           <Field label="At">
-            <Input type="time" name="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-36" />
+            <TimeField name="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-40" />
           </Field>
           {(date || time) && (
             <Button

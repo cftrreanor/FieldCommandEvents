@@ -46,7 +46,7 @@ export function DayCalendar({
     ...Array.from({ length }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`),
   ];
 
-  const arrow = "flex h-11 w-11 items-center justify-center rounded-full text-lg text-brand hover:bg-brand-soft disabled:cursor-not-allowed disabled:text-muted disabled:opacity-40 disabled:hover:bg-transparent";
+  const arrow = "flex h-11 w-11 items-center justify-center rounded-full text-lg text-brand hover:bg-brand-soft disabled:cursor-not-allowed disabled:text-disabled disabled:hover:bg-transparent";
   return (
     <div className="w-full max-w-[22rem]">
       <div className="flex items-center justify-between">

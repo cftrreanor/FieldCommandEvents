@@ -6,6 +6,7 @@ import type { ActionState } from "@/lib/action-state";
 import { uploadToSignedUrl } from "@/lib/signed-upload";
 import type { UploadedFile } from "../../../file-actions";
 import { confirmDialog } from "@/components/confirm-dialog";
+import { DateField } from "@/components/date-field";
 
 const TYPES = ["application/pdf", "image/jpeg", "image/png"];
 const MAX = 10 * 1024 * 1024;
@@ -269,7 +270,7 @@ function FileForm({
         </label>
         {hide && (
           <Field label="Show it starting" hint="Until then, only hosts can see it." className="mt-2 max-w-xs">
-            <Input name="visibleFrom" type="date" required defaultValue={file?.visibleFrom ?? ""} />
+            <DateField name="visibleFrom" required defaultValue={file?.visibleFrom ?? ""} />
           </Field>
         )}
       </div>
