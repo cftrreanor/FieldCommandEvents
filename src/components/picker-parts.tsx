@@ -7,11 +7,11 @@ import { createPortal } from "react-dom";
 
 /** The visible box: a solid focus ring, red when it can't be used, tinted and dashed when it can't be changed. */
 export const pickerBoxClass =
-  "min-h-11 w-full rounded-sm border border-field-border bg-surface pl-3 pr-11 text-base transition placeholder:text-muted focus:border-brand aria-invalid:border-2 aria-invalid:border-danger aria-disabled:cursor-not-allowed aria-disabled:border-dashed aria-disabled:bg-border/50 aria-disabled:text-muted";
+  "min-h-11 w-full rounded-sm border border-field-border bg-surface pl-3 pr-11 text-base transition placeholder:text-disabled focus:border-brand aria-invalid:border-2 aria-invalid:border-danger aria-disabled:cursor-not-allowed aria-disabled:border-dashed aria-disabled:bg-border/50 aria-disabled:text-disabled";
 
 /** The icon button inside the right end of the box. Its focus ring sits inside the box. */
 export const pickerButtonClass =
-  "absolute top-0 right-0 flex h-11 w-11 items-center justify-center rounded-r-sm text-brand hover:bg-brand-soft focus-visible:outline-offset-[-4px] disabled:cursor-not-allowed disabled:text-disabled disabled:hover:bg-transparent dark:text-foreground";
+  "absolute top-px right-px flex h-[42px] w-[42px] items-center justify-center rounded-full text-brand hover:bg-brand-soft focus-visible:outline-offset-[-4px] disabled:cursor-not-allowed disabled:text-disabled disabled:hover:bg-transparent dark:text-foreground";
 
 /** The error under the box: always there, so screen readers hear it as soon as it appears. */
 export function PickerProblem({ id, problem }: { id: string; problem: string | null }) {
@@ -101,10 +101,14 @@ export function PickerPopover({
       const box = anchor.querySelector("input:not([type=hidden])") ?? anchor;
       const r = box.getBoundingClientRect();
       if (matchWidth) el.style.minWidth = `${r.width}px`;
+      el.style.maxHeight = "";
       const h = el.offsetHeight;
       const below = window.innerHeight - r.bottom;
       const up = below < h + 8 && r.top > below;
-      el.style.top = `${up ? Math.max(8, r.top - h - 4) : r.bottom + 4}px`;
+      // A short screen (zoomed in, phone turned sideways): the pop-up scrolls inside itself.
+      const room = (up ? r.top : below) - 12;
+      if (h > room) el.style.maxHeight = `${Math.max(160, room)}px`;
+      el.style.top = `${up ? Math.max(8, r.top - Math.min(h, room) - 4) : r.bottom + 4}px`;
       el.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - el.offsetWidth - 8))}px`;
     };
     place();
@@ -120,13 +124,30 @@ export function PickerPopover({
   return createPortal(
     <div
       ref={popRef}
-      className={`fixed z-[60] rounded-lg border border-field-border bg-raised text-foreground shadow-elevated ${className}`}
+      className={`fixed z-[60] overflow-y-auto overscroll-contain rounded-lg border border-field-border bg-raised text-foreground shadow-elevated ${className}`}
       style={{ top: -9999, left: -9999 }}
     >
       {children}
     </div>,
     host,
   );
+}
+
+/**
+ * Before a pop-up opens under a box low on the screen, scroll the box up so it fits below (instead of opening
+ * upward over the box's own label). Pinned bars at the bottom count as no room.
+ */
+export function makeRoom(box: HTMLElement, need: number) {
+  const r = box.getBoundingClientRect();
+  const h = window.innerHeight;
+  const bars = [...document.querySelectorAll<HTMLElement>('[class*="bottom-"]')].filter((b) => {
+    const pos = getComputedStyle(b).position;
+    const br = b.getBoundingClientRect();
+    return (pos === "fixed" || pos === "sticky") && br.height > 0 && br.bottom >= h - 2 && br.top > h / 2;
+  });
+  const pinned = Math.max(0, ...bars.map((b) => h - b.getBoundingClientRect().top));
+  if (h - pinned - r.bottom >= need) return;
+  box.scrollIntoView({ block: "start", behavior: "instant" });
 }
 
 export function LockIcon() {

@@ -175,11 +175,12 @@ function DayAndTime({ name, label, initial }: { name: string; label: string; ini
   return (
     <fieldset className="space-y-1">
       <legend className="text-xs font-semibold text-muted">{label}</legend>
-      <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-2">
+      <div className="grid gap-2">
         <DateField value={day} onChange={(e) => setDay(e.target.value)} aria-label={`${label}: day`} />
-        <TimeField value={time} onChange={(e) => setTime(e.target.value)} aria-label={`${label}: time`} />
+        {/* A day needs its time: an empty one would quietly mean midnight. */}
+        <TimeField value={time} required={Boolean(day)} onChange={(e) => setTime(e.target.value)} aria-label={`${label}: time`} />
       </div>
-      <input type="hidden" name={name} value={day ? `${day}T${time || "00:00"}` : ""} />
+      <input type="hidden" name={name} value={day && time ? `${day}T${time}` : ""} />
     </fieldset>
   );
 }

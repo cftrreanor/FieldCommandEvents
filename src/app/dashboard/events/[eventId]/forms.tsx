@@ -481,6 +481,9 @@ export function ShiftForm({
   // A new shift: the button turns green once every required answer is in.
   const setEdited = useStepEdits(initial ? undefined : "shifts");
   const unadded = useUnadded();
+  // The end reads a bare hour as the first one after the start ("7" after 4:00 PM is 7:00 PM). Shifts can run
+  // past midnight, so an earlier end isn't refused here.
+  const [shiftStart, setShiftStart] = useState(initial?.startTime ?? "");
   return (
     <ActionForm
       action={action}
@@ -510,10 +513,10 @@ export function ShiftForm({
         <input type="hidden" name="day" value={initial?.day ?? days[0]} />
       )}
       <Field label="Start time">
-        <TimeField name="startTime" required defaultValue={initial?.startTime} />
+        <TimeField name="startTime" required value={shiftStart} onChange={(e) => setShiftStart(e.target.value)} />
       </Field>
       <Field label="End time">
-        <TimeField name="endTime" required defaultValue={initial?.endTime} />
+        <TimeField name="endTime" required defaultValue={initial?.endTime} after={shiftStart} />
       </Field>
       <Field
         label="Volunteers needed"

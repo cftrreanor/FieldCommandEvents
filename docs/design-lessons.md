@@ -117,6 +117,9 @@ In dark mode `--muted` is pure white, so anything that relies on grey looks live
 - **Again in:** My team built (windows the same navy as the page behind them; outlined buttons at
   1.25:1 in light and 1.43:1 in dark). Outlined buttons use `border-field-border` (3:1 or more),
   not `border-border`.
+- **Again in:** date and time pickers built (the "Pick a date" hint and locked boxes used `text-muted`,
+  so in dark mode an empty box looked filled in). `placeholder:text-muted` and
+  `aria-disabled:text-muted` are now **checked automatically** too, even outside `className=`.
 
 ## L7. Don't fade things people can still use
 Fading means "you can't". If it still works (an ended shift, a ready card), keep it full strength

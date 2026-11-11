@@ -53,6 +53,10 @@ export function RequiredFields() {
       if (!(field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement)) return;
       const form = field.closest("form");
       if (!form || !checkable(form) || !field.willValidate) return;
+      // A date or time box whose calendar or list just took the focus hasn't been left.
+      const picker = field.closest("[data-picker]");
+      const to = (e as FocusEvent).relatedTarget as Node | null;
+      if (picker && (picker.hasAttribute("data-picker-open") || (to && picker.contains(to)))) return;
       field.toggleAttribute("data-left", !field.validity.valid);
       why(field);
     };

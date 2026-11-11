@@ -45,23 +45,25 @@ export function parseDate(text: string, today = todayIso()): string | null {
   const p = readParts(text);
   if (!p) return null;
   if (p.y !== null) return isoDay(p.y, p.m, p.d);
-  const thisYear = Number(today.slice(0, 4));
-  const iso = isoDay(thisYear, p.m, p.d);
-  if (iso && iso >= today) return iso;
-  // Feb 29 comes around in the next leap year.
-  for (let y = thisYear + 1; y <= thisYear + 8; y++) {
-    const next = isoDay(y, p.m, p.d);
-    if (next) return next;
-  }
-  return null;
+  return isoDay(landingYear(p.m, p.d, today), p.m, p.d);
 }
 
-/** Why a typed date isn't a real day, in words ("November has 30 days."), or null if it isn't that. */
-export function dateProblem(text: string): string | null {
+/** The year a date typed without one lands in: this year, or next year once it has passed. */
+function landingYear(m: number, d: number, today: string) {
+  const thisYear = Number(today.slice(0, 4));
+  const md = `${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return md >= today.slice(5) ? thisYear : thisYear + 1;
+}
+
+/** Why a typed date isn't a real day, in words ("November has 30 days.", "February 2027 has 28 days."). */
+export function dateProblem(text: string, today = todayIso()): string | null {
   const p = readParts(text);
   if (!p || p.m < 1 || p.m > 12 || p.d < 1) return null;
-  const last = new Date(Date.UTC(p.y ?? 2028, p.m, 0)).getUTCDate();
-  return p.d > last ? `${MONTH_NAMES[p.m - 1]} has ${last} days.` : null;
+  const y = p.y ?? landingYear(p.m, p.d, today);
+  const last = new Date(Date.UTC(y, p.m, 0)).getUTCDate();
+  if (p.d <= last) return null;
+  // February's length depends on the year, so name it.
+  return `${MONTH_NAMES[p.m - 1]}${p.m === 2 ? ` ${y}` : ""} has ${last} days.`;
 }
 
 /** "Mon, Nov 16, 2026" for "2026-11-16" (the date as written, whatever the time zone). */

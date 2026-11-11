@@ -35,3 +35,9 @@ recommendation ("All as recommended, build it"):
 | 20 | Faint focus ring | 2 | Take the advice |
 | 21 | Missing states | 2 | Take the advice: in the screenshots after building |
 | 22 | The admin banner's date-and-time box | 2 | A new date box and time box side by side |
+
+Light check on the built boxes (consultant, UI Designer, Software Engineer): every finding fixed under the
+owner's "all as recommended", including one severity 3 (Tab leaving the calendar, the same kind as finding 4).
+Left for later: two messages on the band contest deadline after a refused save and a typo (severity 1).
+Shift end times read a bare hour after their start but aren't refused when earlier, because shifts can run
+past midnight; conference end times are refused.

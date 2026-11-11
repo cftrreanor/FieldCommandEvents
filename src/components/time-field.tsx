@@ -3,7 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type FocusEvent } from "react";
 import { flushSync } from "react-dom";
 import { formatTime, parseTime, timesEvery } from "@/lib/date-input";
-import { LockIcon, PickerPopover, PickerProblem, pickerBoxClass, pickerButtonClass, useEditEvents, useFieldLabel, useTouchScreen } from "./picker-parts";
+import { LockIcon, PickerPopover, PickerProblem, pickerBoxClass, pickerButtonClass, makeRoom, useEditEvents, useFieldLabel, useTouchScreen } from "./picker-parts";
 
 type ChangeEvent = { target: { value: string; name?: string } };
 
@@ -130,6 +130,7 @@ export function TimeField({
   // times after it in view.
   const openList = () => {
     if (open || locked || !wrap.current) return;
+    makeRoom(wrap.current, 320);
     const from = current || (start ? all.find((v) => v > start) : undefined) || "08:00";
     const at = all.findIndex((v) => v >= from);
     setActive(at < 0 ? 0 : at);
@@ -175,7 +176,7 @@ export function TimeField({
   const tapToPick = touch && !typeMode;
 
   return (
-    <div ref={wrap} className={`relative ${className}`}>
+    <div ref={wrap} data-picker data-picker-open={open || undefined} className={`relative scroll-mt-24 ${className}`}>
       <input
         ref={input}
         id={boxId}
@@ -183,6 +184,7 @@ export function TimeField({
         role="combobox"
         inputMode={tapToPick ? "none" : "text"}
         autoComplete="off"
+        data-picker-box
         value={text}
         required={required}
         readOnly={locked}
@@ -255,7 +257,7 @@ export function TimeField({
       </button>
       <PickerProblem id={errId} problem={problem} />
       {anchor && (
-        <PickerPopover anchor={anchor} popRef={pop} matchWidth className="w-max min-w-40 overflow-hidden">
+        <PickerPopover anchor={anchor} popRef={pop} matchWidth className="w-max min-w-40">
           <ul ref={list} id={listId} role="listbox" aria-label="Times" className="max-h-64 overflow-y-auto overscroll-contain p-1">
             {shown.map((v, i) => (
               <li
@@ -264,6 +266,7 @@ export function TimeField({
                 data-index={i}
                 role="option"
                 aria-selected={i === active}
+                aria-label={`${formatTime(v)}${v === current ? ", chosen" : ""}`}
                 onMouseDown={(e) => e.preventDefault()}
                 onMouseEnter={() => setActive(i)}
                 onClick={() => {
@@ -271,11 +274,11 @@ export function TimeField({
                   setAnchor(null);
                 }}
                 className={`flex min-h-11 cursor-pointer items-center justify-between gap-4 rounded-md px-3 text-sm tabular-nums ${
-                  i === active ? "bg-brand-soft" : ""
+                  i === active ? "bg-brand-soft shadow-[inset_4px_0_0_var(--focus)]" : "hover:bg-brand-soft/60"
                 } ${v === current ? "font-semibold" : ""}`}
               >
                 {formatTime(v)}
-                {v === current && <span aria-label="chosen">✓</span>}
+                {v === current && <span aria-hidden>✓</span>}
               </li>
             ))}
           </ul>

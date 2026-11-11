@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import { flushSync } from "react-dom";
 import { dateProblem, formatDay, isoDay, longDay, parseDate, todayIso } from "@/lib/date-input";
-import { LockIcon, PickerPopover, PickerProblem, pickerBoxClass, pickerButtonClass, useEditEvents, useFieldLabel, useTouchScreen } from "./picker-parts";
+import { LockIcon, PickerPopover, PickerProblem, makeRoom, pickerBoxClass, pickerButtonClass, useEditEvents, useFieldLabel, useTouchScreen } from "./picker-parts";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -155,7 +155,9 @@ export function DateField({
   };
 
   const show = () => {
-    if (!locked && wrap.current) setAnchor(wrap.current);
+    if (locked || !wrap.current) return;
+    makeRoom(wrap.current, 400);
+    setAnchor(wrap.current);
   };
   const close = (focus?: "box" | "button") => {
     setAnchor(null);
@@ -181,13 +183,14 @@ export function DateField({
   const tapToPick = touch && !typeMode;
 
   return (
-    <div ref={wrap} className={`relative ${className}`}>
+    <div ref={wrap} data-picker data-picker-open={open || undefined} className={`relative scroll-mt-24 ${className}`}>
       <input
         ref={input}
         id={boxId}
         type="text"
         inputMode={tapToPick ? "none" : "text"}
         autoComplete="off"
+        data-picker-box
         value={text}
         required={required}
         readOnly={locked}
@@ -230,7 +233,7 @@ export function DateField({
       />
       {name && <input type="hidden" name={name} value={current} disabled={disabled} />}
       <span id={actionId} hidden>
-        {current ? "Change the date for" : "Pick a date for"}
+        {locked ? "Can't change" : current ? "Change the date for" : "Pick a date for"}
       </span>
       <button
         ref={button}
@@ -255,7 +258,7 @@ export function DateField({
             canType={tapToPick}
             onPick={(iso) => {
               commit(iso);
-              close(touch ? undefined : "box");
+              close(touch ? "button" : "box");
             }}
             onClose={() => close("button")}
             onType={() => {
@@ -347,6 +350,15 @@ function Calendar({
           e.stopPropagation();
           onClose();
         }
+        // Tab stays inside the calendar until it's closed (it sits at the end of the page's code).
+        if (e.key === "Tab") {
+          const stops = [...e.currentTarget.querySelectorAll<HTMLButtonElement>("button:not([disabled])")].filter((b) => b.tabIndex >= 0);
+          const at = stops.indexOf(document.activeElement as HTMLButtonElement);
+          if (e.shiftKey ? at <= 0 : at === stops.length - 1) {
+            e.preventDefault();
+            stops[e.shiftKey ? stops.length - 1 : 0]?.focus();
+          }
+        }
       }}
     >
       <div className="flex items-center justify-between">
@@ -382,7 +394,7 @@ function Calendar({
                 onClick={() => {
                   if (!off) onPick(day);
                 }}
-                className={`flex aspect-square w-full max-w-10 items-center justify-center rounded-full text-sm tabular-nums ${
+                className={`flex aspect-square w-full max-w-11 items-center justify-center rounded-full text-sm tabular-nums ${
                   on
                     ? "bg-brand font-semibold text-brand-foreground"
                     : off

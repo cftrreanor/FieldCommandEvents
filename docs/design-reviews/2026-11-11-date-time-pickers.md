@@ -143,3 +143,20 @@ Nothing here gets built until the owner decides.
 
 This is an AI review, not testing with real people. The phone behavior (finding 9) especially needs a real
 iPhone and Android phone before the boxes go on every screen.
+
+## Follow-up light check
+
+**Round 1** (consultant, UI Designer, Software Engineer), on `2026-11-11-date-time-pickers-built/`, after the
+owner took every recommendation. The Software Engineer drove the real screens: values save, autosave and
+unsaved-changes tracking notice a pick, required and invalid boxes block a save, and the pop-ups work in
+windows and on touch screens. One severity 3: Tab from the calendar left the page (now Tab stays in the
+calendar until it closes). Severity 2s, all fixed: dark-mode hints and locked text were white (L6 again; now
+checked automatically), a faint list highlight (now a bar on the left), "Fill this in" under a filled-in box,
+a required date marked red while its calendar was open, "2/29" jumping to 2028, the volunteer shift's end time
+not following its start, focus dropped after a tap-pick, the calendar opening upward over its label, the
+admin banner's boxes cutting off text and saving midnight for an empty time, and the missing states (now
+screenshots 08–10, including 200% zoom, where the pop-ups scroll inside themselves). Polish fixed: 44 px days,
+the icon button no longer covers the box's border, and the chosen time is in its row's name. Left for later
+(severity 1): two messages on the band contest deadline after a refused save and then a typo.
+
+The last round of fixes was checked against fresh screenshots by the builder, not by the panel again.
