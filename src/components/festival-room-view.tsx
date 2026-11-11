@@ -103,19 +103,24 @@ export function FestivalRoomView({
       ) : (
         <ol className="divide-y divide-border rounded-lg border border-border bg-surface text-sm" aria-label={`${roomName}'s list`}>
           {rows.map((r) => (
-            <li key={r.bandId} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-              <span className="w-[4.75rem] shrink-0 tabular-nums">{r.time}</span>
-              <span className="min-w-0 flex-1">
-                <span className="font-medium">{r.name}</span>
-                {r.school && <span className="block text-muted">{r.school}</span>}
+            <li key={r.bandId} className="grid grid-cols-[4.75rem_1fr] gap-x-3 px-4 py-3">
+              <span className="pt-0.5 tabular-nums">{r.time}</span>
+              {/* Phones: the name gets the width, and the state and button go on their own line under it. */}
+              <span className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                <span className="min-w-[11rem] flex-1">
+                  <span className="font-medium">{r.name}</span>
+                  {r.school && <span className="block text-muted">{r.school}</span>}
+                </span>
+                <span className="flex flex-wrap items-center gap-2">
+                  <Badge tone={BADGE[r.state.tone]}>{r.state.text}</Badge>
+                  {/* Between groups only, so a room never has two groups in at once by accident. */}
+                  {!now && !r.marked && r.bandId !== next?.bandId && r.state.text !== "Didn't come" && (
+                    <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => void inOnly(r)} aria-label={`Mark ${r.name} in ${roomName}`}>
+                      {busy === `in:${r.bandId}` ? "Saving…" : "Mark in"}
+                    </Button>
+                  )}
+                </span>
               </span>
-              <Badge tone={BADGE[r.state.tone]}>{r.state.text}</Badge>
-              {/* Between groups only, so a room never has two groups in at once by accident. */}
-              {!now && !r.marked && r.bandId !== next?.bandId && r.state.text !== "Didn't come" && (
-                <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => void inOnly(r)} aria-label={`Mark ${r.name} in ${roomName}`}>
-                  {busy === `in:${r.bandId}` ? "Saving…" : "Mark in"}
-                </Button>
-              )}
             </li>
           ))}
         </ol>

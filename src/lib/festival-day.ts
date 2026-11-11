@@ -158,7 +158,7 @@ export function groupState({
   return {
     ...base,
     status: next && past(next.starts_at) ? { text: `Not marked in ${roomName(next.room_id)}`, tone: "warning" } : { text: "On time", tone: "info" },
-    line: next ? `${where} · ${roomName(next.room_id)} at ${time(next.starts_at)}` : where,
+    line: next ? `${where} · next: ${roomName(next.room_id)} at ${time(next.starts_at)}` : where,
     tap: next ? inTap(next) : null,
     alt: null,
   };
