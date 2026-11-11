@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
 // Shared pieces of DateField and TimeField (issue #347).
@@ -38,21 +38,6 @@ export function useEditEvents(wrap: RefObject<HTMLElement | null>, current: stri
   return () => {
     pending.current = true;
   };
-}
-
-const coarse = "(pointer: coarse)";
-function subscribe(change: () => void) {
-  const q = window.matchMedia(coarse);
-  q.addEventListener("change", change);
-  return () => q.removeEventListener("change", change);
-}
-/** True on touch screens: a tap opens the calendar or the time list instead of the keyboard. */
-export function useTouchScreen() {
-  return useSyncExternalStore(
-    subscribe,
-    () => window.matchMedia(coarse).matches,
-    () => false,
-  );
 }
 
 /**

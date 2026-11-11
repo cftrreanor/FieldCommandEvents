@@ -48,5 +48,10 @@ past midnight; conference end times are refused.
 opens its list without the keyboard on touch screens, and "Type it instead" is gone: a tap brings up the
 keyboard and the list together, so people can type or tap a time. On phones the list sits in the part of the
 screen above the keyboard (flipping above the box, or scrolling inside itself, when there isn't room).
-Tapping into a box that has a time selects it, so typing replaces it. Date boxes are unchanged for now.
+Tapping into a box that has a time selects it, so typing replaces it.
 This is the owner's own design decision, so it had no panel.
+
+Then for dates too ("Yes, make the date box work the same way"): tapping or clicking in a date box brings up
+the keyboard and the calendar together, with no "Type it instead". While typing, the calendar moves to the
+day that will be saved and fills it in; tapping a day picks it without taking the keyboard away. The calendar
+button still opens the calendar with keyboard focus inside it, for keyboard and screen reader users.

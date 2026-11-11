@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
-import { flushSync } from "react-dom";
 import { dateProblem, formatDay, isoDay, longDay, parseDate, todayIso } from "@/lib/date-input";
-import { LockIcon, PickerPopover, PickerProblem, makeRoom, pickerBoxClass, pickerButtonClass, useEditEvents, useFieldLabel, useTouchScreen } from "./picker-parts";
+import { LockIcon, PickerPopover, PickerProblem, makeRoom, pickerBoxClass, pickerButtonClass, useEditEvents, useFieldLabel } from "./picker-parts";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -25,8 +24,8 @@ type ChangeEvent = { target: { value: string; name?: string } };
 
 /**
  * A date box in our own style (issue #347), in place of the browser's date picker: type a date ("11/16",
- * "Nov 16") or pick one from a month calendar that opens from the button inside the box (on touch screens, from
- * a tap on the box). Once picked it reads in words ("Mon, Nov 16, 2026"). The form gets the same value the
+ * "Nov 16") or pick one from a month calendar that opens alongside when you tap or click in the box (and from
+ * the button inside it). Once picked it reads in words ("Mon, Nov 16, 2026"). The form gets the same value the
  * browser's picker sent ("2026-11-16") from a hidden input with `name`, so it drops in where
  * the browser's date box was. Works controlled (`value` and `onChange`, which gets `{ target: { value } }`) or not
  * (`defaultValue`). A value outside `min`/`max` is shown in red and stops the form saving, as the browser's did.
@@ -88,8 +87,9 @@ export function DateField({
   const text = typed ?? formatDay(current);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const open = anchor !== null;
-  const touch = useTouchScreen();
-  const [typeMode, setTypeMode] = useState(false);
+  // Opened from the box itself (a tap or click in it): the keyboard stays up and typing goes on, with the
+  // calendar following what's typed. Opened from the button: keyboard focus goes into the calendar.
+  const [fromBox, setFromBox] = useState(false);
   const locked = !!(disabled || readOnly);
   const input = useRef<HTMLInputElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -154,11 +154,14 @@ export function DateField({
     commit(iso);
   };
 
-  const show = () => {
+  const show = (inBox = false) => {
     if (locked || !wrap.current) return;
     makeRoom(wrap.current, 400);
+    setFromBox(inBox);
     setAnchor(wrap.current);
   };
+  // While typing, the calendar shows the day that will be saved.
+  const preview = typed !== null && typed.trim() ? parseDate(typed.trim()) : null;
   const close = (focus?: "box" | "button") => {
     setAnchor(null);
     if (focus === "box") input.current?.focus();
@@ -180,15 +183,12 @@ export function DateField({
     };
   }, [open]);
 
-  const tapToPick = touch && !typeMode;
-
   return (
     <div ref={wrap} data-picker data-picker-open={open || undefined} className={`relative scroll-mt-24 ${className}`}>
       <input
         ref={input}
         id={boxId}
         type="text"
-        inputMode={tapToPick ? "none" : "text"}
         autoComplete="off"
         data-picker-box
         value={text}
@@ -204,8 +204,11 @@ export function DateField({
           setTyped(e.target.value);
           if (typedProblem) setTypedProblem(null);
         }}
-        onClick={() => {
-          if (tapToPick && !open) show();
+        // Tapping in selects the date, so typing replaces it, and opens the calendar alongside.
+        onFocus={(e) => e.currentTarget.select()}
+        onClick={(e) => {
+          if (!open && typed === null) e.currentTarget.select();
+          if (!open) show(true);
         }}
         onBlur={(e) => {
           readTyped();
@@ -215,6 +218,7 @@ export function DateField({
           if (e.key === "Enter") {
             e.preventDefault();
             readTyped();
+            if (open) close();
           } else if (e.key === "ArrowDown" && e.altKey) {
             e.preventDefault();
             show();
@@ -250,24 +254,21 @@ export function DateField({
       <PickerProblem id={errId} problem={problem} />
       {anchor && (
         <PickerPopover anchor={anchor} popRef={pop} className="w-[min(22rem,calc(100vw-1rem))] p-3">
-          <Calendar
-            id={calId}
-            selected={current}
-            min={min}
-            max={max}
-            canType={tapToPick}
-            onPick={(iso) => {
-              commit(iso);
-              close(touch ? "button" : "box");
-            }}
-            onClose={() => close("button")}
-            onType={() => {
-              close();
-              flushSync(() => setTypeMode(true));
-              input.current?.focus();
-              input.current?.select();
-            }}
-          />
+          {/* While typing in the box, tapping the calendar doesn't take the focus (or the keyboard) away. */}
+          <div onMouseDown={(e) => document.activeElement === input.current && e.preventDefault()}>
+            <Calendar
+              id={calId}
+              selected={preview ?? current}
+              min={min}
+              max={max}
+              focusOnOpen={!fromBox}
+              onPick={(iso) => {
+                commit(iso);
+                close(fromBox ? undefined : "box");
+              }}
+              onClose={() => close("button")}
+            />
+          </div>
         </PickerPopover>
       )}
     </div>
@@ -280,25 +281,30 @@ function Calendar({
   selected,
   min,
   max,
-  canType,
+  focusOnOpen,
   onPick,
   onClose,
-  onType,
 }: {
   id: string;
   selected: string;
   min?: string;
   max?: string;
-  canType: boolean;
+  focusOnOpen: boolean;
   onPick: (iso: string) => void;
   onClose: () => void;
-  onType: () => void;
 }) {
   const today = todayIso();
   const start = selected || (min && today < min ? min : max && today > max ? max : today);
   const [focusDay, setFocusDay] = useState(start);
-  // Focus follows the day only when keys moved it (or on opening); the month buttons keep their focus.
-  const moveFocus = useRef(true);
+  // A day typed in the box: the calendar moves to it (the focus stays in the box).
+  const [seen, setSeen] = useState(selected);
+  if (selected !== seen) {
+    setSeen(selected);
+    if (selected) setFocusDay(selected);
+  }
+  // Focus follows the day only when keys moved it (or on opening from the button); the month buttons and the
+  // box keep their focus.
+  const moveFocus = useRef(focusOnOpen);
   const grid = useRef<HTMLDivElement>(null);
   const month = focusDay.slice(0, 7);
   const [y, m] = month.split("-").map(Number);
@@ -420,11 +426,6 @@ function Calendar({
         >
           Today
         </button>
-        {canType && (
-          <button type="button" onClick={onType} className={`${link} text-brand dark:text-foreground`}>
-            Type it instead
-          </button>
-        )}
         <button type="button" onClick={onClose} className={`${link} text-muted`}>
           Close
         </button>
