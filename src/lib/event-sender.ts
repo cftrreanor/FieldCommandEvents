@@ -9,7 +9,12 @@ import { senderName } from "@/lib/sender-name";
  * Events", lib/sender-name.ts), and where a reply goes.
  * The address itself is always ours (supabase/migrations/20261212000000_event_email_settings.sql).
  */
-export type EventSender = { name: string; replyTo: string | null };
+export type EventSender = {
+  name: string;
+  replyTo: string | null;
+  /** The person's own name, when there is one ("Dana Whitfield"), for "Reply to this email to reach Dana". */
+  person?: string | null;
+};
 
 /** What the Replies setting looks like, before falling back to the defaults. */
 export type ReplySetting = { replies: boolean; replyTo: string | null };
@@ -69,5 +74,5 @@ async function loadSender(eventId: string): Promise<EventSender | null> {
 
   // No setting yet: replies go to that person.
   const replies = settings ? settings.replies : true;
-  return { name, replyTo: replies ? settings?.reply_to || person?.email || null : null };
+  return { name, replyTo: replies ? settings?.reply_to || person?.email || null : null, person: person?.full_name?.trim() || null };
 }

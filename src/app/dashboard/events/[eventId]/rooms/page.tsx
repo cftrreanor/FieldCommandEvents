@@ -3,30 +3,37 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { RoomSchedule, type ScheduleSlot } from "@/components/room-schedule";
-import { PublishBar, PublishLine } from "@/components/publish-bar";
-import { Card } from "@/components/ui";
+import { SavedBy } from "@/components/saved-by";
+import { Badge, Card } from "@/components/ui";
+import { opensLater, registrationIsOpen } from "@/lib/bands";
 import { getEventAccess } from "@/lib/data";
 import { hasRooms } from "@/lib/event-types";
-import type { GroupPlan, Room } from "@/lib/rooms";
+import type { Room } from "@/lib/rooms";
+import { latestSendStatus } from "@/lib/schedule-emails";
 import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
-import { eachDate, utcToZonedDate, utcToZonedTime, zoneName } from "@/lib/time";
-import { ActionButton } from "../forms";
-import { saveRooms, saveRoomSchedule, setRoomSchedulePosted } from "./actions";
+import { eachDate, formatDate, utcToZonedDate, zoneName } from "@/lib/time";
+import { SetupTabs } from "../../_components/setup-tabs";
+import { StepPage } from "../conferences/step-page";
+import { loadSchedule } from "./actions";
+import { PostButton, SendTheRest } from "./post-window";
 import { RoomsEditor } from "./rooms-editor";
 import { ScheduleEditor, type ScheduleGroup } from "./schedule-editor";
-import { SavedBy } from "@/components/saved-by";
-import { SetupTabs } from "../../_components/setup-tabs";
 
-export async function generateMetadata({ params }: PageProps<"/dashboard/events/[eventId]/rooms">): Promise<Metadata> {
-  const { eventId } = await params;
-  return { title: (await getEventAccess(eventId)).isHost ? "Rooms & Schedule Setup" : "Room schedule" };
-}
+export const metadata: Metadata = { title: "Rooms and schedule" };
+
+// Posting, or saving new times, emails each director from the page's own request: give it time to finish.
+export const maxDuration = 300;
+
+const INTRO =
+  "The rooms every group moves through, in order, and how long each group spends in each. Once groups register, you set their order here and post the schedule.";
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
- * Group events. Hosts: Rooms & Schedule Setup, like Volunteer Setup and Band
- * Registration: the publish bar, then tabs for the rooms, the group order and
- * times, and the saved schedule room by room. The team: the schedule.
+ * A festival's Rooms and schedule (build 2b, boards 2, 3, 4, 10, 11, 12, and 19). While it's a draft, step 2 of
+ * the setup steps: the rooms, saving as you go. Once live, the management page: where the schedule stands with
+ * "Post the schedule", then tabs for the group times, the rooms, and each room's list. The team (not hosts) sees
+ * the schedule room by room.
  */
 export default async function RoomsPage({ params, searchParams }: PageProps<"/dashboard/events/[eventId]/rooms">) {
   const { eventId } = await params;
@@ -36,7 +43,7 @@ export default async function RoomsPage({ params, searchParams }: PageProps<"/da
     supabase
       .from("events")
       .select(
-        "id, slug, name, status, event_type, timezone, starts_on, ends_on, window_start, performance_order_published, room_schedule_start, room_interval_minutes, room_passing_minutes",
+        "id, slug, name, status, event_type, timezone, starts_on, ends_on, performance_order_published, classifications, band_registration_open, band_registration_deadline, band_registration_opens_on",
       )
       .eq("id", eventId)
       .maybeSingle(),
@@ -46,204 +53,194 @@ export default async function RoomsPage({ params, searchParams }: PageProps<"/da
   if (!event) missing();
   if (!hasRooms(event.event_type) || !onTeam) redirect(`/dashboard/events/${eventId}`);
 
-  const [{ data: roomData }, { data: slotData }, { data: orderData }, { data: bandData }] = await Promise.all([
-    supabase.from("rooms").select("id, name, note, path_order, minutes").eq("event_id", eventId).order("created_at"),
-    supabase.from("room_slots").select("room_id, band_id, starts_at, ends_at").eq("event_id", eventId).order("starts_at"),
-    access.isHost
-      ? supabase.from("group_order").select("band_id, position, skipped_room_ids, extra_minutes_before").eq("event_id", eventId).order("position")
-      : Promise.resolve({ data: [] }),
-    // Hosts read every registration; the team gets names only.
-    access.isHost
-      ? supabase.from("bands").select("id, band_name, school_name, classification, contest_day_conflicts").eq("event_id", eventId).order("created_at")
-      : supabase.rpc("event_bands", { ev: eventId }),
-  ]);
-  const rooms = (roomData ?? []) as Room[];
-  const bands = (bandData ?? []) as { id: string; band_name: string; school_name: string; classification: string; contest_day_conflicts?: string | null }[];
-  const bandById = new Map(bands.map((b) => [b.id, b]));
-  const slots: ScheduleSlot[] = (slotData ?? []).flatMap((s) => {
-    const b = bandById.get(s.band_id);
-    return b ? [{ ...s, band_name: b.band_name, school_name: b.school_name, classification: b.classification }] : [];
-  });
-
   const tz = event.timezone;
-  const days = eachDate(event.starts_on, event.ends_on);
-  const start = event.room_schedule_start ?? event.window_start;
-  const today = utcToZonedDate(new Date().toISOString(), tz);
-  const isEventDay = today >= event.starts_on && today <= event.ends_on;
+  const days = eachDate(event.starts_on, event.ends_on ?? event.starts_on);
+  const base = `/dashboard/events/${eventId}/rooms`;
+
+  if (!access.isHost) return <TeamView eventId={eventId} name={event.name} tz={tz} live={days.includes(utcToZonedDate(new Date().toISOString(), tz))} />;
+
+  const [snap, { data: bandData }, { data: slotData }] = await Promise.all([
+    loadSchedule(eventId),
+    supabase
+      .from("bands")
+      .select("id, band_name, school_name, classification, available_day, earliest_start, latest_finish, scratched_at, created_at")
+      .eq("event_id", eventId)
+      .order("created_at"),
+    supabase.from("room_slots").select("room_id, band_id, starts_at, ends_at").eq("event_id", eventId).order("starts_at"),
+  ]);
+  if (!snap || !bandData) missing();
+  type Band = {
+    id: string;
+    band_name: string;
+    school_name: string;
+    classification: string | null;
+    available_day: string | null;
+    earliest_start: string | null;
+    latest_finish: string | null;
+    scratched_at: string | null;
+  };
+  const bands = bandData as Band[];
+  const groupNames = Object.fromEntries(bands.map((b) => [b.id, b.band_name || b.school_name || "A group"]));
+
+  // Step 2 of setup: the rooms only (no groups can register before it's published).
+  if (event.status !== "published") {
+    return (
+      <StepPage eventId={eventId} title="Rooms and schedule" intro={INTRO} area="schedule">
+        <RoomsEditor eventId={eventId} initial={snap} groupNames={groupNames} days={days} tz={tz} next={{ href: `/dashboard/events/${eventId}/bands`, label: "Registration" }} />
+      </StepPage>
+    );
+  }
+
   const groups: ScheduleGroup[] = bands.map((b) => ({
     id: b.id,
-    name: b.band_name,
+    name: groupNames[b.id],
     school: b.school_name,
     classification: b.classification,
-    conflicts: b.contest_day_conflicts ?? null,
+    request: { day: b.available_day, earliest: b.earliest_start?.slice(0, 5) ?? null, latest: b.latest_finish?.slice(0, 5) ?? null },
+    withdrawn: Boolean(b.scratched_at),
   }));
-  // Step 1 is done once at least one room is on the path.
-  const roomsDone = rooms.some((r) => r.path_order !== null);
-  const order: GroupPlan[] = ((orderData ?? []) as { band_id: string; skipped_room_ids: string[]; extra_minutes_before: number }[]).map((o) => ({
-    bandId: o.band_id,
-    skipped: o.skipped_room_ids,
-    extraMinutes: o.extra_minutes_before,
-  }));
+  const active = bands.filter((b) => !b.scratched_at);
+  const slots = (slotData ?? []) as { room_id: string; band_id: string; starts_at: string; ends_at: string }[];
+  const timed = new Set(slots.map((s) => s.band_id));
+  const withTimes = active.filter((b) => timed.has(b.id)).length;
+  const pathCount = snap.rooms.filter((r) => r.path_order != null).length;
+  const current = tab === "rooms" || tab === "lists" || tab === "times" ? tab : pathCount === 0 ? "rooms" : "times";
+  const regOpen = registrationIsOpen(event) || (event.band_registration_open && opensLater(event));
+  const deadline = event.band_registration_deadline ? formatDate(event.band_registration_deadline, { year: undefined }) : null;
+  const send = event.performance_order_published ? await latestSendStatus(supabase, eventId, new Map(Object.entries(groupNames))) : null;
 
-  // Hosts: a tab per part, opening on what's still to do. ?tab= picks one.
-  const base = `/dashboard/events/${eventId}/rooms`;
-  const current =
-    tab === "rooms" || tab === "order" || tab === "schedule" ? tab : !roomsDone ? "rooms" : slots.length === 0 ? "order" : "schedule";
-  const board = (
-    <section aria-labelledby="board-heading">
-      <h2 id="board-heading" className={access.isHost ? "text-lg font-semibold" : "text-xl font-semibold"}>
-        {access.isHost ? "Saved schedule, room by room" : "Schedule, room by room"}
-      </h2>
-      {rooms.length === 0 ? (
-        <Card className="mt-4">
-          <p className="text-muted">{access.isHost ? "No rooms yet. Add them in the Rooms tab." : "The organizer hasn't set up the rooms yet."}</p>
-        </Card>
-      ) : (
-        <div className="mt-4">
-          <RoomSchedule rooms={rooms} slots={slots} timezone={tz} live={isEventDay} />
-        </div>
-      )}
-    </section>
-  );
+  const statusLine = event.performance_order_published
+    ? "Directors and the festival page have the times. Changes here save with a button, and you choose who's emailed."
+    : `${regOpen ? `Registration is open${deadline ? ` through ${deadline}` : ""}. You can post now; groups that register later get times when you add them.` : `Registration ${deadline ? `closed ${deadline}` : "is closed"}.`} Posting emails each director their group's times.`;
 
   return (
     <div data-required-marks>
-      <Link href={`/dashboard/events/${eventId}`} className="text-sm text-muted hover:text-foreground">
-        ← Back to {event.name}
+      <Link href={`/dashboard/events/${eventId}`} className="inline-flex min-h-11 items-center text-sm text-muted hover:text-foreground">
+        ← {event.name}
       </Link>
-      <h1 className="mt-3 text-3xl font-medium tracking-tight sm:text-4xl">
-        {access.isHost ? "Rooms & Schedule Setup" : "Room schedule"}
-      </h1>
+      <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">Rooms and schedule</h1>
       <SavedBy eventId={eventId} area="schedule" className="mt-2" />
-      <p className="mt-2 text-sm text-muted">All times {zoneName(tz)}.</p>
-      {isEventDay && event.performance_order_published && <AutoRefresh status className="mt-1" />}
+      <p className="mt-1 text-sm text-muted">All times in {zoneName(tz)}</p>
 
-      {slots.length > 0 && (
-        <Card className="mt-6 flex flex-wrap items-center justify-between gap-3 p-4">
-          <p className="text-sm leading-6 text-muted">
-            On the day, use <span className="font-medium text-foreground">Event day</span> to check groups in, see who&apos;s
-            running over{access.isHost ? " and push the schedule back" : ""}.
-          </p>
-          <Link
-            href={`/dashboard/events/${eventId}/event-day`}
-            className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-medium text-brand-foreground hover:bg-brand-hover"
-          >
-            Open event day
-          </Link>
-        </Card>
-      )}
-
-      {access.isHost && (
-        <div className="mt-6 flex flex-col gap-3">
-          <PublishBar>
-            <PublishLine
-              label="Schedule"
-              on={event.performance_order_published}
-              status={
-                event.performance_order_published
-                  ? "Posted: directors and the public can see it"
-                  : event.status !== "published"
-                    ? "Publish the event from its main page first"
-                    : slots.length === 0
-                      ? "Not posted. Save the group order first"
-                      : "Not posted"
-              }
-            >
-              {event.status === "published" && (event.performance_order_published || slots.length > 0) && (
-                <ActionButton
-                  action={setRoomSchedulePosted.bind(null, eventId, !event.performance_order_published)}
-                  variant={event.performance_order_published ? "secondary" : "primary"}
-                  pendingText={event.performance_order_published ? "Hiding…" : "Posting…"}
-                  confirmMessage={
-                    event.performance_order_published
-                      ? "Hide the schedule? Directors and the public won't see times until you post it again."
-                      : "Post the schedule? It goes on the public page and every director is emailed their group's times."
-                  }
-                >
-                  {event.performance_order_published ? "Hide" : "Post the schedule"}
-                </ActionButton>
-              )}
-            </PublishLine>
-          </PublishBar>
-        </div>
-      )}
-
-      {access.isHost && (
-        <div className="mt-10">
-          <SetupTabs
-            label="Rooms and schedule"
-            tabs={[
-              {
-                key: "rooms",
-                label: "Rooms",
-                status: roomsDone ? `${rooms.length} ${rooms.length === 1 ? "room" : "rooms"}` : "Needs to be done",
-                mark: roomsDone ? "done" : "todo",
-                href: `${base}?tab=rooms`,
-                active: current === "rooms",
-              },
-              {
-                key: "order",
-                label: "Group order & times",
-                status: slots.length > 0 ? "Saved" : !roomsDone ? "Set up rooms first" : groups.length === 0 ? "Waiting for groups" : "Needs to be done",
-                mark: slots.length > 0 ? "done" : "todo",
-                href: `${base}?tab=order`,
-                active: current === "order",
-              },
-              {
-                key: "schedule",
-                label: "Room by room",
-                status: event.performance_order_published ? "Posted" : slots.length > 0 ? "Not posted" : "Nothing saved yet",
-                href: `${base}?tab=schedule`,
-                active: current === "schedule",
-              },
-            ]}
-          />
-          <div className="mt-6">
-            {current === "rooms" && (
-              <section aria-labelledby="rooms-heading">
-                <h2 id="rooms-heading" className="text-lg font-semibold">
-                  Rooms
-                </h2>
-                <p className="mt-1 mb-4 text-sm text-muted">
-                  The rooms groups visit, in the order they visit them. Everything is at the event&apos;s address; use the note for
-                  a room number or directions inside the building.
-                </p>
-                <RoomsEditor key={rooms.map((r) => `${r.id}:${r.path_order}:${r.minutes}`).join(",")} rooms={rooms} save={saveRooms.bind(null, eventId)} />
-              </section>
+      <Card className="mt-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="flex flex-wrap items-center gap-2 font-semibold">
+              {event.performance_order_published ? <Badge tone="success">Posted</Badge> : <Badge>Not posted</Badge>}
+              <span>
+                {plural(active.length, "group", "groups")} · {withTimes} {withTimes === 1 ? "has" : "have"} times
+              </span>
+            </p>
+            <p className="mt-1 text-sm text-muted">{statusLine}</p>
+            {send && (
+              <p className="mt-2 text-sm" role="status">
+                {send.going ? (
+                  <>
+                    <AutoRefresh seconds={5} />
+                    Sending… {send.sent} of {plural(send.groups, "director", "directors")} so far
+                  </>
+                ) : (
+                  <>
+                    <span className="font-medium">
+                      {send.sent === send.groups ? (
+                        <span aria-hidden className="text-success">
+                          ✓{" "}
+                        </span>
+                      ) : null}
+                      {send.kind === "changed" ? "New times sent" : "Sent"} to {send.sent} of {plural(send.groups, "director", "directors")}
+                    </span>
+                    {send.failed.length > 0 && <span className="text-danger"> · Couldn&apos;t send to {send.failed.join(", ")}</span>}
+                  </>
+                )}
+              </p>
             )}
-            {current === "order" && (
-              <section aria-labelledby="order-heading">
-                <h2 id="order-heading" className="text-lg font-semibold">
-                  Group order & times
-                </h2>
-                <p className="mt-1 mb-4 text-sm text-muted">
-                  Every group follows the path in order. Groups start one gap apart, so a room is never double-booked.
-                  Directors&apos; scheduling conflicts are marked with a warning sign. Post it from the outlined bar: each director is emailed
-                  their group&apos;s times.
-                </p>
-                <ScheduleEditor
-                  key={`${order.map((o) => `${o.bandId}:${o.extraMinutes}`).join(",")}|${start}|${bands.length}|${rooms.length}`}
-                  groups={groups}
-                  rooms={rooms}
-                  initialOrder={order}
-                  initialDate={utcToZonedDate(start, tz)}
-                  initialTime={utcToZonedTime(start, tz)}
-                  initialInterval={event.room_interval_minutes}
-                  initialPassing={event.room_passing_minutes}
-                  days={days}
-                  timezone={tz}
-                  zoneLabel={zoneName(tz)}
-                  posted={event.performance_order_published}
-                  save={saveRoomSchedule.bind(null, eventId)}
-                />
-              </section>
+            {send && !send.going && (send.failed.length > 0 || send.stuck) && (
+              <div className="mt-2">
+                <SendTheRest eventId={eventId} batch={send.batch} label="Send the rest again" />
+              </div>
             )}
-            {current === "schedule" && board}
           </div>
+          {!event.performance_order_published && <PostButton eventId={eventId} rooms={pathCount} />}
+          {event.performance_order_published && (
+            <a href={`/e/${event.slug}`} target="_blank" className="inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand">
+              See the festival page<span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          )}
         </div>
-      )}
+      </Card>
 
-      {!access.isHost && <div className="mt-10">{board}</div>}
+      <div className="mt-8">
+        <SetupTabs
+          label="Rooms and schedule"
+          tabs={[
+            { key: "times", label: "Group times", status: plural(active.length, "group", "groups"), href: `${base}?tab=times`, active: current === "times" },
+            { key: "rooms", label: "Rooms", status: plural(pathCount, "room", "rooms"), href: `${base}?tab=rooms`, active: current === "rooms" },
+            { key: "lists", label: "Each room's list", status: "By room", href: `${base}?tab=lists`, active: current === "lists" },
+          ]}
+        />
+      </div>
+      <div className="mt-6">
+        {current === "rooms" && <RoomsEditor eventId={eventId} initial={snap} groupNames={groupNames} days={days} tz={tz} />}
+        {current === "times" && (
+          <ScheduleEditor eventId={eventId} initial={snap} groups={groups} days={days} tz={tz} classifications={(event.classifications as string[] | null) ?? []} />
+        )}
+        {current === "lists" && <Lists rooms={snap.rooms} slots={slots} bands={bands} tz={tz} live={days.includes(utcToZonedDate(new Date().toISOString(), tz))} />}
+      </div>
+    </div>
+  );
+}
+
+function Lists({
+  rooms,
+  slots,
+  bands,
+  tz,
+  live,
+}: {
+  rooms: Room[];
+  slots: { room_id: string; band_id: string; starts_at: string; ends_at: string }[];
+  bands: { id: string; band_name: string; school_name: string; classification: string | null }[];
+  tz: string;
+  live: boolean;
+}) {
+  const byId = new Map(bands.map((b) => [b.id, b]));
+  const list: ScheduleSlot[] = slots.flatMap((s) => {
+    const b = byId.get(s.band_id);
+    return b ? [{ ...s, band_name: b.band_name, school_name: b.school_name, classification: b.classification ?? "" }] : [];
+  });
+  if (!rooms.length) return <Card>No rooms yet. Add them in the Rooms tab.</Card>;
+  return <RoomSchedule rooms={rooms} slots={list} timezone={tz} live={live} />;
+}
+
+/** The team (Volunteer Leads and Coordinators): the schedule, room by room, read only. */
+async function TeamView({ eventId, name, tz, live }: { eventId: string; name: string; tz: string; live: boolean }) {
+  const supabase = await createClient();
+  const [{ data: rooms }, { data: slots }, { data: bands }] = await Promise.all([
+    supabase.from("rooms").select("id, name, note, path_order, minutes").eq("event_id", eventId),
+    supabase.from("room_slots").select("room_id, band_id, starts_at, ends_at").eq("event_id", eventId).order("starts_at"),
+    supabase.rpc("event_bands", { ev: eventId }),
+  ]);
+  return (
+    <div>
+      <Link href={`/dashboard/events/${eventId}`} className="inline-flex min-h-11 items-center text-sm text-muted hover:text-foreground">
+        ← {name}
+      </Link>
+      <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">Rooms and schedule</h1>
+      <p className="mt-1 text-sm text-muted">All times in {zoneName(tz)}</p>
+      {live && <AutoRefresh status className="mt-1" />}
+      <div className="mt-6">
+        {(rooms ?? []).length ? (
+          <Lists
+            rooms={(rooms ?? []) as Room[]}
+            slots={(slots ?? []) as { room_id: string; band_id: string; starts_at: string; ends_at: string }[]}
+            bands={(bands ?? []) as { id: string; band_name: string; school_name: string; classification: string | null }[]}
+            tz={tz}
+            live={live}
+          />
+        ) : (
+          <Card>The organizer hasn&apos;t set up the rooms yet.</Card>
+        )}
+      </div>
     </div>
   );
 }

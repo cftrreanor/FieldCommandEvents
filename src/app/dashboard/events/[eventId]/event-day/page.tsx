@@ -9,14 +9,16 @@ import { groupDay, groupDaySummary, type GroupCheckin, type GroupDay, type Group
 import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
 import { formatTime, utcToZonedDate, zoneName } from "@/lib/time";
+import { weekday } from "@/lib/rooms";
 import { DoneButton, TapButton } from "../contest-day/controls";
-import { pushRoomScheduleBack } from "../rooms/actions";
-import { RoomPushBackForm } from "../rooms/push-back-form";
+import { PushBackButton } from "../rooms/push-back-form";
 import { tapGroup } from "./actions";
 import { EventBannerSlot } from "@/components/event-banner-slot";
 import { folderTab, folderTabNote, folderTabRow } from "@/components/folder-tabs";
 
 export const metadata: Metadata = { title: "Event day" };
+// Pushing the schedule back can email directors from the page's own request: give it time to finish.
+export const maxDuration = 300;
 
 type Room = { id: string; name: string; note: string | null; path_order: number };
 type Group = { id: string; band_name: string; school_name: string };
@@ -80,7 +82,10 @@ export default async function EventDayPage({ params, searchParams }: PageProps<"
   const pushGroups = (orderData ?? []).flatMap((o, i) => {
     const g = groups.get(o.band_id);
     const start = firstStart.get(o.band_id);
-    return g && start ? [{ id: o.band_id, label: `${i + 1}. ${g.band_name} · ${time(start)}`, startsAt: start }] : [];
+    const day = start ? utcToZonedDate(start, tz) : "";
+    return g && start
+      ? [{ id: o.band_id, label: `${i + 1}. ${g.band_name} · ${time(start)}`, name: g.band_name, day, dayLabel: weekday(day), startsAt: start, startLabel: time(start) }]
+      : [];
   });
   const pushDefault = (pushGroups.find((g) => g.startsAt > now.toISOString()) ?? pushGroups.at(-1))?.id ?? "";
 
@@ -111,7 +116,7 @@ export default async function EventDayPage({ params, searchParams }: PageProps<"
               <>
                 No groups are scheduled yet. Set up the rooms and the order on{" "}
                 <Link href={`/dashboard/events/${eventId}/rooms`} className="font-medium text-brand underline-offset-4 hover:underline">
-                  Rooms &amp; schedule
+                  Rooms and schedule
                 </Link>
                 .
               </>
@@ -135,16 +140,18 @@ export default async function EventDayPage({ params, searchParams }: PageProps<"
                   Moves every room time for the group you pick and every group after them. Groups before them stay as they
                   are. The minutes are added to that group&apos;s break on{" "}
                   <Link href={`/dashboard/events/${eventId}/rooms`} className="font-medium text-brand underline-offset-4 hover:underline">
-                    Rooms &amp; schedule
+                    Rooms and schedule
                   </Link>
                   , so you can undo it there.
                 </p>
                 <div className="mt-3">
-                  <RoomPushBackForm
-                    action={pushRoomScheduleBack.bind(null, eventId)}
-                    groups={pushGroups.map(({ id, label }) => ({ id, label }))}
+                  <PushBackButton
+                    eventId={eventId}
+                    groups={pushGroups}
                     defaultGroup={pushDefault}
                     posted={event.performance_order_published}
+                    version={null}
+                    multiDay={event.starts_on !== event.ends_on}
                   />
                 </div>
               </details>

@@ -2926,6 +2926,76 @@ do $$ begin
 end $$;
 reset role;
 delete from public.events where id = '10000000-0000-0000-0000-0000000000d4';
+-- Schedule emails (20270130000000): a send list from each group's own addresses, hosts only, once posted.
+update public.events set status = 'published', performance_order_published = false where id = '10000000-0000-0000-0000-0000000000d1';
+set role authenticated;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
+do $$
+declare
+  ok boolean := false;
+  b  uuid;
+begin
+  begin
+    perform public.queue_room_schedule_emails('10000000-0000-0000-0000-0000000000d1', 'posted',
+      array['40000000-0000-0000-0000-0000000000d1', '40000000-0000-0000-0000-0000000000d2']::uuid[]);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'nobody is emailed their times before the schedule is posted';
+end $$;
+reset role;
+update public.events set performance_order_published = true where id = '10000000-0000-0000-0000-0000000000d1';
+set role authenticated;
+do $$
+declare
+  b uuid;
+begin
+  b := public.queue_room_schedule_emails('10000000-0000-0000-0000-0000000000d1', 'changed',
+    array['40000000-0000-0000-0000-0000000000d1', '40000000-0000-0000-0000-0000000000d2', '40000000-0000-0000-0000-0000000000a1']::uuid[],
+    '{"40000000-0000-0000-0000-0000000000d2": "Main Stage 9:10 AM (was 9:00 AM)"}');
+  assert b is not null, 'a host queues the emails';
+  assert (select count(*) from public.room_schedule_emails where batch = b) = 3,
+         'each group''s head director and contact, once each, and only groups at this festival';
+  assert (select greet_name from public.room_schedule_emails where batch = b and to_email = 'director@example.com') = 'Dee',
+         'greeting the head director by first name';
+  assert (select greet_name from public.room_schedule_emails where batch = b and to_email = 'w@example.com') is null,
+         'and nobody by a name that isn''t theirs';
+  assert (select what_changed from public.room_schedule_emails where batch = b and to_email = 'w@example.com') = 'Main Stage 9:10 AM (was 9:00 AM)',
+         'with what changed for that group';
+  assert public.retry_room_schedule_emails('10000000-0000-0000-0000-0000000000d1', b) = 0, 'nothing to send again yet';
+  begin
+    insert into public.room_schedule_emails (event_id, batch, kind, band_id, to_email)
+    values ('10000000-0000-0000-0000-0000000000d1', b, 'posted', '40000000-0000-0000-0000-0000000000d1', 'anyone@example.com');
+    raise exception 'FAIL: a host wrote the send list directly';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000003","email":"lead@example.com"}';
+do $$ begin
+  assert (select count(*) from public.room_schedule_emails) = 0, 'a lead doesn''t read the send list';
+  begin
+    perform public.queue_room_schedule_emails('10000000-0000-0000-0000-0000000000d1', 'posted', array['40000000-0000-0000-0000-0000000000d1']::uuid[]);
+    raise exception 'FAIL: a lead emailed directors';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000005","email":"band@example.com"}';
+do $$ begin
+  assert (select count(*) from public.room_schedule_emails) = 0, 'a director doesn''t read the send list';
+  begin
+    perform public.retry_room_schedule_emails('10000000-0000-0000-0000-0000000000d1', gen_random_uuid());
+    raise exception 'FAIL: a director re-sent schedule emails';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set role anon;
+do $$ begin
+  begin
+    perform 1 from public.room_schedule_emails;
+    raise exception 'FAIL: the public read the send list';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
 reset role;
 delete from public.events where id = '10000000-0000-0000-0000-0000000000d1';
 
