@@ -27,6 +27,8 @@ import { reopenBandRegistration, setBandRegistrationOpen } from "../../../band-a
 import { ReopenRegistration } from "../bands/reopen-registration";
 import { DemoStart } from "@/components/demo-switcher";
 import { personasFor } from "@/lib/demo";
+import { isSponsorKind } from "@/lib/sponsors";
+import { sponsorsEnabled } from "@/lib/sponsors-data";
 import { requireUser } from "@/lib/auth";
 import { deleteFile, prepareUpload, saveFile } from "../../../file-actions";
 import { FilesManager } from "./files-manager";
@@ -252,6 +254,8 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const repliesUnavailable = isSchemaError(replyError);
   const bandsHere = hasBands(event.event_type);
   const groupsHere = hasEnsembles(event.event_type);
+  // Demo mode adds sample sponsors only where the Sponsors add-on is on.
+  const sponsorsHere = section === "more" && isSponsorKind(event.event_type) && (await sponsorsEnabled(event.organization_id));
   const words = groupWords(event.event_type);
   const fileRows = (fileData ?? []) as (EventFile & { uploaded_by: string | null; uploaded_at: string })[];
   const uploaded = await uploadedLines(fileRows, event.timezone);
@@ -707,7 +711,8 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                           The first time, the event fills with sample data for its kind: sign-ups and shifts with a dozen volunteers
                           {bandsHere ? ", six bands" : groupsHere ? ", five groups and three rooms" : ""}
                           {event.event_type === "school_visit" ? ", eight parent registrations" : ""}
-                          {event.event_type === "fair" ? ", eight booths across four zones" : ""}. Use a practice event: the demo people
+                          {event.event_type === "fair" ? ", eight booths across four zones" : ""}
+                          {sponsorsHere ? ", and nine made-up sponsors with logos at four levels (unless it has sponsors already)" : ""}. Use a practice event: the demo people
                           really are on it. Sample people never get emails, and <strong className="text-foreground">Remove demo people</strong>{" "}
                           takes all of it back off.
                         </p>

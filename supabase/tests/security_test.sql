@@ -10131,6 +10131,110 @@ begin
   assert ok, 'Undo after the daily cleanup says it was removed for good';
 end $$;
 reset role;
+-- Demo mode's sample sponsors: server only; only on band contests, festivals, and fairs with the add-on on; once,
+-- never beside the event's own sponsors; and gone again (levels too) when the demo ends.
+insert into public.events (id, organization_id, name, slug, status, event_type, starts_on, ends_on, window_start, window_end, venue_address, timezone)
+values
+  ('5b000000-0000-0000-0000-0000000000d1', '5b000000-0000-0000-0000-000000000001', 'Demo Classic', 'sp-demo-band', 'draft', 'band_contest',
+   current_date + 30, current_date + 30, now() + interval '30 days', now() + interval '30 days 8 hours', '1 Band Rd', 'America/Chicago'),
+  ('5b000000-0000-0000-0000-0000000000d2', '5b000000-0000-0000-0000-000000000001', 'Demo Fair', 'sp-demo-fair', 'draft', 'fair',
+   current_date + 30, current_date + 30, now() + interval '30 days', now() + interval '30 days 8 hours', '1 Band Rd', 'America/Chicago'),
+  ('5b000000-0000-0000-0000-0000000000d3', '5b000000-0000-0000-0000-000000000001', 'Demo Car Wash', 'sp-demo-vol', 'draft', 'volunteer',
+   current_date + 30, current_date + 30, now() + interval '30 days', now() + interval '30 days 8 hours', '1 Band Rd', 'America/Chicago');
+insert into public.demo_events (owner_id, event_id)
+select '0000005b-0000-0000-0000-000000000004', id from public.events where id::text like '5b000000-0000-0000-0000-0000000000d_';
+-- The fair already has its own sponsor (and a level of its own).
+insert into public.sponsor_levels (id, event_id, name, position) values ('5b000000-0000-0000-0000-0000000001d2', '5b000000-0000-0000-0000-0000000000d2', 'Booth hosts', 1);
+insert into public.sponsors (event_id, level_id, name) values ('5b000000-0000-0000-0000-0000000000d2', '5b000000-0000-0000-0000-0000000001d2', 'Fair Own Sponsor');
+update public.organizations set sponsors_on = true where id = '5b000000-0000-0000-0000-000000000001';
+
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000005b-0000-0000-0000-000000000004","email":"spadmin@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.demo_seed_sponsors('0000005b-0000-0000-0000-000000000004', '5b000000-0000-0000-0000-0000000000d1', '["Gold"]', '[{"name":"Fake"}]');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'even a platform admin''s browser can''t add sample sponsors';
+end $$;
+reset role;
+
+set role service_role;
+do $$
+declare
+  owner constant uuid := '0000005b-0000-0000-0000-000000000004';
+  band  constant uuid := '5b000000-0000-0000-0000-0000000000d1';
+  fair  constant uuid := '5b000000-0000-0000-0000-0000000000d2';
+  lv    jsonb := '["Gold", "Silver", "Bronze", "Friends", "Fifth"]';
+  sp    jsonb := '[{"name": "Harbor Lane Credit Union", "level": 0, "presented_by": true, "website": "https://example.com/harbor-lane",
+                    "logo_path": "5b000000-0000-0000-0000-000000000001/5b000000-0000-0000-0000-0000000000d1/0d000000-0000-0000-0000-000000000001/master.png",
+                    "logo_width": 900, "logo_height": 300},
+                   {"name": "Bluebird Bakery", "level": 1},
+                   {"name": "Summit Music Supply", "level": 2, "presented_by": true},
+                   {"name": "The Okafor Family", "level": 3}]';
+  ok boolean := false;
+begin
+  begin
+    perform public.demo_seed_sponsors(owner, '5b000000-0000-0000-0000-0000000000e1', lv, sp);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'no sample sponsors without demo mode on';
+
+  assert not public.demo_seed_sponsors(owner, '5b000000-0000-0000-0000-0000000000d3', lv, sp), 'a volunteer event gets none';
+  assert not public.demo_seed_sponsors(owner, fair, lv, sp), 'an event with its own sponsors gets none';
+  assert (select count(*) from public.sponsors where event_id = fair) = 1, 'the fair keeps only its own';
+
+  assert public.demo_seed_sponsors(owner, band, lv, sp), 'a band contest with the add-on on gets them';
+  assert not public.demo_seed_sponsors(owner, band, lv, sp), 'once';
+  assert (select count(*) from public.sponsor_levels where event_id = band) = 4, 'at most four levels';
+  assert (select count(*) from public.sponsors where event_id = band) = 4, 'every sample sponsor';
+  assert (select count(*) from public.sponsors where event_id = band and presented_by) = 1, 'one Presented by';
+  assert (select presented_by and logo_width = 900 and level_id = (select id from public.sponsor_levels where event_id = band and name = 'Gold')
+            from public.sponsors where event_id = band and name = 'Harbor Lane Credit Union'), 'in its level, with its logo';
+  assert (select count(*) from public.demo_samples where event_id = band and kind in ('sponsor', 'sponsor_level')) = 8, 'all on the list';
+end $$;
+reset role;
+
+-- The add-on off: nothing is added.
+delete from public.sponsors where event_id = '5b000000-0000-0000-0000-0000000000d2';
+update public.organizations set sponsors_on = false where id = '5b000000-0000-0000-0000-000000000001';
+set role service_role;
+do $$ begin
+  assert not public.demo_seed_sponsors('0000005b-0000-0000-0000-000000000004', '5b000000-0000-0000-0000-0000000000d2', '["Gold"]', '[{"name": "Bluebird Bakery", "level": 0}]'),
+         'none with the add-on off';
+end $$;
+reset role;
+update public.organizations set sponsors_on = true where id = '5b000000-0000-0000-0000-000000000001';
+set role service_role;
+do $$
+declare
+  owner constant uuid := '0000005b-0000-0000-0000-000000000004';
+  band  constant uuid := '5b000000-0000-0000-0000-0000000000d1';
+  fair  constant uuid := '5b000000-0000-0000-0000-0000000000d2';
+begin
+  -- With levels of its own (and no sponsors), the samples go into them; no new levels.
+  assert public.demo_seed_sponsors(owner, fair, '["Gold", "Silver"]', '[{"name": "Bluebird Bakery", "level": 0}, {"name": "Northgate Hardware", "level": 1}]'),
+         'a fair whose sponsors are gone gets samples';
+  assert (select count(*) from public.sponsor_levels where event_id = fair) = 1, 'in its own level';
+  assert (select count(*) from public.sponsors where event_id = fair and level_id = '5b000000-0000-0000-0000-0000000001d2') = 2, 'both of them';
+
+  -- Something the admin adds during the demo, in a sample level, stays when the demo ends.
+  insert into public.sponsors (event_id, level_id, name)
+  select band, id, 'Added During Demo' from public.sponsor_levels where event_id = band and name = 'Silver';
+  perform public.demo_leave(owner, band);
+  perform public.demo_leave(owner, fair);
+  assert (select count(*) from public.sponsors where event_id = band) = 1, 'sample sponsors are gone';
+  assert (select level_id is null from public.sponsors where event_id = band), 'what the admin added stays, with no level';
+  assert not exists (select 1 from public.sponsor_levels where event_id = band), 'sample levels are gone';
+  assert not exists (select 1 from public.sponsors where event_id = fair), 'the fair''s samples are gone';
+  assert exists (select 1 from public.sponsor_levels where event_id = fair), 'its own level stays';
+  assert not exists (select 1 from public.demo_samples where event_id in (band, fair)), 'nothing left on the list';
+end $$;
+reset role;
+delete from public.events where id::text like '5b000000-0000-0000-0000-0000000000d_';
+
 -- Deleting an event deletes its sponsors (their files become orphans).
 delete from public.events where id = '5b000000-0000-0000-0000-0000000000e1';
 do $$ begin

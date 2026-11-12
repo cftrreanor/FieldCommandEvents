@@ -40,6 +40,11 @@ function resolve(from, spec) {
   return null;
 }
 
+/**
+ * Code that only writes sponsors and never shows them: demo mode's sample sponsors (src/lib/demo-sponsors.ts),
+ * reached from the demo bar's server action on every page. Not followed.
+ */
+const WRITE_ONLY = [/src\/lib\/demo-sponsors\.ts$/];
 const isSponsor = (file) => SPONSOR.some((re) => re.test(file));
 /** Where sponsors' names and logos come from: the loaders, the actions, and the public page's parts. */
 const isSponsorData = (file) => isSponsor(file) && !/src\/lib\/sponsors\.ts$/.test(file);
@@ -49,7 +54,7 @@ function reachesSponsor(file, match = isSponsor, seen = new Set(), chain = []) {
   seen.add(file);
   for (const spec of importsOf(file)) {
     const next = resolve(file, spec);
-    if (!next) continue;
+    if (!next || WRITE_ONLY.some((re) => re.test(next))) continue;
     const path = [...chain, relative(ROOT, next)];
     if (match(next)) return path;
     const deeper = reachesSponsor(next, match, seen, path);
