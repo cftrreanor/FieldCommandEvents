@@ -3826,8 +3826,16 @@ begin
   assert (select count(*) from public.bands where event_id = '10000000-0000-0000-0000-0000000000d1') = 6, 'a band contest gets bands';
   assert (select count(*) from public.bands where event_id = '10000000-0000-0000-0000-0000000000d2') = 5, 'a group event gets groups';
   assert (select count(*) from public.rooms where event_id = '10000000-0000-0000-0000-0000000000d2') = 3, 'and rooms';
-  assert (select count(*) from public.parent_registrations where event_id = '10000000-0000-0000-0000-0000000000d3') = 8,
-         'a school visit gets parents';
+  assert (select count(*) from public.parent_registrations where event_id = '10000000-0000-0000-0000-0000000000d3') = 400,
+         'a school visit gets 400 sample families';
+  assert (select count(distinct parent_name) from public.parent_registrations where event_id = '10000000-0000-0000-0000-0000000000d3') = 400,
+         'each with its own name';
+  assert exists (select 1 from public.parent_registrations where event_id = '10000000-0000-0000-0000-0000000000d3'
+                   and parent_name = 'Cleave Treanor' and email like '%@demo.fieldcommandevents.com'), 'the owner''s name is on the list, with a demo address';
+  assert (select count(*) from public.parent_registrations where event_id = '10000000-0000-0000-0000-0000000000d3'
+            and jsonb_array_length(children) > 1) between 100 and 200, 'some with more than one child';
+  assert (select count(*) from public.parent_registrations where event_id = '10000000-0000-0000-0000-0000000000d3'
+            and jsonb_array_length(other_adults) > 0) between 60 and 120, 'some bringing another adult';
   assert (select count(*) from public.fair_booths where event_id = '10000000-0000-0000-0000-0000000000d4') = 8, 'a fair gets booths';
   assert (select count(*) from public.fair_booths where event_id = '10000000-0000-0000-0000-0000000000d4' and host_name = 'Brightwater Wireless') = 1,
          'sample booths name made-up businesses only';
