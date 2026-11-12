@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { useTabInView } from "@/components/use-tab-in-view";
 import { folderTab, folderTabNote, folderTabRow } from "@/components/folder-tabs";
 
@@ -38,16 +38,25 @@ export function UnsavedChangesProvider({
   const setDirty = useCallback((step: StationStep, value: boolean) => {
     setDirtyState((d) => (d[step] === value ? d : { ...d, [step]: value }));
   }, []);
-  const needs = { details: needsDetails, shifts: needsShifts };
-  return <Progress.Provider value={{ dirty, setDirty, needs, leaving, setLeaving }}>{children}</Progress.Provider>;
+  const value = useMemo(
+    () => ({ dirty, setDirty, needs: { details: needsDetails, shifts: needsShifts }, leaving, setLeaving }),
+    [dirty, setDirty, needsDetails, needsShifts, leaving],
+  );
+  return <Progress.Provider value={value}>{children}</Progress.Provider>;
 }
 
 /** For a step's form: report whether it has answers that aren't saved. Outside a sign-up's steps, does nothing. */
 export function useStepEdits(step: StationStep | undefined) {
-  const progress = useContext(Progress);
-  return useCallback((value: boolean) => {
-    if (step) progress?.setDirty(step, value);
-  }, [progress, step]);
+  // Only the (stable) setter, not the whole context: the context changes as soon as a step turns dirty, and a
+  // new function here would re-run the job form's effects, which cancelled its first scheduled save (a single
+  // change, like picking a band check-in stop, then never saved).
+  const setDirty = useContext(Progress)?.setDirty;
+  return useCallback(
+    (value: boolean) => {
+      if (step) setDirty?.(step, value);
+    },
+    [setDirty, step],
+  );
 }
 
 const NOTES: Record<StationStep, { unsaved: string; todo: string }> = {
