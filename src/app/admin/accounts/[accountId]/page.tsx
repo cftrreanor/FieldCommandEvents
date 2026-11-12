@@ -6,18 +6,20 @@ import { eventTypeLabel } from "@/lib/event-types";
 import { isSchemaError, missing } from "@/lib/schema-check";
 import { createAdminClient } from "@/lib/supabase/server";
 import { formatDate, utcToZonedDate } from "@/lib/time";
-import { addPass, closeAccount, reopenAccount, setPackage, setPlan, suspendAccount, unsuspendAccount, upgradeTeacher } from "../../actions";
+import { addPass, closeAccount, reopenAccount, setPackage, setPlan, setSponsorsAddOn, suspendAccount, unsuspendAccount, upgradeTeacher } from "../../actions";
 import { EMAIL_COLUMNS, loadAccount, NOTE_COLUMNS, signIns, type EmailRow, type NoteRow } from "../../data";
 import { EmptyRow, Facts, HealthPill, PageHeader, Panel, RecordLink, Table, Tag, Td, Th, Tr } from "../../kit";
 import { NoteComposer } from "../../note-composer";
 import { addNote } from "../../notes-actions";
 import { EmailPanel } from "../../email-panel";
 import { emailItems, noteItems, Timeline } from "../../timeline";
+import { SponsorsAddOn } from "../addons-panel";
 import { ClosureForm, NoteActionForm } from "../closure-form";
 import { PlanForm } from "../plan-form";
 import { PackageForm, PassForm, TeacherUpgradeForm } from "../package-form";
 import { loadTiers, packageChoices } from "@/lib/package-names";
 import { dollars, loadAccountPlan, packageLabel, passFor, rateLabel, usageLines } from "@/lib/plan";
+import { loadSponsorAdminSummary } from "@/lib/sponsors-data";
 
 export const metadata: Metadata = { title: "Account" };
 
@@ -42,7 +44,7 @@ export default async function AccountPage({ params }: PageProps<"/admin/accounts
     return Object.fromEntries(eventIds.map((id, i) => [id, counts[i].count ?? 0])) as Record<string, number>;
   };
   const hostEmails = account.organization_members.map((m) => m.profiles?.email).filter((e): e is string => Boolean(e));
-  const [{ data: requestData }, { data: logData }, { data: inviteData }, { data: emailData }, bands, volunteers, logins, closure] =
+  const [{ data: requestData }, { data: logData }, { data: inviteData }, { data: emailData }, bands, volunteers, logins, closure, sponsorAddOn] =
     await Promise.all([
       admin.from("pilot_requests").select("id, name, email, status, created_at").eq("organization_id", accountId),
       admin.from("admin_log").select(ADMIN_LOG_COLUMNS).eq("organization_id", accountId).order("created_at", { ascending: false }).limit(100),
@@ -55,7 +57,10 @@ export default async function AccountPage({ params }: PageProps<"/admin/accounts
       signIns(),
       // Before 20261117000000_data_retention.sql there's no closed_at.
       admin.from("organizations").select("closed_at").eq("id", accountId).maybeSingle(),
+      // The Sponsors add-on: missing before 20270201000000_sponsors.sql.
+      loadSponsorAdminSummary(accountId),
     ]);
+  const showSponsorCounts = sponsorAddOn.available && (sponsorAddOn.on || sponsorAddOn.sponsors > 0);
   const closable = !(closure.error && isSchemaError(closure.error));
   const closedAt = (closure.data as { closed_at: string | null } | null)?.closed_at ?? null;
   const deleteOn = formatDate(utcToZonedDate(new Date(Date.parse(closedAt ?? new Date().toISOString()) + 90 * 86_400_000).toISOString(), ADMIN_TZ), {
@@ -208,6 +213,7 @@ export default async function AccountPage({ params }: PageProps<"/admin/accounts
                   <Th>Status</Th>
                   <Th className="text-right">Groups</Th>
                   <Th className="text-right">Volunteers</Th>
+                  {showSponsorCounts && <Th className="text-right">Sponsors</Th>}
                 </tr>
               </thead>
               <tbody>
@@ -221,9 +227,10 @@ export default async function AccountPage({ params }: PageProps<"/admin/accounts
                     </Td>
                     <Td className="text-right">{bands[e.id] ?? 0}</Td>
                     <Td className="text-right">{volunteers[e.id] ?? 0}</Td>
+                    {showSponsorCounts && <Td className="text-right">{sponsorAddOn.perEvent[e.id] ?? 0}</Td>}
                   </Tr>
                 ))}
-                {events.length === 0 && <EmptyRow cols={6}>No events yet.</EmptyRow>}
+                {events.length === 0 && <EmptyRow cols={showSponsorCounts ? 7 : 6}>No events yet.</EmptyRow>}
               </tbody>
             </Table>
           </Panel>
@@ -312,6 +319,20 @@ export default async function AccountPage({ params }: PageProps<"/admin/accounts
               </details>
             )}
           </Panel>
+
+          {sponsorAddOn.available && (
+            <Panel title="Add-ons">
+              <SponsorsAddOn
+                account={account.name}
+                on={sponsorAddOn.on}
+                sinceLine={sponsorAddOn.since ? `${shortDate(sponsorAddOn.since)}${sponsorAddOn.by ? ` (${sponsorAddOn.by})` : ""}` : null}
+                events={sponsorAddOn.events}
+                sponsors={sponsorAddOn.sponsors}
+                upcoming={sponsorAddOn.upcoming.map((u) => ({ name: u.name, date: formatDate(u.startsOn, { year: undefined }), showing: u.showing }))}
+                action={setSponsorsAddOn.bind(null, account.id)}
+              />
+            </Panel>
+          )}
 
           {plan && (
             <Panel title="Usage">

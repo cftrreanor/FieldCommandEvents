@@ -50,3 +50,10 @@ create table storage.buckets (
   file_size_limit     bigint,
   allowed_mime_types  text[]
 );
+-- Its file list, enough for the sponsor logo cleanup (sponsor_logo_orphans).
+create table storage.objects (
+  id          uuid primary key default gen_random_uuid(),
+  bucket_id   text,
+  name        text,
+  created_at  timestamptz default now()
+);
