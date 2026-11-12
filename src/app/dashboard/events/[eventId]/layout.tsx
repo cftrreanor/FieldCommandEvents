@@ -82,7 +82,13 @@ function bandSteps(f: SetupFacts): SetupStepFacts {
     // Optional: done once there's a job volunteers can see, and every job has something to sign up for.
     volunteersDone: (f.readyJobs ?? 0) > 0 && empty.length === 0,
     volunteersNote: empty.length ? `Optional · ${emptyJobsNote(empty)}` : "Optional",
+    ...sponsorsStep(f),
   };
+}
+
+/** The optional Sponsors step (accounts with the add-on only): done once there's a sponsor; never blocks. */
+function sponsorsStep(f: SetupFacts): Pick<SetupStepFacts, "sponsorsOn" | "done"> {
+  return { sponsorsOn: Boolean(f.sponsors?.on), done: { sponsors: (f.sponsors?.count ?? 0) > 0 } };
 }
 
 /**
@@ -98,10 +104,11 @@ function festivalSteps(f: SetupFacts): SetupStepFacts {
     middleDone: !rooms,
     middleNote: rooms,
     count: f.rooms ? `${f.rooms} ${f.rooms === 1 ? "room" : "rooms"}` : null,
-    done: { rooms: !rooms, registration: !registration },
+    done: { rooms: !rooms, registration: !registration, sponsors: (f.sponsors?.count ?? 0) > 0 },
     notes: { rooms, registration },
     volunteersDone: (f.readyJobs ?? 0) > 0 && empty.length === 0,
     volunteersNote: empty.length ? `Optional · ${emptyJobsNote(empty)}` : "Optional",
+    sponsorsOn: Boolean(f.sponsors?.on),
   };
 }
 

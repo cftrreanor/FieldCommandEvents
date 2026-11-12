@@ -9,6 +9,7 @@ import { createEvent } from "../../actions";
 import { EventForm } from "../_components/event-form";
 import { SetupHeader } from "../_components/setup-steps";
 import { SetupSteps } from "@/components/volunteer-steps";
+import { sponsorsEnabled } from "@/lib/sponsors-data";
 import type { StepsKind } from "@/lib/setup-steps";
 import { SetupLogo } from "../_components/setup-logo";
 import { ContestPicker } from "../_components/contest-picker";
@@ -185,6 +186,7 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
         {type === "volunteer" || type === "band_contest" || type === "group_event" ? (
           <FirstStep
             kind={type === "volunteer" ? "volunteer" : type === "group_event" ? "festival" : "band"}
+            sponsorsOn={type !== "volunteer" && (await sponsorsEnabled(org.id))}
             intro={
               type === "volunteer"
                 ? "Add your team, maps, and volunteer jobs whenever you're ready, from Event settings."
@@ -298,10 +300,10 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
  * back link, and title as its later steps, so this form reads as the start of setup, not all of it
  * (owner and light check, 2026-11-08).
  */
-function FirstStep({ kind, intro, children }: { kind: StepsKind; intro: string; children: ReactNode }) {
+function FirstStep({ kind, intro, children, sponsorsOn = false }: { kind: StepsKind; intro: string; children: ReactNode; sponsorsOn?: boolean }) {
   return (
     <>
-      <SetupSteps eventId="" kind={kind} facts={{ middleDone: false, middleNote: null, count: null }} preview />
+      <SetupSteps eventId="" kind={kind} facts={{ middleDone: false, middleNote: null, count: null, sponsorsOn }} preview />
       <Link href="/dashboard" className="text-sm text-muted hover:text-foreground">
         ← My events
       </Link>

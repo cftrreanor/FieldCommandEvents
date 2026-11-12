@@ -19,7 +19,10 @@ import { closesAtLabel, parentRegistrationClosed } from "@/lib/parents";
 import { ScheduleUpdateBanner } from "@/components/schedule-update-banner";
 import { EventBannerSlot } from "@/components/event-banner-slot";
 import { AutoRefresh } from "@/components/auto-refresh";
-import { FairBooths } from "./fair-booths";
+import { FairBooths, boothHosts, type PublicBooth } from "./fair-booths";
+import { PresentedBy, SponsorLiveLine, SponsorThanks, partnersNotSponsors } from "./public-sponsors";
+import { isSponsorKind, type PublicSponsor } from "@/lib/sponsors";
+import { loadPublicSponsors } from "@/lib/sponsors-data";
 import { LineIcon } from "@/components/line-icon";
 
 type Params = { params: Promise<{ slug: string }> };
@@ -103,14 +106,18 @@ export default async function EventPublicPage({ params }: Params) {
   const supabase = await createClient();
   // Festivals have their own section (festival-public.tsx): no band contest calls (speed).
   const roomsHere = hasRooms(event.event_type);
-  const [{ data: scheduleData }, { data: finalsData }, { data: breakData }, { data: progressData }] = roomsHere
-    ? [{ data: [] }, { data: [] }, { data: [] }, { data: [] }]
-    : await Promise.all([
-        supabase.rpc("public_schedule", { p_slug: slug }),
-        supabase.rpc("public_finals", { p_slug: slug }),
-        supabase.rpc("public_breaks", { p_slug: slug }),
-        supabase.rpc("public_progress", { p_slug: slug }),
-      ]);
+  const none = Promise.resolve({ data: [] as unknown[] });
+  // Sponsors load here and only here (never the layout, shared headers, metadata, other pages, or emails).
+  const sponsorKind = isSponsorKind(event.event_type) ? event.event_type : null;
+  const [{ data: scheduleData }, { data: finalsData }, { data: breakData }, { data: progressData }, { data: boothData }, sponsors] = await Promise.all([
+    roomsHere ? none : supabase.rpc("public_schedule", { p_slug: slug }),
+    roomsHere ? none : supabase.rpc("public_finals", { p_slug: slug }),
+    roomsHere ? none : supabase.rpc("public_breaks", { p_slug: slug }),
+    roomsHere ? none : supabase.rpc("public_progress", { p_slug: slug }),
+    hasBooths(event.event_type) && event.status === "published" ? supabase.rpc("public_fair_booths", { p_slug: slug }) : none,
+    sponsorKind ? loadPublicSponsors(slug) : Promise.resolve([] as PublicSponsor[]),
+  ]);
+  const booths = (boothData ?? []) as PublicBooth[];
   const progress = (progressData ?? []) as ProgressRow[];
   const liveOf = (round: ProgressRow["round"], n: number) => {
     const p = progress.find((x) => x.round === round && x.number === n);
@@ -162,8 +169,30 @@ export default async function EventPublicPage({ params }: Params) {
 
   // With the account's color, the event name sits on a full-width band of it.
   const band = !!(await loadEventBrand(slug)).color;
+  const published = event.status === "published";
+  // On the day, one sponsor line ends the live part, and the thank-you section gets a way back up to it. Both end
+  // with the day (in the event's time zone, on every day of a multi-day event).
+  const festivalDay = roomsHere && isEventDay && event.performance_order_published;
+  const liveAt =
+    !sponsors.length || !published || !isEventDay
+      ? null
+      : bandsHere && (schedule.length > 0 || finals.length > 0)
+        ? "schedule"
+        : festivalDay
+          ? "happening-now"
+          : fairDay && booths.length > 0
+            ? "whats-at-the-event"
+            : null;
+  // The same place on every kind: after the live list and the volunteer card. On a fair it follows the zone list,
+  // set apart by a rule so it doesn't read as one of the zones.
+  const liveLine = liveAt ? (
+    <SponsorLiveLine sponsors={sponsors} className={liveAt === "whats-at-the-event" ? "mt-8 border-t border-border pt-4" : "mt-6"} />
+  ) : null;
+  // Fairs: one section for sponsors and the booths' community partners (a business that's both shows once).
+  const partners = sponsors.length && hasBooths(event.event_type) ? partnersNotSponsors(boothHosts(booths), sponsors) : [];
   const heading = (
     <EventHeading band={band} title={event.name}>
+      <PresentedBy slug={slug} sponsors={sponsors} />
       <p className="mt-2 text-muted">
         {event.starts_on === event.ends_on && event.window_start && event.window_end
           ? `${formatDate(event.starts_on)} · ${formatTimeRange(event.window_start, event.window_end, tz)}`
@@ -182,7 +211,6 @@ export default async function EventPublicPage({ params }: Params) {
     </EventHeading>
   );
 
-  const festivalDay = roomsHere && isEventDay && event.performance_order_published;
   const maps = (
     <>
       {files.length > 0 && (
@@ -286,7 +314,9 @@ export default async function EventPublicPage({ params }: Params) {
         </p>
       )}
 
-      {hasBooths(event.event_type) && event.status === "published" && <FairBooths slug={slug} />}
+      {hasBooths(event.event_type) && published && (
+        <FairBooths booths={booths} partnersThanked={sponsors.length > 0} after={liveAt === "whats-at-the-event" && liveLine} />
+      )}
 
       {!festivalDay && cards}
 
@@ -294,12 +324,13 @@ export default async function EventPublicPage({ params }: Params) {
 
       {roomsHere && event.status === "published" && <FestivalPublic slug={slug} event={event} />}
 
-      {/* A festival on its day leads with Happening now and Find a group; the volunteer card comes after. */}
+      {/* A festival on its day leads with Happening now and Find a group; the volunteer card comes after, then the day's sponsor line. */}
       {festivalDay && cards}
+      {liveAt === "happening-now" && liveLine}
       {festivalDay && maps}
 
       {bandsHere && (
-      <section className="mt-10">
+      <section id="schedule" className="mt-10 scroll-mt-6">
         <h2 className="text-xl font-semibold">Performance schedule</h2>
         {schedule.length === 0 && finals.length === 0 ? (
           <p className="mt-2 text-muted">The performance order hasn&apos;t been posted yet. Check back soon.</p>
@@ -340,9 +371,14 @@ export default async function EventPublicPage({ params }: Params) {
                 <ScheduleList lines={finals} breaks={breaks} currentKey={isEventDay ? (live ? next?.key : current?.key) : undefined} currentLabel={live ? "Up next" : "Now"} at={at} />
               </>
             )}
+            {liveAt === "schedule" && liveLine}
           </>
         )}
       </section>
+      )}
+
+      {sponsorKind && (
+        <SponsorThanks slug={slug} kind={sponsorKind} sponsors={sponsors} eventName={event.name} partners={partners} backTo={liveAt ?? undefined} />
       )}
     </main>
     </>

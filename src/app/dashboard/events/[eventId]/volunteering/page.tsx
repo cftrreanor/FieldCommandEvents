@@ -28,6 +28,7 @@ import { JobSignups, StationPanel, type ItemSignup, type RosterEntry, type Shift
 import { SavedBy } from "@/components/saved-by";
 import { volunteerTotals } from "@/lib/volunteer-totals";
 import { LineIcon } from "@/components/line-icon";
+import { sponsorsEnabled } from "@/lib/sponsors-data";
 
 export async function generateMetadata({ params }: PageProps<"/dashboard/events/[eventId]/volunteering">): Promise<Metadata> {
   const { eventId } = await params;
@@ -105,6 +106,11 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
   // A festival's Volunteers step is optional, like a band contest's.
   const festival = hasRooms(event.event_type);
   const published = event.status === "published";
+  // With the Sponsors add-on, a band contest's or festival's optional Sponsors step comes next, then Publish.
+  const sponsorsNext = !published && (bandsHere || festival) && (await sponsorsEnabled(event.organization_id));
+  const nextStep = sponsorsNext
+    ? { href: `/dashboard/events/${eventId}/sponsors`, label: "Next up: Sponsors" }
+    : { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish" };
   const stations = sortStations((stationData ?? []) as unknown as Omit<Station, "lead_ids">[]).map((st) => ({
     ...st,
     lead_ids: (leadRows ?? []).filter((l) => l.station_id === st.id).map((l) => l.user_id),
@@ -525,7 +531,7 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                           next: published
                             ? { href: `/dashboard/events/${eventId}`, label: "Back to the event" }
                             : bandsHere || festival
-                              ? { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish" }
+                              ? nextStep
                               : { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish your event" },
                         },
                       }
@@ -612,10 +618,10 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                       {bandsHere ? "Optional. Add jobs any time before contest day." : festival ? "Optional. Add jobs any time before the festival." : "Publishing needs at least one job."}
                     </p>
                     <Link
-                      href={`/dashboard/events/${eventId}#publish`}
+                      href={bandsHere || festival ? nextStep.href : `/dashboard/events/${eventId}#publish`}
                       className="ml-auto inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:bg-background"
                     >
-                      {bandsHere || festival ? "Next up: Publish →" : "See what publishing needs →"}
+                      {bandsHere || festival ? `${nextStep.label} →` : "See what publishing needs →"}
                     </Link>
                   </div>
                 )}

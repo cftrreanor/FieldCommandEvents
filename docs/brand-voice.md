@@ -75,6 +75,11 @@ nonprofits, and community groups. Keep "school" where the page is about schools.
 - Never promise "always," "24/7," or "anytime" support
 - Avoid "privacy protected" until data practices are confirmed
 - Use "no ads, no spam, emails used only for your event" instead
+- Sponsor thank-yous aren't ads (owner, 2026-11-12): organizers can thank their own sponsors on their public event
+  pages, and we never sell or place them. Where a page promises no ads and sponsors could come up, add the plain
+  line, exactly (`SPONSOR_PROMISE` in `src/lib/sponsors.ts`): "Organizers can thank their own sponsors on their
+  public event pages. Sponsors never show on sign-up or registration pages or in emails, and we never sell
+  sponsorships or track who sees them." Never write "no ads anywhere": say "we never show ads"
 - Name frustrations with other tools, never the competitors themselves. This holds for search pages too:
   the Volunteers and sign-ups page answers "alternative to [tool]" searches by naming what people dislike (ads,
   accounts, one person at a time), not the tool (owner, 2026-11-10)

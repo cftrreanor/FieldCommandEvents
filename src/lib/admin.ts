@@ -117,6 +117,8 @@ export function describeAdminLog(r: AdminLogRow, names?: Record<string, string>)
   if (r.action === "account_suspended")
     return `Suspended the account${r.details.unpublished ? ` (${r.details.unpublished} event${r.details.unpublished === 1 ? "" : "s"} taken offline)` : ""}`;
   if (r.action === "account_unsuspended") return "Lifted the suspension";
+  if (r.action === "sponsors_turned_on") return "Turned on the Sponsors add-on";
+  if (r.action === "sponsors_turned_off") return "Turned off the Sponsors add-on (sponsors kept)";
   if (r.action === "package_edited") return `Changed what ${packageLabel(r.details.code ?? "?", names)} includes`;
   if (r.action === "package_created")
     return `Created ${r.details.name ?? packageLabel(r.details.code ?? "?", names)}${typeof r.details.from === "string" ? `, copied from ${packageLabel(r.details.from, names)}` : ""}`;

@@ -218,7 +218,7 @@ export async function FestivalPublic({ slug, event }: { slug: string; event: Fes
 
     return (
       <>
-        <Card className="mt-8">
+        <Card id="happening-now" className="mt-8 scroll-mt-6">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <h2 className="text-lg font-semibold">Happening now</h2>
             <p className="text-sm text-muted">As the festival team marks it · {time(now.toISOString())}</p>

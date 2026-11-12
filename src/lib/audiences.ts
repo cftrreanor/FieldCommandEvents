@@ -2,6 +2,7 @@ import type { HowStep } from "@/components/how-it-works";
 import { brand } from "@/lib/brand";
 import { PILOT_END_LABEL } from "@/lib/pilot";
 import { MAX_OTHERS } from "@/lib/group-signup";
+import { SPONSOR_PROMISE } from "@/lib/sponsors";
 import type { IconName } from "./icons";
 
 /**
@@ -359,7 +360,7 @@ export const audiences = {
       },
       {
         title: "A “What's at the event” page",
-        body: "Families see everything at your fair, zone by zone, on one public page under your logo and colors. It's a simple way to thank the partners and sponsors who make the day happen.",
+        body: "Families see everything at your fair, zone by zone, on one public page under your logo and colors. It thanks the community partners who run each booth, by name.",
         points: [
           "Share it with a link, or download a QR code for flyers, emails, and slides",
           "Post a banner for a weather change or a new start time",
@@ -565,7 +566,7 @@ export const audiences = {
       },
       {
         q: "Will people see ads?",
-        a: `No. There are no ads anywhere in ${brand.name}, and we only email people about the event they signed up for.`,
+        a: `No. We never show ads, and we only email people about the event they signed up for. ${SPONSOR_PROMISE}`,
       },
       {
         q: "Can I make a potluck sign-up?",

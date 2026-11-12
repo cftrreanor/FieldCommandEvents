@@ -17,6 +17,7 @@ import { PilotForm } from "./pilot-form";
 import { PILOT_END_LABEL, PILOT_NOTE } from "@/lib/pilot";
 import { IconTile } from "@/components/line-icon";
 import { PublicMenu } from "@/components/public-menu";
+import { SPONSOR_PROMISE } from "@/lib/sponsors";
 
 // Copy follows docs/brand-voice.md. Each event card links to its own page,
 // and those pages carry the How it works steps.
@@ -104,7 +105,7 @@ const privacy = [
   },
   {
     title: "No ads, no spam",
-    body: `Emails go out only for your event, and there are no ads anywhere in ${brand.name}.`,
+    body: `Emails go out only for your event, and we never show ads. ${SPONSOR_PROMISE}`,
   },
 ];
 
@@ -136,12 +137,16 @@ const faqs = [
     a: "Yes. Organize booths and community partners by zone, check partners in as they arrive, staff volunteer sign-ups with Coordinators, and share a public page of everything at the event that thanks your partners.",
   },
   {
+    q: "Can we thank our sponsors?",
+    a: `Yes, on band contests, festivals, and school fairs. Ask us about it when you join the pilot. ${SPONSOR_PROMISE}`,
+  },
+  {
     q: "Do volunteers, parents, or visiting directors have to pay or download an app?",
     a: `No app, and no platform fee. Only the school or organization running the event pays to use ${brand.name}. Everyone they invite (volunteers, parents and families, and visiting band and choir directors) uses ${brand.name} at no charge, right in their phone's web browser. Any registration fee or ticket price the event itself charges is set by the organizer and is separate from ${brand.name}.`,
   },
   {
     q: "How is student and family information handled?",
-    a: "Band contests collect headcounts, not student names. Children's names at school visitor events and conferences are deleted 30 days after the event, and volunteers' phone numbers 10 days after. Conference bookings are seen only by the teacher, and Coordinators see volunteers' phone numbers only on event day. No ads, no spam, and emails used only for your event. Our Student data privacy page has the full details.",
+    a: `Band contests collect headcounts, not student names. Children's names at school visitor events and conferences are deleted 30 days after the event, and volunteers' phone numbers 10 days after. Conference bookings are seen only by the teacher, and Coordinators see volunteers' phone numbers only on event day. No ads, no spam, and emails used only for your event. ${SPONSOR_PROMISE} Our Student data privacy page has the full details.`,
   },
 ];
 

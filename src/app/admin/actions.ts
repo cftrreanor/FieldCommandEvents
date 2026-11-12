@@ -129,3 +129,15 @@ export async function unsuspendAccount(orgId: string, _prev: ActionState, formDa
   revalidatePath("/admin", "layout");
   return { ok: true, message: "Suspension lifted. The host can publish again." };
 }
+
+/** The Sponsors add-on on or off (admin_set_sponsors checks it's a platform admin and logs it). Off keeps every sponsor. */
+export async function setSponsorsAddOn(orgId: string, on: boolean): Promise<ActionState> {
+  await requirePlatformAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("admin_set_sponsors", { p_org: orgId, p_on: Boolean(on), p_note: null });
+  if (error) return { error: friendlyDbError(error) };
+  revalidatePath("/admin", "layout");
+  revalidatePath("/dashboard", "layout");
+  revalidatePath("/e/[slug]", "page");
+  return { ok: true, message: on ? "Sponsors turned on" : "Sponsors turned off. Every sponsor is kept" };
+}

@@ -1,6 +1,7 @@
 import "server-only";
 import { FILES_BUCKET } from "@/lib/event-files";
 import { isSchemaError } from "@/lib/schema-check";
+import { SPONSOR_LOGO_BUCKET } from "@/lib/sponsors";
 import type { createAdminClient } from "@/lib/supabase/server";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -12,6 +13,9 @@ type Admin = ReturnType<typeof createAdminClient>;
  * a year old that never became an account, directors' details 2 years after
  * the event, booth contacts after 15 months, uploaded files 30 days after, and
  * directors' details a host imported from a spreadsheet once the event is over.
+ * Sponsors (20270201000000_sponsors.sql): removed sponsors a day after Remove, then every sponsor logo file
+ * nothing points to any more (removed or replaced logos, deleted events, purged closed accounts, uploads
+ * never used), once it's a day old; and sponsors whose logo file is missing are set to show by name.
  */
 export async function runRetention(admin: Admin) {
   // Before the migration is run, every call is a schema error: skip quietly.
@@ -44,6 +48,22 @@ export async function runRetention(admin: Admin) {
   const boothContactsRemoved = await call("purge_booth_contacts");
   const bandPrefillsRemoved = await call("purge_band_prefills");
 
+  // Sponsors: rows first (closed accounts' and deleted events' went with them), then their files.
+  const sponsorsPurged = await call("purge_removed_sponsors");
+  // Sponsors whose logo file is missing (a copy that never finished) show by name instead of a broken image.
+  const sponsorLogosCleared = await call("clear_missing_sponsor_logos");
+  let sponsorFilesRemoved = 0;
+  const { data: orphans, error: orphansError } = await admin.rpc("sponsor_logo_orphans", { p_limit: 2000 });
+  if (orphansError && !isSchemaError(orphansError)) console.error("sponsor_logo_orphans failed", orphansError);
+  const names = (orphans ?? []) as string[];
+  for (let i = 0; i < names.length; i += 100) {
+    const batch = names.slice(i, i + 100);
+    const { error } = await admin.storage.from(SPONSOR_LOGO_BUCKET).remove(batch);
+    // Left for tomorrow on a failure.
+    if (error) console.error("Removing unused sponsor logos failed", error);
+    else sponsorFilesRemoved += batch.length;
+  }
+
   // Sign-in accounts can only be deleted through Supabase's admin API.
   let usersDeleted = 0;
   const { data: due, error: dueError } = await admin.rpc("user_deletions_due");
@@ -55,5 +75,5 @@ export async function runRetention(admin: Admin) {
     else usersDeleted++;
   }
 
-  return { accountsClosed, usersDeleted, pilotRequestsPurged, bandDetailsRemoved, boothContactsRemoved, bandPrefillsRemoved, filesDeleted };
+  return { accountsClosed, usersDeleted, pilotRequestsPurged, bandDetailsRemoved, boothContactsRemoved, bandPrefillsRemoved, filesDeleted, sponsorsPurged, sponsorLogosCleared, sponsorFilesRemoved };
 }

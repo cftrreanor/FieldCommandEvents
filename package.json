@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint && node scripts/design-lint.mjs",
+    "lint": "eslint && node scripts/design-lint.mjs && node scripts/sponsor-scope.mjs",
     "typecheck": "next typegen && tsc --noEmit",
     "test:db": "bash scripts/test-db.sh"
   },
@@ -22,6 +22,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
+    "sharp": "^0.35.5",
     "zod": "^4.6.5"
   },
   "devDependencies": {

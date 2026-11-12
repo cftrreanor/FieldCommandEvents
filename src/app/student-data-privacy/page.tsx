@@ -4,6 +4,7 @@ import { HeaderBar, headerLinkClass } from "@/components/logo";
 import { SiteFooter } from "@/components/site-footer";
 import { STUDENT_PRIVACY_PAGE } from "@/lib/audiences";
 import { brand } from "@/lib/brand";
+import { SPONSOR_PROMISE } from "@/lib/sponsors";
 
 // The public answer to "how do you handle student data?", for district
 // technology and legal teams. Keep it in step with docs/DATA-PRIVACY.md; every
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
 };
 
 /** Shown at the top, for reviewers. Change it whenever this page changes. */
-const UPDATED = "October 2026";
+const UPDATED = "November 2026";
 
 const glance = [
   "Most events collect no student information at all",
@@ -31,6 +32,7 @@ const sectionLinks = [
   ["see", "Who can see it"],
   ["deleted", "When it's deleted"],
   ["owns", "Who owns it"],
+  ["sponsors", "Sponsors on event pages"],
   ["stored", "Where it's stored"],
   ["protected", "How it's protected"],
   ["agreements", "Data privacy agreements"],
@@ -200,7 +202,31 @@ export default function StudentDataPrivacyPage() {
           <ul className="mt-4 list-disc space-y-2 pl-5 leading-7">
             <li>The school or organization running the event owns the information, and we store it for them</li>
             <li>We use it only to run their event: sign-ups, confirmations, reminders, and check-in</li>
-            <li>We never sell it, never show ads, and never send marketing to families, students, or volunteers</li>
+            <li>
+              We never sell it,{" "}
+              <a href="#sponsors" className="font-medium text-brand underline underline-offset-4">
+                never show ads
+              </a>
+              , and never send marketing to families, students, or volunteers
+            </li>
+          </ul>
+        </section>
+
+        <section id="sponsors" className="mt-12 scroll-mt-20">
+          <h2 className={h2}>Sponsors on event pages</h2>
+          <p className="mt-3 leading-7">{SPONSOR_PROMISE}</p>
+          <ul className="mt-4 list-disc space-y-2 pl-5 leading-7">
+            <li>
+              What they show: a &ldquo;Presented by&rdquo; line under the event&apos;s name, a thank-you section, and on the day, one line on the
+              live page
+            </li>
+            <li>Never on sign-up or registration pages, private links, or in emails</li>
+            <li>
+              Organizers find and arrange their own sponsors. We never sell or place sponsorships, and sponsors&apos; payments never go through {brand.name}
+            </li>
+            <li>Sponsor logos are stored and served by us, so loading the page never contacts a sponsor</li>
+            <li>Nothing counts or tracks who sees or taps a sponsor. A sponsor&apos;s link opens their own website, which has its own privacy rules</li>
+            <li>Families&apos; and students&apos; information is never shared with sponsors</li>
           </ul>
         </section>
 

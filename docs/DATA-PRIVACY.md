@@ -122,6 +122,10 @@ records, kept under the school's policies.
 - We never sell it, never use it for advertising, and never send marketing to families,
   students, or volunteers.
 - We don't build profiles of students or use student information to train AI models.
+- Sponsors (an add-on we switch on per account, 20270201000000_sponsors.sql): organizers can thank their own sponsors
+  on the main public page of a band contest, festival, or school fair, never on sign-up or registration pages,
+  private links, or emails. We never sell or place sponsors. Logos are stored and served by us, links carry no
+  tracking and aren't counted, and no family, student, or volunteer information is shared with sponsors.
 
 ## Requests and incidents
 
