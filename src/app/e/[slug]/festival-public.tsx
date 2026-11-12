@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { RoomSchedule, type ScheduleRoom, type ScheduleSlot } from "@/components/room-schedule";
 import { Badge, Card } from "@/components/ui";
 import { deadlinePassed, opensLater, registrationIsOpen } from "@/lib/bands";
@@ -32,9 +33,10 @@ function mainRoom(path: ScheduleRoom[]) {
 /**
  * The festival's public page (board 15), by stage: weeks before (register, and when times come), registration closed
  * before posting, on the day (each room's Now and Up next as the team marks it, find a group, the main room's list),
- * and after. Band contests and fairs don't use this.
+ * and after. Band contests and fairs don't use this. `liveEnd` (the day's sponsor line, from the page) goes at the
+ * end of the day's live part.
  */
-export async function FestivalPublic({ slug, event }: { slug: string; event: FestivalEvent }) {
+export async function FestivalPublic({ slug, event, liveEnd }: { slug: string; event: FestivalEvent; liveEnd?: ReactNode }) {
   const supabase = await createClient();
   const [{ data: roomData }, { data: slotData }, { data: liveData }] = await Promise.all([
     supabase.from("rooms").select("id, name, note, path_order").eq("event_id", event.id),
@@ -218,7 +220,7 @@ export async function FestivalPublic({ slug, event }: { slug: string; event: Fes
 
     return (
       <>
-        <Card className="mt-8">
+        <Card id="happening-now" className="mt-8 scroll-mt-6">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <h2 className="text-lg font-semibold">Happening now</h2>
             <p className="text-sm text-muted">As the festival team marks it · {time(now.toISOString())}</p>
@@ -290,6 +292,7 @@ export async function FestivalPublic({ slug, event }: { slug: string; event: Fes
             </div>
           </Card>
         )}
+        {liveEnd}
       </>
     );
   }

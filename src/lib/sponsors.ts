@@ -1,6 +1,13 @@
 // The Sponsors add-on (docs/design-decisions/2026-11-12-sponsors.md): the numbers, kinds, and link rules every
 // sponsor screen, the logo pipeline, and the database share. Safe to import in client components.
 
+/**
+ * The plain line wherever the website promises no ads (owner decision, 2026-11-12): sponsor thank-yous aren't ads.
+ * Written once; docs/brand-voice.md quotes it.
+ */
+export const SPONSOR_PROMISE =
+  "Organizers can thank their own sponsors on their public event pages. Sponsors never show on sign-up or registration pages or in emails, and we never sell sponsorships or track who sees them.";
+
 /** Event kinds that can have sponsors. Never others. */
 export const SPONSOR_KINDS = ["band_contest", "group_event", "fair"] as const;
 export type SponsorKind = (typeof SPONSOR_KINDS)[number];

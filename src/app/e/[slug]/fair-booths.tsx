@@ -1,8 +1,7 @@
-import { createClient } from "@/lib/supabase/server";
 import { LineIcon } from "@/components/line-icon";
 import type { IconName } from "@/lib/icons";
 
-type PublicBooth = { id: string; title: string; host_name: string | null; zone: string | null; location: string | null; description: string | null };
+export type PublicBooth = { id: string; title: string; host_name: string | null; zone: string | null; location: string | null; description: string | null };
 
 const ZONE_ICON: Record<string, IconName> = {
   "game zone": "target",
@@ -14,15 +13,20 @@ const ZONE_ICON: Record<string, IconName> = {
 
 const zoneIcon = (zone: string) => <LineIcon name={ZONE_ICON[zone.toLowerCase()] ?? "sparkle"} className="size-[1.1em]" />;
 
-/** A fair's public "What's at the event": booths by zone, with a thank-you to who hosts each one. */
-export async function FairBooths({ slug }: { slug: string }) {
-  const { data } = await (await createClient()).rpc("public_fair_booths", { p_slug: slug });
-  const booths = (data ?? []) as PublicBooth[];
+/** Who hosts the booths, each once: the fair's community partners. */
+export const boothHosts = (booths: PublicBooth[]) => [...new Set(booths.map((b) => b.host_name).filter((h): h is string => Boolean(h)))];
+
+/**
+ * A fair's public "What's at the event" (public_fair_booths, loaded by the page): booths by zone, with a thank-you
+ * to who hosts each one. With sponsors showing, the partners are thanked in the sponsors section instead
+ * (`partnersThanked`), and `after` is the day's sponsor line at the end of the list.
+ */
+export function FairBooths({ booths, partnersThanked = false, after }: { booths: PublicBooth[]; partnersThanked?: boolean; after?: React.ReactNode }) {
   if (booths.length === 0) return null;
   const zones = [...new Set(booths.map((b) => b.zone ?? ""))];
-  const hosts = [...new Set(booths.map((b) => b.host_name).filter((h): h is string => Boolean(h)))];
+  const hosts = boothHosts(booths);
   return (
-    <section className="mt-10" aria-labelledby="fair-heading">
+    <section id="whats-at-the-event" className="mt-10 scroll-mt-6" aria-labelledby="fair-heading">
       <h2 id="fair-heading" className="text-2xl font-medium tracking-tight">
         What&apos;s at the event
       </h2>
@@ -72,11 +76,12 @@ export async function FairBooths({ slug }: { slug: string }) {
           );
         })}
       </div>
-      {hosts.length > 0 && (
+      {hosts.length > 0 && !partnersThanked && (
         <p className="mt-8 rounded-md bg-surface px-4 py-3 text-sm leading-6 text-muted">
           <span className="font-semibold text-foreground">Thank you to our community partners:</span> {hosts.join(", ")}.
         </p>
       )}
+      {after}
     </section>
   );
 }

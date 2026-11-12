@@ -211,7 +211,7 @@ export function SponsorWindow({
       return;
     }
     setUpload({ phase: "uploading", pct: 0, file: file.name, xhr: null });
-    const start = await prepareSponsorLogoUpload(eventId, { contentType: file.type, size: file.size }).catch(() => ({ error: "No connection. Check it, then try again", url: undefined, path: undefined }));
+    const start = await prepareSponsorLogoUpload(eventId, { contentType: file.type, size: file.size, sponsor: name.trim() }).catch(() => ({ error: "No connection. Check it, then try again", url: undefined, path: undefined }));
     if (start.error || !start.url || !start.path) {
       setUpload(null);
       setLogoError(`${(start.error ?? "We couldn't start the upload").replace(/\.$/, "")}.`);
@@ -230,10 +230,10 @@ export function SponsorWindow({
       return;
     }
     setUpload((u) => (u ? { ...u, phase: "checking", pct: 100 } : u));
-    const done = await processSponsorLogo(eventId, start.path).catch(() => ({ error: "No connection. Check it, then upload it again", logo: undefined }));
+    const done = await processSponsorLogo(eventId, start.path, name.trim()).catch(() => ({ error: "No connection. Check it, then upload it again", logo: undefined }));
     if (done.error || !done.logo) {
       const msg = (done.error ?? "We couldn't use that image").replace(/\.$/, "");
-      setLogoError(/too small/.test(msg) ? `${msg}. Ask ${who} for one at least ${LOGO.minWidth} pixels wide.` : `${msg}.`);
+      setLogoError(`${msg}.`);
       setUpload(null);
       setWaitingForUpload(false);
       return;

@@ -19,7 +19,11 @@ import { closesAtLabel, parentRegistrationClosed } from "@/lib/parents";
 import { ScheduleUpdateBanner } from "@/components/schedule-update-banner";
 import { EventBannerSlot } from "@/components/event-banner-slot";
 import { AutoRefresh } from "@/components/auto-refresh";
-import { FairBooths } from "./fair-booths";
+import { FairBooths, boothHosts, type PublicBooth } from "./fair-booths";
+import { PresentedBy, SponsorLiveLine, SponsorThanks, partnersNotSponsors } from "./public-sponsors";
+import { isSponsorKind, type PublicSponsor } from "@/lib/sponsors";
+import { loadPublicSponsors } from "@/lib/sponsors-data";
+import { createAdminClient } from "@/lib/supabase/server";
 import { LineIcon } from "@/components/line-icon";
 
 type Params = { params: Promise<{ slug: string }> };
@@ -55,7 +59,7 @@ async function loadEvent(slug: string) {
   const supabase = await createClient();
   const { data } = await supabase
     .from("events")
-    .select("id, name, status, event_type, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, public_notes, volunteer_signup_open, band_registration_open, band_registration_deadline, band_registration_opens_on, performance_order_published, finals_published, schedule_updated_at, parent_registration_open, parent_registration_closes_at, parent_walk_ins_allowed")
+    .select("id, name, status, event_type, organization_id, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, public_notes, volunteer_signup_open, band_registration_open, band_registration_deadline, band_registration_opens_on, performance_order_published, finals_published, schedule_updated_at, parent_registration_open, parent_registration_closes_at, parent_walk_ins_allowed")
     .eq("slug", slug)
     .maybeSingle();
   return data;
@@ -103,14 +107,18 @@ export default async function EventPublicPage({ params }: Params) {
   const supabase = await createClient();
   // Festivals have their own section (festival-public.tsx): no band contest calls (speed).
   const roomsHere = hasRooms(event.event_type);
-  const [{ data: scheduleData }, { data: finalsData }, { data: breakData }, { data: progressData }] = roomsHere
-    ? [{ data: [] }, { data: [] }, { data: [] }, { data: [] }]
-    : await Promise.all([
-        supabase.rpc("public_schedule", { p_slug: slug }),
-        supabase.rpc("public_finals", { p_slug: slug }),
-        supabase.rpc("public_breaks", { p_slug: slug }),
-        supabase.rpc("public_progress", { p_slug: slug }),
-      ]);
+  const none = Promise.resolve({ data: [] as unknown[] });
+  // Sponsors load here and only here (never the layout, shared headers, metadata, other pages, or emails).
+  const sponsorKind = isSponsorKind(event.event_type) ? event.event_type : null;
+  const [{ data: scheduleData }, { data: finalsData }, { data: breakData }, { data: progressData }, { data: boothData }, { sponsors, groupName }] = await Promise.all([
+    roomsHere ? none : supabase.rpc("public_schedule", { p_slug: slug }),
+    roomsHere ? none : supabase.rpc("public_finals", { p_slug: slug }),
+    roomsHere ? none : supabase.rpc("public_breaks", { p_slug: slug }),
+    roomsHere ? none : supabase.rpc("public_progress", { p_slug: slug }),
+    hasBooths(event.event_type) && event.status === "published" ? supabase.rpc("public_fair_booths", { p_slug: slug }) : none,
+    sponsorKind ? loadSponsors(slug, event.organization_id) : Promise.resolve({ sponsors: [] as PublicSponsor[], groupName: null }),
+  ]);
+  const booths = (boothData ?? []) as PublicBooth[];
   const progress = (progressData ?? []) as ProgressRow[];
   const liveOf = (round: ProgressRow["round"], n: number) => {
     const p = progress.find((x) => x.round === round && x.number === n);
@@ -162,8 +170,26 @@ export default async function EventPublicPage({ params }: Params) {
 
   // With the account's color, the event name sits on a full-width band of it.
   const band = !!(await loadEventBrand(slug)).color;
+  const published = event.status === "published";
+  // On the day, one sponsor line ends the live part, and the thank-you section gets a way back up to it. Both end
+  // with the day (in the event's time zone, on every day of a multi-day event).
+  const festivalDay = roomsHere && isEventDay && event.performance_order_published;
+  const liveAt =
+    !sponsors.length || !published || !isEventDay
+      ? null
+      : bandsHere && (schedule.length > 0 || finals.length > 0)
+        ? "schedule"
+        : festivalDay
+          ? "happening-now"
+          : fairDay && booths.length > 0
+            ? "whats-at-the-event"
+            : null;
+  const liveLine = liveAt ? <SponsorLiveLine sponsors={sponsors} /> : null;
+  // Fairs: one section for sponsors and the booths' community partners (a business that's both shows once).
+  const partners = sponsors.length && hasBooths(event.event_type) ? partnersNotSponsors(boothHosts(booths), sponsors) : [];
   const heading = (
     <EventHeading band={band} title={event.name}>
+      <PresentedBy slug={slug} sponsors={sponsors} onDay={isEventDay} />
       <p className="mt-2 text-muted">
         {event.starts_on === event.ends_on && event.window_start && event.window_end
           ? `${formatDate(event.starts_on)} · ${formatTimeRange(event.window_start, event.window_end, tz)}`
@@ -182,7 +208,6 @@ export default async function EventPublicPage({ params }: Params) {
     </EventHeading>
   );
 
-  const festivalDay = roomsHere && isEventDay && event.performance_order_published;
   const maps = (
     <>
       {files.length > 0 && (
@@ -286,20 +311,22 @@ export default async function EventPublicPage({ params }: Params) {
         </p>
       )}
 
-      {hasBooths(event.event_type) && event.status === "published" && <FairBooths slug={slug} />}
+      {hasBooths(event.event_type) && published && (
+        <FairBooths booths={booths} partnersThanked={sponsors.length > 0} after={liveAt === "whats-at-the-event" && liveLine} />
+      )}
 
       {!festivalDay && cards}
 
       {!festivalDay && maps}
 
-      {roomsHere && event.status === "published" && <FestivalPublic slug={slug} event={event} />}
+      {roomsHere && event.status === "published" && <FestivalPublic slug={slug} event={event} liveEnd={liveAt === "happening-now" && liveLine} />}
 
       {/* A festival on its day leads with Happening now and Find a group; the volunteer card comes after. */}
       {festivalDay && cards}
       {festivalDay && maps}
 
       {bandsHere && (
-      <section className="mt-10">
+      <section id="schedule" className="mt-10 scroll-mt-6">
         <h2 className="text-xl font-semibold">Performance schedule</h2>
         {schedule.length === 0 && finals.length === 0 ? (
           <p className="mt-2 text-muted">The performance order hasn&apos;t been posted yet. Check back soon.</p>
@@ -340,9 +367,14 @@ export default async function EventPublicPage({ params }: Params) {
                 <ScheduleList lines={finals} breaks={breaks} currentKey={isEventDay ? (live ? next?.key : current?.key) : undefined} currentLabel={live ? "Up next" : "Now"} at={at} />
               </>
             )}
+            {liveAt === "schedule" && liveLine}
           </>
         )}
       </section>
+      )}
+
+      {sponsorKind && (
+        <SponsorThanks slug={slug} kind={sponsorKind} sponsors={sponsors} group={groupName} partners={partners} backTo={liveAt ?? undefined} />
       )}
     </main>
     </>
@@ -402,6 +434,14 @@ function ScheduleList({
       })}
     </ol>
   );
+}
+
+/** The main page's sponsors, and the account's name for "With thanks to everyone supporting …" when there are any. */
+async function loadSponsors(slug: string, orgId: string | null) {
+  const sponsors = await loadPublicSponsors(slug);
+  if (!sponsors.length || !orgId) return { sponsors, groupName: null };
+  const { data } = await createAdminClient().from("organizations").select("name").eq("id", orgId).maybeSingle();
+  return { sponsors, groupName: (data?.name as string | undefined) ?? null };
 }
 
 /** Has this visitor volunteered for this event, from this device or with their account? */

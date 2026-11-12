@@ -25,7 +25,13 @@ export type ProcessedLogo = {
   warnings: { small: boolean; tall: boolean };
 };
 
+/** Words for the organizer: what's wrong with the file and how to fix it, as sentences. */
 export class LogoError extends Error {}
+
+/** "This file is 7.4 MB, over the 5 MB limit. Ask Oak Street Dental for a PNG or JPG under 5 MB." */
+export const tooBigMessage = (bytes: number, who = "the sponsor") =>
+  `This file is ${(bytes / 1024 / 1024).toFixed(1)} MB, over the ${LOGO.maxMB} MB limit. Ask ${who} for a PNG or JPG under ${LOGO.maxMB} MB.`;
+export const notImageMessage = (who = "the sponsor") => `This file isn't a PNG or JPG, so it can't show on a web page. Ask ${who} for a PNG or JPG.`;
 
 /** What the file really is, from its first bytes (not its name or the type the browser claimed). */
 export function sniffImage(bytes: Uint8Array): "png" | "jpeg" | null {
@@ -39,29 +45,32 @@ export function sniffImage(bytes: Uint8Array): "png" | "jpeg" | null {
 export const uploadFolder = (eventId: string) => `uploads/${eventId}/`;
 
 /**
- * Check and resize one image. Throws LogoError with words for the organizer when it can't be used.
- * Returns the files to store (by name) and the image's real size.
+ * Check and resize one image. Throws LogoError with words for the organizer when it can't be used (`who`: the
+ * sponsor's name, for "Ask … for"). Returns the files to store (by name) and the image's real size.
  */
-export async function processLogoImage(input: Uint8Array) {
-  if (input.byteLength > LOGO.maxBytes) throw new LogoError(`That image is over ${LOGO.maxMB} MB. Try a smaller one`);
+export async function processLogoImage(input: Uint8Array, who = "the sponsor") {
+  if (input.byteLength > LOGO.maxBytes) throw new LogoError(tooBigMessage(input.byteLength, who));
   const kind = sniffImage(input);
-  if (!kind) throw new LogoError("Please choose a PNG or JPG image");
+  if (!kind) throw new LogoError(notImageMessage(who));
   const open = () => sharp(input, { limitInputPixels: LOGO.maxPixels, failOn: "error", autoOrient: true });
   let meta: Metadata;
   try {
     // Only the header is read here, so the pixel cap can be checked before anything is decoded.
     meta = await sharp(input, { failOn: "error" }).metadata();
   } catch {
-    throw new LogoError("We couldn't read that image. Try saving it again as a PNG or JPG");
+    throw new LogoError("We couldn't read this image. Save it again as a PNG or JPG, then upload it again.");
   }
-  if (meta.format !== kind) throw new LogoError("Please choose a PNG or JPG image");
-  if (!meta.width || !meta.height) throw new LogoError("We couldn't read that image. Try saving it again as a PNG or JPG");
-  if (meta.width * meta.height > LOGO.maxPixels) throw new LogoError("That image is too big to use. Try one under 6,000 pixels wide");
+  if (meta.format !== kind) throw new LogoError(notImageMessage(who));
+  if (!meta.width || !meta.height) throw new LogoError("We couldn't read this image. Save it again as a PNG or JPG, then upload it again.");
+  if (meta.width * meta.height > LOGO.maxPixels)
+    throw new LogoError(`This image is ${meta.width.toLocaleString("en-US")} pixels wide, too big to open. Save it under 6,000 pixels wide, then upload it again.`);
   // autoOrient: metadata reports the upright size.
   const width = meta.autoOrient?.width ?? meta.width;
   const height = meta.autoOrient?.height ?? meta.height;
   if (width < LOGO.refuseUnder)
-    throw new LogoError(`This logo is ${width} pixels wide, too small to show clearly. At least ${LOGO.minWidth} pixels wide is best; we can't use logos under ${LOGO.refuseUnder}`);
+    throw new LogoError(
+      `This logo is ${width} pixels wide, too small to show clearly. At least ${LOGO.minWidth} pixels wide is best; we can't use logos under ${LOGO.refuseUnder}. Ask ${who} for one at least ${LOGO.minWidth} pixels wide.`,
+    );
 
   const alpha = kind === "png" && Boolean(meta.hasAlpha);
   const ext = alpha ? "png" : "jpg";
@@ -79,7 +88,7 @@ export async function processLogoImage(input: Uint8Array) {
       ),
     ]);
   } catch {
-    throw new LogoError("We couldn't read that image. Try saving it again as a PNG or JPG");
+    throw new LogoError("We couldn't read this image. Save it again as a PNG or JPG, then upload it again.");
   }
   return { ext, width, height, files, contentType: alpha ? "image/png" : "image/jpeg" };
 }
@@ -88,14 +97,14 @@ export async function processLogoImage(input: Uint8Array) {
  * After the browser's upload: read uploads/<event>/<file>, check and resize it, store the copies in the event's
  * folder, and delete the upload. The caller has checked the person may change this event's sponsors.
  */
-export async function processUpload(admin: Admin, org: string, eventId: string, uploadPath: string): Promise<ProcessedLogo> {
+export async function processUpload(admin: Admin, org: string, eventId: string, uploadPath: string, who = "the sponsor"): Promise<ProcessedLogo> {
   if (!uploadPath.startsWith(uploadFolder(eventId)) || uploadPath.includes("..") || uploadPath.split("/").length !== 3)
-    throw new LogoError("That upload isn't for this event. Please try again");
+    throw new LogoError("That upload isn't for this event. Upload the logo again.");
   const bucket = admin.storage.from(SPONSOR_LOGO_BUCKET);
   const { data: blob, error } = await bucket.download(uploadPath);
-  if (error || !blob) throw new LogoError("We couldn't find the upload. Please try again");
+  if (error || !blob) throw new LogoError("We couldn't find the upload. Upload the logo again.");
   try {
-    const out = await processLogoImage(new Uint8Array(await blob.arrayBuffer()));
+    const out = await processLogoImage(new Uint8Array(await blob.arrayBuffer()), who);
     const version = crypto.randomUUID();
     const folder = `${org}/${eventId}/${version}`;
     for (const f of out.files) {
@@ -103,7 +112,7 @@ export async function processUpload(admin: Admin, org: string, eventId: string, 
       if (putError) {
         console.error("Storing a sponsor logo failed", putError);
         await bucket.remove(out.files.map((x) => `${folder}/${x.name}`));
-        throw new LogoError("We couldn't save the logo. Please try again");
+        throw new LogoError("We couldn't save the logo. Check your connection, then upload it again.");
       }
     }
     return { path: `${folder}/master.${out.ext}`, version, width: out.width, height: out.height, warnings: logoWarnings(out.width, out.height) };

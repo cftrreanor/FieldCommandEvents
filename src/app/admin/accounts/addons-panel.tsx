@@ -117,7 +117,7 @@ export function SponsorsAddOn({
             <li>Nobody is emailed</li>
           </ul>
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button type="button" variant="ghost" onClick={() => dialog.current?.close()} autoFocus>
+            <Button type="button" variant="secondary" onClick={() => dialog.current?.close()} autoFocus>
               Keep Sponsors on
             </Button>
             <Button type="button" variant="secondary" disabled={pending} onClick={() => flip(false)}>

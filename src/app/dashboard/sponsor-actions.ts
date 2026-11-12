@@ -3,18 +3,24 @@
 import { revalidatePath } from "next/cache";
 import { friendlyDbError } from "@/lib/action-state";
 import { requireUser } from "@/lib/auth";
-import { copyLogoFiles, LogoError, processUpload, SPONSOR_LOGO_BUCKET, uploadFolder } from "@/lib/sponsor-logos";
+import { copyLogoFiles, LogoError, notImageMessage, processUpload, SPONSOR_LOGO_BUCKET, tooBigMessage, uploadFolder } from "@/lib/sponsor-logos";
+import { brand } from "@/lib/brand";
 import { LOGO, LEVEL_NAME_MAX, normalizeSponsorLink, organizerSponsorLogoUrl, SPONSOR_NAME_MAX, sponsorNameKey, type Sponsor, type SponsorLevel } from "@/lib/sponsors";
 import { loadEventSponsors, loadReuseCandidates } from "@/lib/sponsors-data";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 // The organizer's sponsor actions: thin wrappers over the database functions in 20270201000000_sponsors.sql,
 // which check the person hosts the event, the add-on is on, and the event's kind. Each returns { error } with
-// words for the organizer when it didn't go through (failed saves are shown in the sponsor's row).
+// words for the organizer when it didn't go through (failed saves are shown in the sponsor's row): sentences
+// that end with periods and say how to fix it.
 
 type Fail = { error?: string };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isId = (v: unknown): v is string => typeof v === "string" && UUID.test(v);
+const NOT_HOST = "Only the event's hosts can change its sponsors. Ask a host to make this change.";
+const GONE = "That sponsor was removed or isn't on this event. Reload the page to see the current list.";
+/** The sponsor's name for "Ask … for", or "the sponsor". */
+const whoOf = (name: unknown) => (typeof name === "string" && name.trim() ? name.trim().slice(0, SPONSOR_NAME_MAX) : "the sponsor");
 
 /** The event, if the person signed in can read it (hosts). */
 async function eventFor(eventId: string) {
@@ -42,24 +48,30 @@ async function call<T>(fn: string, args: Record<string, unknown>): Promise<{ dat
 
 /**
  * Step 1 of a logo: a one-time upload link (send the file with uploadToSignedUrl from src/lib/signed-upload.ts).
- * Checks the type and size the browser reports; the server checks the real file in step 2.
+ * Checks the type and size the browser reports; the server checks the real file in step 2. `sponsor`: the name
+ * typed so far, for "Ask … for a PNG or JPG".
  */
-export async function prepareSponsorLogoUpload(eventId: string, file: { contentType: string; size: number }): Promise<Fail & { path?: string; url?: string }> {
+export async function prepareSponsorLogoUpload(
+  eventId: string,
+  file: { contentType: string; size: number; sponsor?: string },
+): Promise<Fail & { path?: string; url?: string }> {
   await requireUser();
-  if (!(LOGO.types as readonly string[]).includes(file.contentType)) return { error: "Please choose a PNG or JPG image" };
-  if (file.size < 1 || file.size > LOGO.maxBytes) return { error: `That image is over ${LOGO.maxMB} MB. Try a smaller one` };
+  const who = whoOf(file.sponsor);
+  if (!(LOGO.types as readonly string[]).includes(file.contentType)) return { error: notImageMessage(who) };
+  if (file.size < 1) return { error: "This file is empty. Save the logo again as a PNG or JPG, then upload it again." };
+  if (file.size > LOGO.maxBytes) return { error: tooBigMessage(file.size, who) };
   const event = await eventFor(eventId);
   const supabase = await createClient();
   const [{ data: isHost }, { data: enabled }] = event
     ? await Promise.all([supabase.rpc("is_event_admin", { ev: eventId }), supabase.rpc("sponsors_enabled", { p_org: event.organization_id })])
     : [{ data: false }, { data: false }];
-  if (!event || !isHost) return { error: "Only the event's hosts can change its sponsors" };
-  if (!enabled) return { error: "Sponsors are off for this account, so they can't be changed" };
+  if (!event || !isHost) return { error: NOT_HOST };
+  if (!enabled) return { error: `Sponsors are off for this account, so they can't be changed. Email ${brand.supportEmail} to turn them back on.` };
   const path = `${uploadFolder(eventId)}${crypto.randomUUID()}.${file.contentType === "image/png" ? "png" : "jpg"}`;
   const { data, error } = await createAdminClient().storage.from(SPONSOR_LOGO_BUCKET).createSignedUploadUrl(path);
   if (error || !data) {
     console.error("createSignedUploadUrl failed", error);
-    return { error: "We couldn't start the upload. Please try again" };
+    return { error: "We couldn't start the upload. Check your connection, then upload the logo again." };
   }
   return { path, url: data.signedUrl };
 }
@@ -77,19 +89,19 @@ export type UploadedLogo = {
 };
 
 /** Step 2: check and resize the upload on our server (refused under 200 px wide, too many pixels, not PNG or JPG). */
-export async function processSponsorLogo(eventId: string, uploadPath: string): Promise<Fail & { logo?: UploadedLogo }> {
+export async function processSponsorLogo(eventId: string, uploadPath: string, sponsor?: string): Promise<Fail & { logo?: UploadedLogo }> {
   await requireUser();
   const event = await eventFor(eventId);
   const { data: isHost } = event ? await (await createClient()).rpc("is_event_admin", { ev: eventId }) : { data: false };
-  if (!event || !isHost) return { error: "Only the event's hosts can change its sponsors" };
+  if (!event || !isHost) return { error: NOT_HOST };
   try {
-    const out = await processUpload(createAdminClient(), event.organization_id, eventId, String(uploadPath));
+    const out = await processUpload(createAdminClient(), event.organization_id, eventId, String(uploadPath), whoOf(sponsor));
     const url = (f: "t0" | "t1" | "t2") => organizerSponsorLogoUrl(eventId, out.version, f)!;
     return { logo: { ...out, previews: { t0: url("t0"), t1: url("t1"), t2: url("t2") } } };
   } catch (e) {
     if (e instanceof LogoError) return { error: e.message };
     console.error("Processing a sponsor logo failed", e);
-    return { error: "We couldn't use that image. Please try again" };
+    return { error: "We couldn't use this image. Save it again as a PNG or JPG, then upload it again." };
   }
 }
 
@@ -123,14 +135,14 @@ export async function saveSponsor(
   await requireUser();
   const fieldErrors: Record<string, string> = {};
   const name = String(input.name ?? "").trim();
-  if (!name) fieldErrors.name = "Enter the sponsor's name";
-  else if (name.length > SPONSOR_NAME_MAX) fieldErrors.name = `Keep the name under ${SPONSOR_NAME_MAX} characters`;
+  if (!name) fieldErrors.name = "Enter the sponsor's name.";
+  else if (name.length > SPONSOR_NAME_MAX) fieldErrors.name = `Shorten the name to ${SPONSOR_NAME_MAX} characters or fewer.`;
   const newLevel = String(input.newLevelName ?? "").trim();
-  if (newLevel.length > LEVEL_NAME_MAX) fieldErrors.newLevelName = `Keep the level's name under ${LEVEL_NAME_MAX} characters`;
+  if (newLevel.length > LEVEL_NAME_MAX) fieldErrors.newLevelName = `Shorten the level's name to ${LEVEL_NAME_MAX} characters or fewer.`;
   const link = normalizeSponsorLink(input.website);
   if (link.error) fieldErrors.website = link.error;
-  if (input.sponsorId && !isId(input.sponsorId)) return { error: "That sponsor was removed or isn't on this event" };
-  if (input.levelId && !isId(input.levelId)) fieldErrors.levelId = "Pick a level";
+  if (input.sponsorId && !isId(input.sponsorId)) return { error: GONE };
+  if (input.levelId && !isId(input.levelId)) fieldErrors.levelId = "Pick a level.";
   if (Object.keys(fieldErrors).length) return { error: Object.values(fieldErrors)[0], fieldErrors };
 
   const logo = input.logo;
@@ -194,12 +206,12 @@ export type MoveResult = { moved: boolean; crossed: boolean; levelId: string | n
 /** Up or down one place; from the end of a level, into the next or previous one ("Moved to Bronze"). */
 export async function moveSponsor(eventId: string, sponsorId: string, dir: "up" | "down"): Promise<Fail & { result?: MoveResult }> {
   await requireUser();
-  if (dir !== "up" && dir !== "down") return { error: "Move up or down" };
+  if (dir !== "up" && dir !== "down") return { error: "Use the up or down arrow." };
   const { data, error } = await call<{ moved: boolean; crossed: boolean; level_id: string | null; level_name: string | null; place: number; count: number }>(
     "move_sponsor",
     { p_sponsor: sponsorId, p_dir: dir },
   );
-  if (error || !data) return { error: error ?? "That didn't move. Please try again" };
+  if (error || !data) return { error: error ?? "That didn't move. Check your connection, then use the arrow again." };
   await refresh(eventId);
   return { result: { moved: data.moved, crossed: data.crossed, levelId: data.level_id, levelName: data.level_name, place: Number(data.place), count: Number(data.count) } };
 }
@@ -212,8 +224,8 @@ export async function moveSponsor(eventId: string, sponsorId: string, dir: "up" 
 export async function saveSponsorLevel(eventId: string, levelId: string | null, name: string): Promise<Fail & { id?: string }> {
   await requireUser();
   const n = String(name ?? "").trim();
-  if (!n) return { error: "Give the level a name" };
-  if (n.length > LEVEL_NAME_MAX) return { error: `Keep the level's name under ${LEVEL_NAME_MAX} characters` };
+  if (!n) return { error: "Give the level a name." };
+  if (n.length > LEVEL_NAME_MAX) return { error: `Shorten the level's name to ${LEVEL_NAME_MAX} characters or fewer.` };
   const { data, error } = await call<string>("save_sponsor_level", { p_event: eventId, p_level: levelId || null, p_name: n });
   if (error) return { error };
   await refresh(eventId);
@@ -222,7 +234,7 @@ export async function saveSponsorLevel(eventId: string, levelId: string | null, 
 
 export async function moveSponsorLevel(eventId: string, levelId: string, dir: "up" | "down"): Promise<Fail> {
   await requireUser();
-  if (dir !== "up" && dir !== "down") return { error: "Move up or down" };
+  if (dir !== "up" && dir !== "down") return { error: "Use the up or down arrow." };
   const { error } = await call("move_sponsor_level", { p_level: levelId, p_dir: dir });
   if (error) return { error };
   await refresh(eventId);
@@ -255,7 +267,7 @@ export type ReuseCandidate = Sponsor & {
 export async function getReuseCandidates(eventId: string, fromEventId: string): Promise<Fail & { levels?: SponsorLevel[]; sponsors?: ReuseCandidate[] }> {
   await requireUser();
   const [event, from] = await Promise.all([eventFor(eventId), eventFor(fromEventId)]);
-  if (!event || !from) return { error: "You can only add sponsors from events you host" };
+  if (!event || !from) return { error: "You can only add sponsors from events you host. Pick one of your own events." };
   const [here, src] = await Promise.all([loadEventSponsors(event.id, event.organization_id, event.event_type), loadReuseCandidates(fromEventId)]);
   const keys = new Set(here.sponsors.map((s) => sponsorNameKey(s.name)));
   const copied = new Set(here.sponsors.map((s) => s.copiedFrom).filter(Boolean));
@@ -297,7 +309,7 @@ export async function reuseSponsors(
     p_levels: options.levelMap ?? {},
     p_with_levels: Boolean(options.withLevels),
   });
-  if (error || !data) return { error: error ?? "We couldn't add them. Please try again" };
+  if (error || !data) return { error: error ?? "We couldn't add them. Check your connection, then try again." };
   const admin = createAdminClient();
   let logosFailed = 0;
   for (const l of data.logos ?? []) {
