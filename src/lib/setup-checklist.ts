@@ -82,6 +82,12 @@ export type SetupFacts = {
    * "one at a time", the event already published. Null when the plan allows it.
    */
   planBlock?: { reason: string; other: { id: string; name: string } | null } | null;
+  /**
+   * Band contests, festivals, and fairs on accounts with the Sponsors add-on (on: false with it off): how many
+   * sponsors are kept, how many show, and the Presented by sponsor if it shows. For the optional Sponsors step and
+   * "When you publish".
+   */
+  sponsors?: { on: boolean; count: number; showing: number; presentedBy: string | null } | null;
 };
 
 export type SetupChecklist = {
@@ -109,7 +115,7 @@ export type SetupChecklist = {
 };
 
 // Same order as the sections on the event page: what people sign up for, the schedule, volunteers, the day, team, maps.
-const BEFORE_ORDER = ["details", "registration", "director-info", "booths", "conference-times", "conference-place", "parents-close", "rooms", "shifts", "team", "files"];
+const BEFORE_ORDER = ["details", "registration", "director-info", "booths", "conference-times", "conference-place", "parents-close", "rooms", "shifts", "sponsors", "team", "files"];
 
 /**
  * A volunteer event's jobs: done once a job has a shift or a thing to bring
@@ -307,6 +313,18 @@ export function setupChecklist(f: SetupFacts): SetupChecklist {
     );
   }
 
+  // The optional Sponsors step, as along the step bar (band contests and festivals, add-on on, before publishing).
+  if (f.sponsors?.on && !f.published && (f.eventType === "band_contest" || hasRooms(f.eventType))) {
+    before.push({
+      id: "sponsors",
+      label: "Add sponsors",
+      hint: "Only if you have sponsors to thank on your public page.",
+      href: `${base}/sponsors`,
+      done: f.sponsors.count > 0,
+      required: false,
+    });
+  }
+
   const bandContest = f.eventType === "band_contest";
   const publish: SetupStep = {
     id: "publish",
@@ -466,6 +484,25 @@ function rank(s: SetupStep) {
 
 /** What publishing changes for this event, in plain words (shown next to the Publish button). */
 export function publishEffects(f: SetupFacts): string[] {
+  const lines = publishEffectsBase(f);
+  const sponsors = sponsorsEffect(f);
+  if (!sponsors) return lines;
+  // Right after the line about the page going online.
+  return [lines[0], sponsors, ...lines.slice(1)];
+}
+
+/** "Your 5 sponsors show on it: Presented by Cedar Music Co. under the festival's name, and the thank-you section." */
+function sponsorsEffect(f: SetupFacts): string | null {
+  const s = f.sponsors;
+  if (!s?.on || s.showing === 0) return null;
+  const what = f.eventType === "band_contest" ? "contest" : f.eventType === "fair" ? "fair" : "festival";
+  const who = s.showing === 1 ? "Your 1 sponsor shows" : `Your ${s.showing} sponsors show`;
+  return s.presentedBy
+    ? `${who} on it: Presented by ${s.presentedBy} under the ${what}'s name, and the thank-you section.`
+    : `${who} on it, in the thank-you section.`;
+}
+
+function publishEffectsBase(f: SetupFacts): string[] {
   const words = groupWords(f.eventType);
   if (hasRooms(f.eventType)) {
     // A festival: what opens, through when, and what comes after (owner decisions and light check, 2026-11-11).

@@ -53,7 +53,10 @@ import { SavedBy } from "@/components/saved-by";
 import { brand } from "@/lib/brand";
 import { loadSetupFacts } from "@/lib/setup-facts";
 import { LineIcon } from "@/components/line-icon";
-import { FestivalCards, FestivalDraftCards, FestivalNextStep, type FestivalFacts } from "./festival-home";
+import { FestivalCards, FestivalDraftCards, FestivalNextStep, FestivalSponsors, type FestivalFacts } from "./festival-home";
+import { isSponsorKind } from "@/lib/sponsors";
+import { loadEventSponsors } from "@/lib/sponsors-data";
+import { hasSponsorsCard, SponsorsCardBody, SponsorsSection } from "./sponsors/sponsors-card";
 import { festivalRegistrationMissing, festivalRoomsMissing } from "@/lib/setup-checklist";
 import { minutesPerGroup } from "@/lib/rooms";
 import { datesMoved } from "@/lib/schedule-emails";
@@ -1063,10 +1066,24 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
       </section>
     ) : null;
 
+  // Band contests, festivals, and fairs on accounts with the Sponsors add-on (hosts only): the Sponsors card. With
+  // the add-on off, only accounts that kept sponsors see it, as one line saying so.
+  const sponsorData = access.isHost && isSponsorKind(event.event_type) ? await loadEventSponsors(eventId, event.organization_id, event.event_type) : null;
+  const sponsorsBlock = hasSponsorsCard(sponsorData) ? (
+    fest ? (
+      <FestivalSponsors>
+        <SponsorsCardBody eventId={eventId} s={sponsorData} published={published} />
+      </FestivalSponsors>
+    ) : (
+      <SponsorsSection eventId={eventId} s={sponsorData} published={published} />
+    )
+  ) : null;
+
   // The team is managed in event settings (Coordinators in Volunteer Setup), and what needs
   // fixing there shows in "To do", so there's no Team card here.
   const blocks: Record<string, ReactNode> = fest
     ? {
+        sponsors: sponsorsBlock,
         // A festival: drafts are the Publish card and one line per area; live, the Next step card and the area cards.
         publish,
         next: published ? <FestivalNextStep f={fest} /> : null,
@@ -1074,30 +1091,30 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         areas: published ? <FestivalCards f={fest} dayFirst={dayFirst} /> : <FestivalDraftCards f={fest} />,
         files: filesBlock,
       }
-    : { next, publish, attention: attentionBlock, day, signups, schedule, volunteers, files: filesBlock };
+    : { next, publish, attention: attentionBlock, day, signups, schedule, volunteers, sponsors: sponsorsBlock, files: filesBlock };
   // Setting up: the next step, the areas, then publishing. Live: what needs doing, then the areas.
   // On the day (and after): the day first.
   const order = fest
     ? published
-      ? ["next", "attention", "areas", "files"]
-      : ["publish", "attention", "areas", "files"]
+      ? ["next", "attention", "areas", "sponsors", "files"]
+      : ["publish", "attention", "areas", "sponsors", "files"]
     : dayFirst
-    ? ["day", "attention", "signups", "schedule", "volunteers", "files"]
+    ? ["day", "attention", "signups", "schedule", "volunteers", "sponsors", "files"]
     : published
-      ? ["attention", "signups", "schedule", "volunteers", "day", "files"]
+      ? ["attention", "signups", "schedule", "volunteers", "day", "sponsors", "files"]
       : event.event_type === "volunteer"
         ? // A volunteer event's last step is publishing: it leads the page (it names what's still needed).
           // With no job volunteers can sign up for yet, there's no event day to plan, so its card waits.
-          ["publish", "attention", "signups", "schedule", "volunteers", ...((setup?.readyJobs ?? 1) > 0 ? ["day"] : []), "files"]
+          ["publish", "attention", "signups", "schedule", "volunteers", ...((setup?.readyJobs ?? 1) > 0 ? ["day"] : []), "sponsors", "files"]
         : event.event_type === "band_contest"
           ? // A band contest too: the publish card leads, naming what registration still needs, or with the button.
             // Then the setup order: registration, volunteers (optional), and the schedule, which comes after publishing.
             // Contest day waits until registration is published (light check, 2026-11-08).
-            ["publish", "attention", "signups", "volunteers", "schedule", "files"]
+            ["publish", "attention", "signups", "volunteers", "schedule", "sponsors", "files"]
           : hasConferences(event.event_type)
             ? // Meetings and conferences set up in steps too, so publishing leads the page (decisions 2026-11-07).
-              ["publish", "attention", "signups", "schedule", "volunteers", "day", "files"]
-            : ["next", "attention", "signups", "schedule", "volunteers", "publish", "day", "files"];
+              ["publish", "attention", "signups", "schedule", "volunteers", "day", "sponsors", "files"]
+            : ["next", "attention", "signups", "schedule", "volunteers", "publish", "day", "sponsors", "files"];
   const labels: Record<string, string> = {
     day: dayTitle,
     // The same words as the sections they jump to (light check, 2026-11-08).
@@ -1112,14 +1129,15 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           : signupsLabel,
     schedule: roomsHere ? "Rooms and schedule" : "Performance schedule",
     volunteers: usesJobs(event.event_type) ? "Jobs and shifts" : "Volunteers",
+    sponsors: "Sponsors",
     files: "Maps and documents",
   };
   const navLinks = fest
     ? published
       ? // The same names as the cards they jump to.
-        (dayFirst ? ["day", "registration", "schedule", "volunteers"] : ["registration", "schedule", "volunteers", "day"]).map((id) => ({
+        [...(dayFirst ? ["day", "registration", "schedule", "volunteers"] : ["registration", "schedule", "volunteers", "day"]), ...(sponsorsBlock ? ["sponsors"] : [])].map((id) => ({
           id,
-          label: { day: "Event day", registration: "Registration", schedule: "Rooms and schedule", volunteers: "Volunteers" }[id]!,
+          label: { day: "Event day", registration: "Registration", schedule: "Rooms and schedule", volunteers: "Volunteers", sponsors: "Sponsors" }[id]!,
         }))
       : []
     : order.filter((k) => labels[k] && blocks[k]).map((k) => ({ id: k, label: labels[k] }));
@@ -1226,14 +1244,14 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         )}
 
         {navLinks.length >= 4 && (
-          // The same quick links on every kind of event (festivals match band contests).
-          <nav aria-label="On this page" className="relative -mx-4 mt-6 overflow-x-auto px-4 sm:mx-0 sm:overflow-visible sm:px-0">
-            <ul className="flex gap-2 whitespace-nowrap sm:flex-wrap">
+          // The same quick links on every kind of event (festivals match band contests). They wrap on phones, so none hide off-screen.
+          <nav aria-label="On this page" className="mt-6">
+            <ul className="flex flex-wrap gap-2">
               {navLinks.map((l) => (
                 <li key={l.id}>
                   <a
                     href={`#${l.id}`}
-                    className="inline-flex min-h-10 items-center rounded-full border border-border bg-surface px-3.5 text-sm font-medium hover:border-brand"
+                    className="inline-flex min-h-11 items-center rounded-full border border-border bg-surface px-3.5 text-sm font-medium hover:border-brand"
                   >
                     {l.label}
                   </a>

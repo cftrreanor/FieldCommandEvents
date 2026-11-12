@@ -15,6 +15,8 @@ export const SETUP_STEPS = {
     { key: "details", label: "Details", path: "/edit", optional: false },
     { key: "registration", label: "Band registration", path: "/bands", optional: false },
     { key: "volunteers", label: "Jobs and shifts", path: "/volunteering", optional: true },
+    // Only on accounts with the Sponsors add-on (skipped otherwise): never blocks (owner, 2026-11-12).
+    { key: "sponsors", label: "Sponsors", path: "/sponsors", optional: true },
     { key: "publish", label: "Publish", path: "", optional: false },
   ],
   // A choir, orchestra, or group festival: the rooms groups move through, what directors fill in to register, volunteers if
@@ -24,6 +26,7 @@ export const SETUP_STEPS = {
     { key: "rooms", label: "Rooms and schedule", path: "/rooms", optional: false },
     { key: "registration", label: "Registration", path: "/bands", optional: false },
     { key: "volunteers", label: "Volunteers", path: "/volunteering", optional: true },
+    { key: "sponsors", label: "Sponsors", path: "/sponsors", optional: true },
     { key: "publish", label: "Publish", path: "", optional: false },
   ],
   // Meetings and parent-teacher conferences: the basics are enough to publish; the extras (every
@@ -60,6 +63,8 @@ export type SetupStepFacts = {
   /** Steps with more than one middle step (meetings): each step's own done and note, by key. */
   done?: Partial<Record<string, boolean>>;
   notes?: Partial<Record<string, string | null>>;
+  /** The optional Sponsors step (band contests and festivals): skipped unless the account has the add-on. */
+  sponsorsOn?: boolean;
   /** Steps this event doesn't have (a one-day meetings event has no More options: owner, 2026-11-09). */
   skip?: string[];
 };

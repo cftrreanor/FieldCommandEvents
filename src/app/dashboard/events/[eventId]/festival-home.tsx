@@ -338,3 +338,14 @@ export function FestivalDraftCards({ f }: { f: FestivalFacts }) {
     </div>
   );
 }
+
+/** A festival's Sponsors card (accounts with the add-on), under the area cards, named like its step. */
+export function FestivalSponsors({ children }: { children: ReactNode }) {
+  return (
+    <div className="mt-4">
+      <AreaCard id="sponsors" title="Sponsors">
+        <div className="mt-2">{children}</div>
+      </AreaCard>
+    </div>
+  );
+}

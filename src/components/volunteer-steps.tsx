@@ -7,7 +7,7 @@ import { SETUP_STEPS as STEPS, type SetupStepFacts, type StepsKind } from "@/lib
 
 /**
  * An event before it's published: its steps along the top (Details, its middle step, a band contest's
- * optional Volunteers, and the event page to publish), each a link, with the one you're on marked
+ * optional Volunteers, the optional Sponsors on accounts with the add-on, and the event page to publish; up to 6), each a link, with the one you're on marked
  * "Now". Status is said in words at every width, not by color alone. Optional steps never block.
  */
 export function SetupSteps({
@@ -27,7 +27,8 @@ export function SetupSteps({
   const pending = usePendingCounts();
   const unsaved = pending.failed + pending.incomplete + pending.unadded > 0;
   const base = `/dashboard/events/${eventId}`;
-  const steps = STEPS[kind].filter((s) => !facts.skip?.includes(s.key));
+  // Sponsors is a step only on accounts with the add-on (it never blocks).
+  const steps = STEPS[kind].filter((s) => !facts.skip?.includes(s.key) && (s.key !== "sponsors" || facts.sponsorsOn));
   // Event settings (Details with ?section=) is a settings page, not the Details step: it has its own list.
   const query = useSearchParams();
   // The same rule as the page: any section asked for, by ?section= or an old ?step= link.
@@ -148,7 +149,7 @@ export function SetupSteps({
         </summary>
         {stepList("grid grid-cols-1 gap-y-1")}
       </details>
-      {stepList(`mt-2 hidden gap-x-3 gap-y-1 sm:grid ${steps.length === 5 ? "sm:grid-cols-5" : steps.length === 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`)}
+      {stepList(`mt-2 hidden gap-x-3 gap-y-1 sm:grid ${steps.length >= 6 ? "sm:grid-cols-6" : steps.length === 5 ? "sm:grid-cols-5" : steps.length === 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`)}
     </nav>
   );
 }

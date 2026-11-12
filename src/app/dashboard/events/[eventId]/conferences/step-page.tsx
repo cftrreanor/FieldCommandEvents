@@ -19,8 +19,8 @@ export function StepPage({
   title: string;
   intro: ReactNode;
   children: ReactNode;
-  /** Whose "saved this" line to show (a festival's rooms: "schedule"). */
-  area?: SaveArea;
+  /** Whose "saved this" line to show (a festival's rooms: "schedule"); null for none (Sponsors). */
+  area?: SaveArea | null;
 }) {
   return (
     // data-required-marks: a small asterisk on each box that has to be filled in (globals.css).
@@ -28,7 +28,7 @@ export function StepPage({
     <div className="mx-auto max-w-5xl" data-required-marks>
       {/* No "Back to" link while setting up: it would jump ahead to Publish. The step bar is the way around. */}
       <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">{title}</h1>
-      <SavedBy eventId={eventId} area={area} className="mt-2" />
+      {area && <SavedBy eventId={eventId} area={area} className="mt-2" />}
       <p className="mt-2 max-w-3xl text-muted">{intro}</p>
       {/* The cards span the step bar's width, as on the Details step, so the page doesn't sit off to the left (QA issue 351). */}
       <div className="mt-6 space-y-6">{children}</div>
