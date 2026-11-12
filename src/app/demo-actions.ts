@@ -11,6 +11,7 @@ import { requireUser } from "@/lib/auth";
 import { getOrigin } from "@/lib/data";
 import { DEMO_COOKIE, PERSONAS, type Persona } from "@/lib/demo";
 import { demoAccount } from "@/lib/demo-accounts";
+import { seedDemoSponsors } from "@/lib/demo-sponsors";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -110,13 +111,15 @@ export async function switchDemo(eventId: string, persona: string): Promise<Acti
 
 /**
  * Fills a demo event with sample data for its type (once). The admin's demo
- * director "registered" the sample bands. Demo mode still works without it
- * (e.g. before 20261114000000_demo_sample_data.sql is run).
+ * director "registered" the sample bands. Band contests, festivals, and fairs
+ * on accounts with the Sponsors add-on also get sample sponsors. Demo mode
+ * still works without it (e.g. before 20261114000000_demo_sample_data.sql is run).
  */
 async function fillWithSamples(admin: Admin, ownerId: string, eventId: string) {
   const director = await demoAccount(admin, ownerId, "director");
   const { error } = await admin.rpc("demo_seed", { p_owner: ownerId, p_event: eventId, p_director: director?.id ?? null });
   if (error && !isSchemaError(error)) console.error("demo_seed failed", error);
+  await seedDemoSponsors(admin, ownerId, eventId);
 }
 
 const DEMO_DAYS = 7;
