@@ -201,6 +201,11 @@ text `#FFFFFF`, muted `#FFFFFF` (dark mode has no grey text: supporting text is 
 accent `#7FB6E0`, success `#64D69A`, warning `#FFC266`, danger `#FF8A80`.
 Header and closing band `#071A31`.
 
+**The one exception to "no grey in dark mode": example text in empty boxes** (placeholders) is a softer
+blue-grey `#A3B5C9` in italics (7.9:1 on a box), so an empty box never looks typed in (owner, 2026-11-11; lesson
+L27). It's set once in `src/app/globals.css` (`--placeholder` and `::placeholder`); light mode uses `#5B6B7B`,
+also in italics. Nothing else in dark mode uses grey text.
+
 ## Accessibility
 
 - Touch targets at least 44×44px (buttons and inputs are `min-h-11`).

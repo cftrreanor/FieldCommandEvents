@@ -16,6 +16,8 @@ export function WithdrawBandButton({
   removes,
   one,
   action,
+  label,
+  outline = false,
 }: {
   bandName: string;
   eventName: string;
@@ -24,6 +26,10 @@ export function WithdrawBandButton({
   /** "band" or "group". */
   one: string;
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
+  /** The button's words (default "Withdraw this [band]"). */
+  label?: string;
+  /** A red outline button (festivals: the one look for Remove, Withdraw, Turn off, and Delete). */
+  outline?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [sure, setSure] = useState(false);
@@ -34,8 +40,13 @@ export function WithdrawBandButton({
 
   return (
     <>
-      <Button type="button" variant="quiet-danger" onClick={() => dialog.current?.showModal()} className="min-h-11 px-0 text-sm">
-        Withdraw this {one}
+      <Button
+        type="button"
+        variant={outline ? "danger" : "quiet-danger"}
+        onClick={() => dialog.current?.showModal()}
+        className={outline ? "text-sm" : "min-h-11 px-0 text-sm"}
+      >
+        {label ?? `Withdraw this ${one}`}
       </Button>
       <dialog
         ref={dialog}

@@ -41,6 +41,8 @@ function openTarget(href: string) {
     }
     const details = el instanceof HTMLDetailsElement ? el : el.querySelector("details");
     if (details) details.open = true;
+    // A button that opens a window (Event day's "Push the schedule back", hidden on phones where this bar has it).
+    el.querySelector<HTMLButtonElement>("[data-opens-from-bar]")?.click();
     el.scrollIntoView({ block: "start" });
   };
   look();

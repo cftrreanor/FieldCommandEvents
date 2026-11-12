@@ -57,8 +57,16 @@ export const hasBands = (type: string | null | undefined) => !type || type === "
 export const hasEnsembles = (type: string | null | undefined) => hasBands(type) || type === "group_event";
 
 /** Rooms, and each group's path through them: group events. */
-/** Volunteer events and band contests set up volunteers as jobs (the short job form that saves as you type). */
-export const usesJobs = (type: string | null | undefined) => type === "volunteer" || type === "band_contest";
+/** Volunteer events, band contests, and festivals set up volunteers as jobs (the short job form that saves as you type). */
+export const usesJobs = (type: string | null | undefined) => type === "volunteer" || type === "band_contest" || type === "group_event";
+
+/**
+ * The volunteer area's one name, on its page, its step, its card, and every button to it: "Volunteers" for a
+ * festival (owner, 2026-11-11), "Jobs and shifts" for the other kinds set up as jobs, "Volunteer Setup" for the rest.
+ */
+export function volunteerAreaName(type: string | null | undefined) {
+  return type === "group_event" ? "Volunteers" : usesJobs(type) ? "Jobs and shifts" : "Volunteer Setup";
+}
 
 export const hasRooms = (type: string | null | undefined) => type === "group_event";
 

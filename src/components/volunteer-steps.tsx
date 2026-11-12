@@ -155,5 +155,5 @@ export function SetupSteps({
 
 /** "Add a job" → "add a job"; a note that starts with a name ("BBQ crew needs a shift") keeps its capitals. */
 function lowerFirst(text: string) {
-  return /^(Add|Choose|Pick|Tick)\b/.test(text) ? text.charAt(0).toLowerCase() + text.slice(1) : text;
+  return /^(Add|Choose|Fix|Pick|Put|Tick)\b/.test(text) ? text.charAt(0).toLowerCase() + text.slice(1) : text;
 }

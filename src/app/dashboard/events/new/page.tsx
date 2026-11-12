@@ -12,6 +12,7 @@ import { SetupSteps } from "@/components/volunteer-steps";
 import type { StepsKind } from "@/lib/setup-steps";
 import { SetupLogo } from "../_components/setup-logo";
 import { ContestPicker } from "../_components/contest-picker";
+import { FestivalCopy, type PastFestival } from "../_components/festival-copy";
 import { loadBrand } from "@/lib/badges";
 import { EventTypeChoices } from "@/components/event-type-picker";
 import { hasConferences, isEventType } from "@/lib/event-types";
@@ -20,7 +21,7 @@ import { freeStatus } from "@/lib/admin";
 import { requireUser } from "@/lib/auth";
 import { PlanAsk } from "@/components/plan-ask";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate, formatDateRange, utcToZonedTime } from "@/lib/time";
+import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime } from "@/lib/time";
 
 export const metadata: Metadata = { title: "New event" };
 
@@ -126,6 +127,32 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
       venue_lng: number | null;
     }[]).filter((e) => e.status !== "draft" || (e.classifications ?? []).length > 0); // a draft never set up has nothing to copy
     const source = past.find((e) => e.id === from) ?? null;
+    // A festival can start from an earlier one on the account (copy last year's: owner decisions, 2026-11-11).
+    const { data: festivalData } =
+      type === "group_event"
+        ? await supabase
+            .from("events")
+            .select("id, name, status, starts_on, timezone")
+            .eq("organization_id", org.id)
+            .eq("event_type", "group_event")
+            .order("starts_on", { ascending: false })
+            .limit(30)
+        : { data: [] };
+    const thisYear = Number(utcToZonedDate(new Date().toISOString(), org.default_timezone).slice(0, 4));
+    // A draft never published may be half set up: only festivals that went live, and have started, are offered.
+    const pastFestivals: PastFestival[] = ((festivalData ?? []) as { id: string; name: string; status: string; starts_on: string }[])
+      .filter((e) => e.status !== "draft" && e.starts_on <= utcToZonedDate(new Date().toISOString(), org.default_timezone))
+      .map((e) => {
+        const year = Number(e.starts_on.slice(0, 4));
+        return {
+          id: e.id,
+          name: e.name,
+          date: formatDate(e.starts_on),
+          // "Spring Choir Festival 2026" becomes "… 2027"; a name without a year stays as it is.
+          newName: e.name.replace(/\b(20\d\d)\b/, (y) => String(Math.max(Number(y) + 1, thisYear))),
+          when: year >= thisYear - 1 ? ("Last year" as const) : ("Last time" as const),
+        };
+      });
     // A date already typed before picking (or before starting over) stays.
     const day = typeof on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(on) ? on : undefined;
     const pastContest = (e: (typeof past)[number]) => ({ id: e.id, name: e.name, date: formatDate(e.starts_on), venue: e.venue_name });
@@ -155,8 +182,17 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
     );
     return (
       <div className="mx-auto max-w-5xl" data-required-marks>
-        {type === "volunteer" || type === "band_contest" ? (
-          <FirstStep kind={type === "volunteer" ? "volunteer" : "band"} intro={type === "volunteer" ? "Add your team, maps, and volunteer jobs whenever you're ready, from Event settings." : "Add your team and maps whenever you're ready, from Event settings."}>
+        {type === "volunteer" || type === "band_contest" || type === "group_event" ? (
+          <FirstStep
+            kind={type === "volunteer" ? "volunteer" : type === "group_event" ? "festival" : "band"}
+            intro={
+              type === "volunteer"
+                ? "Add your team, maps, and volunteer jobs whenever you're ready, from Event settings."
+                : type === "group_event"
+                  ? "What families and group directors see first. You can change any of it later."
+                  : "Add your team and maps whenever you're ready, from Event settings."
+            }
+          >
             {changeKind}
           </FirstStep>
         ) : (
@@ -165,6 +201,7 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
           </SetupHeader>
         )}
         {trialNote}
+        {pastFestivals.length > 0 && <FestivalCopy festivals={pastFestivals} today={utcToZonedDate(new Date().toISOString(), org.default_timezone)} />}
         {past.length > 0 && (
           // Start from an earlier contest: its setup comes over when this one is saved.
           <Card className="mt-6">

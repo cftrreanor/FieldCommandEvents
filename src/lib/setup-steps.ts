@@ -17,6 +17,15 @@ export const SETUP_STEPS = {
     { key: "volunteers", label: "Jobs and shifts", path: "/volunteering", optional: true },
     { key: "publish", label: "Publish", path: "", optional: false },
   ],
+  // A choir, orchestra, or group festival: the rooms groups move through, what directors fill in to register, volunteers if
+  // it has them (never blocks), then publishing opens registration (owner decisions, 2026-11-11).
+  festival: [
+    { key: "details", label: "Details", path: "/edit", optional: false },
+    { key: "rooms", label: "Rooms and schedule", path: "/rooms", optional: false },
+    { key: "registration", label: "Registration", path: "/bands", optional: false },
+    { key: "volunteers", label: "Volunteers", path: "/volunteering", optional: true },
+    { key: "publish", label: "Publish", path: "", optional: false },
+  ],
   // Meetings and parent-teacher conferences: the basics are enough to publish; the extras (every
   // week, phone calls, breaks, time between meetings) wait in an optional step (decisions 2026-11-07).
   meeting: [
@@ -33,6 +42,7 @@ export type StepsKind = keyof typeof SETUP_STEPS;
 export const STEP_PATHS: Record<StepsKind, string[]> = {
   volunteer: SETUP_STEPS.volunteer.map((s) => s.path),
   band: SETUP_STEPS.band.map((s) => s.path),
+  festival: SETUP_STEPS.festival.map((s) => s.path),
   meeting: SETUP_STEPS.meeting.map((s) => s.path),
 };
 

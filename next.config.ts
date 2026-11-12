@@ -27,8 +27,13 @@ const nextConfig: NextConfig = {
     imageSizes: [32, 48, 64, 96, 128, 256, 384, 448, 512],
   },
   // Sign-up sheets are volunteer events (one kind, one page): the search-friendly address leads there.
+  // Festival emails link to a group's page by a festival word (/dashboard/groups/…); the page itself, and every
+  // link already sent, stays at /dashboard/bands/….
   async redirects() {
-    return [{ source: "/sign-up-sheets", destination: "/volunteer-events", permanent: true }];
+    return [
+      { source: "/sign-up-sheets", destination: "/volunteer-events", permanent: true },
+      { source: "/dashboard/groups/:path*", destination: "/dashboard/bands/:path*", permanent: false },
+    ];
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

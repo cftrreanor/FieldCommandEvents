@@ -2,10 +2,18 @@ import { DayBar } from "@/components/event-day-nav";
 import { SetupStrip } from "@/components/setup-guide";
 import { loadDayActions } from "@/lib/event-day-actions";
 import { loadSetupFacts } from "@/lib/setup-facts";
-import { bandRegistrationMissing, emptyJobsNote, setupChecklist, type SetupFacts } from "@/lib/setup-checklist";
+import {
+  bandRegistrationMissing,
+  emptyJobsNote,
+  festivalRegistrationMissing,
+  festivalRoomsMissing,
+  festivalRoomsToFix,
+  setupChecklist,
+  type SetupFacts,
+} from "@/lib/setup-checklist";
 import { SetupSteps } from "@/components/volunteer-steps";
 import { STEP_PATHS, type SetupStepFacts, type StepsKind } from "@/lib/setup-steps";
-import { hasConferences } from "@/lib/event-types";
+import { hasConferences, hasRooms } from "@/lib/event-types";
 
 /**
  * Every page of an event. On the day itself, the team's jobs of the day are a
@@ -24,17 +32,29 @@ export default async function EventLayout({ children, params }: LayoutProps<"/da
         ? "volunteer"
         : facts.eventType === "band_contest"
           ? "band"
-          : hasConferences(facts.eventType)
+          : hasRooms(facts.eventType)
+            ? "festival"
+            : hasConferences(facts.eventType)
             ? "meeting"
             : null
       : null;
-  const steps = facts && kind ? (kind === "volunteer" ? volunteerSteps(facts) : kind === "band" ? bandSteps(facts) : meetingSteps(facts)) : null;
+  const steps =
+    facts && kind
+      ? kind === "volunteer"
+        ? volunteerSteps(facts)
+        : kind === "band"
+          ? bandSteps(facts)
+          : kind === "festival"
+            ? festivalSteps(facts)
+            : meetingSteps(facts)
+      : null;
   return (
     <>
       {day && <DayBar day={day} />}
       {steps && kind && <SetupSteps eventId={eventId} kind={kind} facts={steps} />}
       {/* A meetings draft's Meeting setup page only redirects to a step: no setup bar there either, or it flashes on the way. */}
-      {facts && <SetupStrip eventId={eventId} initial={setupChecklist(facts)} skip={kind ? (kind === "meeting" ? [...STEP_PATHS.meeting, "/conferences"] : STEP_PATHS[kind]) : undefined} />}
+      {/* Festivals: the step bar while setting up, the event page's next step once live; no setup strip (owner, 2026-11-11). */}
+      {facts && facts.eventType !== "group_event" && <SetupStrip eventId={eventId} initial={setupChecklist(facts)} skip={kind ? (kind === "meeting" ? [...STEP_PATHS.meeting, "/conferences"] : STEP_PATHS[kind]) : undefined} />}
       {children}
       {/* Room for the tab bar along the bottom of a phone. */}
       {day && <div aria-hidden className="h-16 lg:hidden print:hidden" />}
@@ -60,6 +80,26 @@ function bandSteps(f: SetupFacts): SetupStepFacts {
     middleNote: missing,
     count: null,
     // Optional: done once there's a job volunteers can see, and every job has something to sign up for.
+    volunteersDone: (f.readyJobs ?? 0) > 0 && empty.length === 0,
+    volunteersNote: empty.length ? `Optional · ${emptyJobsNote(empty)}` : "Optional",
+  };
+}
+
+/**
+ * A festival: Rooms and schedule needs a room in the rotation, Registration needs a deadline (the database checks
+ * both before publishing); Volunteers never blocks.
+ */
+function festivalSteps(f: SetupFacts): SetupStepFacts {
+  // A room that would hold two groups at once isn't "all set", though it doesn't stop publishing.
+  const rooms = festivalRoomsMissing(f) ?? festivalRoomsToFix(f);
+  const registration = festivalRegistrationMissing(f);
+  const empty = f.emptyJobs ?? [];
+  return {
+    middleDone: !rooms,
+    middleNote: rooms,
+    count: f.rooms ? `${f.rooms} ${f.rooms === 1 ? "room" : "rooms"}` : null,
+    done: { rooms: !rooms, registration: !registration },
+    notes: { rooms, registration },
     volunteersDone: (f.readyJobs ?? 0) > 0 && empty.length === 0,
     volunteersNote: empty.length ? `Optional · ${emptyJobsNote(empty)}` : "Optional",
   };

@@ -84,12 +84,13 @@ export function groupSteps({
 }: {
   slots: { room_id: string; starts_at: string; ends_at: string }[];
   rooms: Map<string, { name: string; note: string | null }>;
-  checkins: { room_id: string | null; created_at: string }[];
+  /** The team's marks for this group; only 'done' rows (arrived, done in a room) count here. */
+  checkins: { room_id: string | null; created_at: string; kind?: string }[];
   time: (iso: string) => string;
 }): DayStep[] {
   const mine = [...slots].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   if (!mine.length) return [];
-  const tap = (room: string | null) => checkins.find((c) => c.room_id === room)?.created_at ?? null;
+  const tap = (room: string | null) => checkins.find((c) => c.room_id === room && (c.kind ?? "done") === "done")?.created_at ?? null;
   const arrived = tap(null);
   return [
     { key: "arrive", label: "Check in when you arrive", done: arrived && `Checked in ${time(arrived)}`, due: mine[0].starts_at },

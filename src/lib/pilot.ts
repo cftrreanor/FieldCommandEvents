@@ -16,7 +16,7 @@ const HOME_ORDER = ["volunteer", "band_contest", "group_event", "fair", "school_
 const WEBSITE_NAMES: Record<string, string> = {
   volunteer: "Volunteers and sign-ups",
   band_contest: "Band contests",
-  group_event: "Choir and group festivals",
+  group_event: "Choir, orchestra, and group festivals",
   fair: "School fairs and fundraisers",
   school_visit: "Visitor registration and check-in",
   conference: "Parent-teacher conferences",

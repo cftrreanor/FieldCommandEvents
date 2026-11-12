@@ -127,13 +127,13 @@ export function LogoForm({ eventId, logo, color }: { eventId: string | null; log
               {logo ? "Replace logo" : "Upload logo"}
             </Button>
             {logo && (
-              <Button type="button" variant="ghost" disabled={!!busy} onClick={remove}>
+              <Button type="button" variant="danger" disabled={!!busy} onClick={remove}>
                 Remove
               </Button>
             )}
           </div>
           <p className="text-xs text-muted" aria-live="polite">
-            {busy ?? "PNG or JPG, up to 2 MB."}
+            {busy ?? "PNG or JPG, up to 2 MB"}
           </p>
         </div>
       </div>

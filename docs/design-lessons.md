@@ -269,6 +269,23 @@ screen's edge.
   built (phone setup bar covers buttons), layout fixes 2026-11-09 (footer under the bar; panel heading
   scrolled away; fade covered the focused step).
 
+## L26. Mock-up numbers are worked out, not typed
+Every count, time, and "N directors" in a mock-up comes from the same sample data, worked out the way the app would
+(the schedule from `roomTimes()`, counts from the list on screen), and screens that show the same moment agree.
+- **Why:** reviewers trust the numbers; a count that doesn't add up hides whether the rule is wrong or the sample is.
+- **Seen in:** group festival mock-ups round 1 (4 groups emailed where 5 moved; a Sunday group "Up next" on
+  Saturday) and round 2 (a break window over another group's slot; "2 groups after them" with 1 left; "Now" for a
+  group nobody marked).
+- **Check:** for each number on a board, point to where it comes from; screens of the same moment show the same facts.
+
+## L27. Example text never looks typed
+Example text in an empty box is visibly quieter than a typed answer in light and dark (a softer color plus italics),
+and long examples move under the box as help.
+- **Why:** an empty box that looks filled gets skipped, or published empty.
+- **Seen in:** group festival mock-ups round 1 (2 of 8) and round 2 (3 of 5): in dark mode the example was the same
+  white as typed values.
+- **Check:** open each form in dark mode; every empty box reads as empty at a glance.
+
 ## Self-check before a review
 
 Go through every screen, in light **and dark**, at phone **and** desktop. Fix anything that fails
@@ -295,6 +312,8 @@ before the panel sees it.
 - [ ] **L17** A ready step's action is at the top; a blocked one names its fix there
 - [ ] **L18** Sibling steps save the same way, with Next in the same place
 - [ ] **L19** Every date-based state (opens later, scheduled) shows on every badge, button, and job; a timer that ends refreshes the page
+- [ ] **L26** Every number on a board is worked out from the sample data; screens of the same moment agree
+- [ ] **L27** Empty boxes look empty in light and dark
 - [ ] **L25** Every screenshot matches its words, is seen as its people see it, and is cropped on white space
 - [ ] `npm run lint` passes (includes the automatic checks)
 

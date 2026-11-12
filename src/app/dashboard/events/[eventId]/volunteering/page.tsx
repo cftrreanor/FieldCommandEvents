@@ -20,7 +20,7 @@ import { importFields, type Choice } from "@/lib/imports";
 import { createStation, moveCheckpoint, publishAndOpenSignups, setVolunteerSignupOpen } from "../../../actions";
 import { ActionButton, CopyLinkButton, NewStationForm, type LeadOption } from "../forms";
 import { StationTabs, UnsavedChangesProvider } from "./station-steps";
-import { FAIR_ZONES, hasBands, hasBooths, hasRooms, leadWords, usesJobs } from "@/lib/event-types";
+import { FAIR_ZONES, hasBands, hasBooths, hasRooms, leadWords, usesJobs, volunteerAreaName } from "@/lib/event-types";
 import { kindLabel, sortStations } from "@/lib/contest-day";
 import { CheckInOrderList } from "./check-in-order";
 import { twoWeeksBefore } from "@/lib/setup-checklist";
@@ -32,7 +32,7 @@ import { LineIcon } from "@/components/line-icon";
 export async function generateMetadata({ params }: PageProps<"/dashboard/events/[eventId]/volunteering">): Promise<Metadata> {
   const { eventId } = await params;
   const { data } = await (await createClient()).from("events").select("event_type").eq("id", eventId).maybeSingle();
-  return { title: usesJobs(data?.event_type) ? "Jobs and shifts" : "Volunteer Setup" };
+  return { title: volunteerAreaName(data?.event_type) };
 }
 
 type HostRow = { user_id: string; role: "owner" | "admin"; profiles: { full_name: string; email: string } | null };
@@ -102,6 +102,8 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
   // A volunteer event's (or band contest's) jobs: the setup redesign's words, layout, and saving as you type.
   const jobsHere = usesJobs(event.event_type);
   const bandsHere = hasBands(event.event_type);
+  // A festival's Volunteers step is optional, like a band contest's.
+  const festival = hasRooms(event.event_type);
   const published = event.status === "published";
   const stations = sortStations((stationData ?? []) as unknown as Omit<Station, "lead_ids">[]).map((st) => ({
     ...st,
@@ -279,7 +281,7 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">{/* The step's own name, as in the step bar and the event page's button (light check, 2026-11-08). */}
-          {jobsHere ? "Jobs and shifts" : "Volunteer Setup"}</h1>
+          {volunteerAreaName(event.event_type)}</h1>
         {/* A volunteer event's "+ Add a job" sits by the title, so it's never scrolled out of sight with the tabs. */}
         {jobsHere && stations.length > 0 && (
           <Link
@@ -408,7 +410,9 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
             {jobsHere
               ? bandsHere
                 ? "A job is a way to help, like parking, concessions, or the gate, or a list of things to bring, like water for the judges. Volunteers pick a shift or an item. A job can also be a check-in stop that bands go through on contest day."
-                : "A job is a way to help, like parking or picking up litter, or a list of things to bring, like water and trash bags. Volunteers pick a shift or an item."
+                : festival
+                  ? "A job is a way to help, like room monitors, ushers, or the welcome table, or a list of things to bring, like water for the judges. Volunteers pick a shift or an item."
+                  : "A job is a way to help, like parking or picking up litter, or a list of things to bring, like water and trash bags. Volunteers pick a shift or an item."
               : "Each sign-up is a job, a place, or a list of things to bring, like Parking, Concessions, or a potluck. People sign up for its time slots or its items."}
           </p>
         )}
@@ -520,7 +524,7 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                           preview: previewHref,
                           next: published
                             ? { href: `/dashboard/events/${eventId}`, label: "Back to the event" }
-                            : bandsHere
+                            : bandsHere || festival
                               ? { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish" }
                               : { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish your event" },
                         },
@@ -605,13 +609,13 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                   // The same pinned bar as the other setup steps: optional for a band contest; a volunteer event needs a job first.
                   <div className="sticky bottom-[var(--day-bar,0px)] z-10 -mx-4 -mb-4 mt-6 flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 rounded-b-lg border-t-2 border-border bg-surface px-4 py-3 shadow-[0_-6px_16px_rgb(0_0_0/0.10)] sm:-mx-6 sm:-mb-6 sm:px-6">
                     <p className="hidden min-w-0 flex-1 text-sm text-muted sm:block">
-                      {bandsHere ? "Optional. Add jobs any time before contest day." : "Publishing needs at least one job."}
+                      {bandsHere ? "Optional. Add jobs any time before contest day." : festival ? "Optional. Add jobs any time before the festival." : "Publishing needs at least one job."}
                     </p>
                     <Link
                       href={`/dashboard/events/${eventId}#publish`}
                       className="ml-auto inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:bg-background"
                     >
-                      {bandsHere ? "Next up: Publish →" : "See what publishing needs →"}
+                      {bandsHere || festival ? "Next up: Publish →" : "See what publishing needs →"}
                     </Link>
                   </div>
                 )}

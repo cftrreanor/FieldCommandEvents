@@ -13,8 +13,8 @@ import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatDateRange, formatTime, formatTimeRange, utcToZonedDate, zoneAbbreviation, zoneName } from "@/lib/time";
 import { readPass } from "@/lib/volunteer-pass";
-import { groupWords, hasBands, hasBooths, hasConferences, hasEnsembles, hasParents, hasRooms } from "@/lib/event-types";
-import { RoomSchedule, type ScheduleRoom, type ScheduleSlot } from "@/components/room-schedule";
+import { groupWords, hasBands, hasBooths, hasConferences, hasParents, hasRooms } from "@/lib/event-types";
+import { FestivalPublic } from "./festival-public";
 import { closesAtLabel, parentRegistrationClosed } from "@/lib/parents";
 import { ScheduleUpdateBanner } from "@/components/schedule-update-banner";
 import { EventBannerSlot } from "@/components/event-banner-slot";
@@ -101,22 +101,16 @@ export default async function EventPublicPage({ params }: Params) {
   const isVolunteer = await volunteersHere(slug, event.id);
 
   const supabase = await createClient();
-  const [{ data: scheduleData }, { data: finalsData }, { data: breakData }, { data: progressData }] = await Promise.all([
-    supabase.rpc("public_schedule", { p_slug: slug }),
-    supabase.rpc("public_finals", { p_slug: slug }),
-    supabase.rpc("public_breaks", { p_slug: slug }),
-    supabase.rpc("public_progress", { p_slug: slug }),
-  ]);
-  // Group events: the posted schedule, room by room.
+  // Festivals have their own section (festival-public.tsx): no band contest calls (speed).
   const roomsHere = hasRooms(event.event_type);
-  const [{ data: roomData }, { data: roomSlotData }] = roomsHere
-    ? await Promise.all([
-        supabase.from("rooms").select("id, name, note, path_order").eq("event_id", event.id),
-        supabase.rpc("public_room_schedule", { p_slug: slug }),
-      ])
-    : [{ data: [] }, { data: [] }];
-  const rooms = (roomData ?? []) as ScheduleRoom[];
-  const roomSlots = (roomSlotData ?? []) as ScheduleSlot[];
+  const [{ data: scheduleData }, { data: finalsData }, { data: breakData }, { data: progressData }] = roomsHere
+    ? [{ data: [] }, { data: [] }, { data: [] }, { data: [] }]
+    : await Promise.all([
+        supabase.rpc("public_schedule", { p_slug: slug }),
+        supabase.rpc("public_finals", { p_slug: slug }),
+        supabase.rpc("public_breaks", { p_slug: slug }),
+        supabase.rpc("public_progress", { p_slug: slug }),
+      ]);
   const progress = (progressData ?? []) as ProgressRow[];
   const liveOf = (round: ProgressRow["round"], n: number) => {
     const p = progress.find((x) => x.round === round && x.number === n);
@@ -142,9 +136,10 @@ export default async function EventPublicPage({ params }: Params) {
   const files = event.status === "published" ? await filesFor([event.id], ["public"], () => event.timezone) : [];
   const bandsHere = hasBands(event.event_type);
   const words = groupWords(event.event_type);
-  const bandsOpen = hasEnsembles(event.event_type) && registrationIsOpen(event);
+  // Festivals show their own "Group directors" card.
+  const bandsOpen = hasBands(event.event_type) && registrationIsOpen(event);
   // Registration set to open on a later day: directors see when.
-  const bandsLater = hasEnsembles(event.event_type) && event.band_registration_open && opensLater(event) ? event.band_registration_opens_on : null;
+  const bandsLater = hasBands(event.event_type) && event.band_registration_open && opensLater(event) ? event.band_registration_opens_on : null;
   const tz = event.timezone;
   const isEventDay = utcToZonedDate(new Date().toISOString(), tz) >= event.starts_on && utcToZonedDate(new Date().toISOString(), tz) <= event.ends_on;
   // On fair day, volunteers who show up are added at the desk, not online.
@@ -187,34 +182,21 @@ export default async function EventPublicPage({ params }: Params) {
     </EventHeading>
   );
 
-  return (
+  const festivalDay = roomsHere && isEventDay && event.performance_order_published;
+  const maps = (
     <>
-    <EventHeaderBar slug={slug} />
-    {band && heading}
-    {(bandsHere || roomsHere) && event.status === "published" && <ScheduleUpdateBanner slug={slug} version={event.schedule_updated_at} />}
-    <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:py-12">
-      {event.status !== "published" && (
-        <Card className="mt-6 bg-brand-soft">
-          <p className="text-sm">Preview: this page isn&apos;t public yet. Only your team can see it.</p>
-        </Card>
+      {files.length > 0 && (
+        <section className="mt-10" aria-labelledby="maps-heading">
+          <h2 id="maps-heading" className="text-xl font-semibold">
+            Maps &amp; info
+          </h2>
+          <FileLinks files={files} className="mt-3" />
+        </section>
       )}
-
-      {!band && heading}
-
-      <EventBannerSlot eventId={event.id} audience="public" tz={tz} className="mt-6" />
-
-      {/* A fair's attraction list is long: point volunteers to the sign-up first. */}
-      {hasBooths(event.event_type) && signUp && event.status === "published" && (
-        <p className="mt-6 rounded-lg border border-brand bg-brand-soft px-4 py-3 text-sm">
-          <span className="font-semibold">Volunteers needed</span> ·{" "}
-          <Link href={`/e/${slug}/volunteer`} className="font-semibold text-brand underline">
-            Sign up for a shift
-          </Link>
-        </p>
-      )}
-
-      {hasBooths(event.event_type) && event.status === "published" && <FairBooths slug={slug} />}
-
+    </>
+  );
+  const cards = (
+    <>
       {(isVolunteer || bandsOpen || bandsLater || signUp || parentsOpen || parentWalkIns) && event.status === "published" && (
         <div className="mt-8 grid gap-3 sm:grid-cols-2">
           {parentWalkIns && (
@@ -275,34 +257,46 @@ export default async function EventPublicPage({ params }: Params) {
           )}
         </div>
       )}
+    </>
+  );
 
-      {files.length > 0 && (
-        <section className="mt-10" aria-labelledby="maps-heading">
-          <h2 id="maps-heading" className="text-xl font-semibold">
-            Maps &amp; info
-          </h2>
-          <FileLinks files={files} className="mt-3" />
-        </section>
+  return (
+    <>
+    <EventHeaderBar slug={slug} />
+    {band && heading}
+    {(bandsHere || roomsHere) && event.status === "published" && <ScheduleUpdateBanner slug={slug} version={event.schedule_updated_at} />}
+    <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:py-12">
+      {event.status !== "published" && (
+        <Card className="mt-6 bg-brand-soft">
+          <p className="text-sm">Preview: this page isn&apos;t public yet. Only your team can see it.</p>
+        </Card>
       )}
 
-      {roomsHere && (
-        <section className="mt-10" aria-labelledby="rooms-heading">
-          <h2 id="rooms-heading" className="text-xl font-semibold">
-            Schedule
-          </h2>
-          {roomSlots.length === 0 ? (
-            <p className="mt-2 text-muted">The schedule hasn&apos;t been posted yet. Check back soon.</p>
-          ) : (
-            <>
-              <p className="mt-1 mb-4 text-sm text-muted">
-                Room by room. All times {zoneName(tz)}
-                {isEventDay && " · updates automatically"}
-              </p>
-              <RoomSchedule rooms={rooms} slots={roomSlots} timezone={tz} live={isEventDay} columns={1} />
-            </>
-          )}
-        </section>
+      {!band && heading}
+
+      <EventBannerSlot eventId={event.id} audience="public" tz={tz} className="mt-6" />
+
+      {/* A fair's attraction list is long: point volunteers to the sign-up first. */}
+      {hasBooths(event.event_type) && signUp && event.status === "published" && (
+        <p className="mt-6 rounded-lg border border-brand bg-brand-soft px-4 py-3 text-sm">
+          <span className="font-semibold">Volunteers needed</span> ·{" "}
+          <Link href={`/e/${slug}/volunteer`} className="font-semibold text-brand underline">
+            Sign up for a shift
+          </Link>
+        </p>
       )}
+
+      {hasBooths(event.event_type) && event.status === "published" && <FairBooths slug={slug} />}
+
+      {!festivalDay && cards}
+
+      {!festivalDay && maps}
+
+      {roomsHere && event.status === "published" && <FestivalPublic slug={slug} event={event} />}
+
+      {/* A festival on its day leads with Happening now and Find a group; the volunteer card comes after. */}
+      {festivalDay && cards}
+      {festivalDay && maps}
 
       {bandsHere && (
       <section className="mt-10">

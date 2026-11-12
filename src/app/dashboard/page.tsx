@@ -15,7 +15,8 @@ import { formatDate, formatDateRange, formatTime, utcToZonedDate, zoneAbbreviati
 import { AutoRefresh } from "@/components/auto-refresh";
 import { DayStatusPill } from "@/components/day-status";
 import { eventPhase, type BandDay } from "@/lib/contest-day";
-import { bandSteps, dayStatus, groupSteps, type DayStatus, type ProgressRow } from "@/lib/director-day";
+import { bandSteps, dayStatus, type DayStatus, type ProgressRow } from "@/lib/director-day";
+import { groupState, type Mark, type Tone } from "@/lib/festival-day";
 import { eventTypeLabel, groupWords, hasConferences, hasEnsembles, hasRooms } from "@/lib/event-types";
 import type { createClient as CreateClient } from "@/lib/supabase/server";
 import { RequestAccess } from "@/components/request-access";
@@ -64,6 +65,8 @@ type MyBand = {
   // Only readable once the host publishes, so these double as "times are posted".
   performance_slots: { perform_at: string | null } | { perform_at: string | null }[] | null;
   finals_slots: { perform_at: string | null }[];
+  /** Festivals: the group's room times (readable once posted). */
+  room_slots?: { starts_at: string }[];
 };
 
 type DraftStatus = {
@@ -113,7 +116,7 @@ function isToday(e: { starts_on: string; ends_on: string; timezone: string }) {
  */
 const DAY_SCREEN: Record<string, { path: string; label: string }> = {
   band_contest: { path: "contest-day", label: "Check on every band" },
-  group_event: { path: "event-day", label: "Check groups in" },
+  group_event: { path: "event-day", label: "Mark groups arrived" },
   school_visit: { path: "parents/check-in", label: "Check in parents" },
   conference: { path: "conferences/meetings", label: "Run today's meetings" },
   fair: { path: "booths/check-in", label: "Check in booths and partners" },
@@ -172,7 +175,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       .select(
         `id, band_name, school_name,
          events(${EVENT_COLUMNS}, band_registration_open, band_registration_deadline, band_registration_opens_on, performance_order_published, finalists_revealed, ready_minutes_before, finals_ready_minutes_before),
-         performance_slots(perform_at), finals_slots(perform_at)`,
+         performance_slots(perform_at), finals_slots(perform_at), room_slots(starts_at)`,
       )
       .eq("director_user_id", user.id),
   ]);
@@ -188,7 +191,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           .filter((b) => b.events.performance_order_published && eventPhase(b.events, now) === "day")
           .map(async (b) => [b.id, await liveStatus(b, now)] as const),
       )
-    ).filter((x): x is readonly [string, DayStatus] => x[1] != null),
+    ).filter((x): x is readonly [string, LiveStatus] => x[1] != null),
   );
   const helping = ((staffRows ?? []) as unknown as StaffEvent[])
     .filter((r): r is StaffEvent & { events: EventSummary } => r.events != null)
@@ -393,13 +396,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       {live.size > 0 && <AutoRefresh seconds={30} />}
       {myBands.length > 0 && (
         <Section
-          icon="band"
-          title="Competing"
-          description="Your bands' registrations at contests."
+          icon={myBands.some((b) => hasRooms(b.events.event_type)) ? "group" : "band"}
+          title={myBands.some((b) => hasRooms(b.events.event_type)) ? "Your groups" : "Competing"}
+          description={
+            myBands.some((b) => hasRooms(b.events.event_type)) ? "Festivals and contests your groups are registered for" : "Your bands' registrations at contests."
+          }
           items={bandsByEvent.map((bands) => ({
             key: bands[0].events.id,
             past: isPast(bands[0].events),
             node: <BandCard bands={bands} live={live} />,
+            wide: hasRooms(bands[0].events.event_type) && bands.length > 1,
           }))}
         />
       )}
@@ -439,7 +445,8 @@ function Section({
   action?: ReactNode;
   /** A note under the heading, e.g. when a free pilot ends. */
   notice?: ReactNode;
-  items: { key: string; past: boolean; node: ReactNode }[];
+  /** `wide`: the card takes the full width (a festival with a row per group). */
+  items: { key: string; past: boolean; node: ReactNode; wide?: boolean }[];
   empty?: ReactNode;
   /** Shown when everything is in the past. */
   nothingUpcoming?: ReactNode;
@@ -449,7 +456,9 @@ function Section({
   const grid = (list: typeof items) => (
     <ul className="grid gap-4 sm:grid-cols-2">
       {list.map((i) => (
-        <li key={i.key}>{i.node}</li>
+        <li key={i.key} className={i.wide ? "sm:col-span-2" : undefined}>
+          {i.node}
+        </li>
       ))}
     </ul>
   );
@@ -666,6 +675,13 @@ function bandStatus(b: DirectorBand): { text: string; tone: "brand" | "accent" |
   const at = (iso: string) =>
     `${e.starts_on !== e.ends_on ? `${formatDate(utcToZonedDate(iso, e.timezone), { year: undefined })}, ` : ""}${formatTime(iso, e.timezone)} ${zoneAbbreviation(iso, e.timezone)}`;
   if (isPast(e)) return { text: "Completed", tone: "neutral" };
+  if (hasRooms(e.event_type)) {
+    // Always with the date (rows are sorted by it), as plain words rather than a badge.
+    const first = firstRoom(b);
+    return first
+      ? { text: `First room ${formatDate(utcToZonedDate(first, e.timezone), { year: undefined })}, ${formatTime(first, e.timezone)} ${zoneAbbreviation(first, e.timezone)}`, tone: "neutral" }
+      : { text: "Times not posted yet", tone: "neutral" };
+  }
   const finals = e.finalists_revealed ? b.finals_slots[0] : undefined;
   if (finals) return { text: finals.perform_at ? `Finalist · performs ${at(finals.perform_at)}` : "Finalist", tone: "accent" };
   const slot = Array.isArray(b.performance_slots) ? b.performance_slots[0] : b.performance_slots;
@@ -674,19 +690,38 @@ function bandStatus(b: DirectorBand): { text: string; tone: "brand" | "accent" |
   return { text: registrationIsOpen(e) ? "Registered · times not posted yet" : "Registration closed · times not posted yet", tone: "neutral" };
 }
 
+/** A festival group's first room time, once the schedule is posted. */
+function firstRoom(b: DirectorBand) {
+  return b.events.performance_order_published ? (b.room_slots ?? []).map((s) => s.starts_at).sort()[0] : undefined;
+}
+
 /** A band's (or group's) steps today, from the host team's taps. Null when there's nothing to track. */
-async function liveStatus(b: DirectorBand, now: Date): Promise<DayStatus | null> {
+type FestivalStatus = { festival: true; text: string; tone: Tone; line: string };
+type LiveStatus = DayStatus | FestivalStatus;
+
+async function liveStatus(b: DirectorBand, now: Date): Promise<LiveStatus | null> {
   const supabase = await createClient();
   const e = b.events;
   const time = (iso: string) => formatTime(iso, e.timezone);
   if (hasRooms(e.event_type)) {
-    const [{ data: slots }, { data: rooms }, { data: checkins }] = await Promise.all([
-      supabase.from("room_slots").select("room_id, starts_at, ends_at").eq("band_id", b.id),
-      supabase.from("rooms").select("id, name, note").eq("event_id", e.id),
-      supabase.from("group_checkins").select("room_id, created_at").eq("band_id", b.id),
+    // Festivals: the same words as the team's Event day, from the team's marks (never "late"; "Now" only from a mark).
+    const [{ data: slots }, { data: rooms }, { data: marks }] = await Promise.all([
+      supabase.from("room_slots").select("room_id, band_id, starts_at, ends_at").eq("band_id", b.id),
+      supabase.from("rooms").select("id, name").eq("event_id", e.id),
+      supabase.from("group_checkins").select("band_id, room_id, kind, created_at").eq("band_id", b.id),
     ]);
-    const steps = groupSteps({ slots: slots ?? [], rooms: new Map((rooms ?? []).map((r) => [r.id, r])), checkins: checkins ?? [], time });
-    return steps.length ? dayStatus(steps, now, time) : null;
+    if (!(slots ?? []).length) return null;
+    const names = new Map((rooms ?? []).map((r) => [r.id, r.name]));
+    const st = groupState({
+      bandId: b.id,
+      slots: slots ?? [],
+      marks: (marks ?? []) as Mark[],
+      now,
+      live: true,
+      roomName: (id) => names.get(id) ?? "A room",
+      time,
+    });
+    return { festival: true, text: st.status.text, tone: st.status.tone, line: st.line.replace(/ by .*?( ·|$)/, "$1") };
   }
   const [{ data: day }, { data: prelims }, { data: finals }, { data: rows }] = await Promise.all([
     supabase
@@ -716,27 +751,42 @@ async function liveStatus(b: DirectorBand, now: Date): Promise<DayStatus | null>
 type DirectorBand = MyBand & { events: NonNullable<MyBand["events"]> };
 
 /** One contest, with a row per band you brought (each opens that band's page). */
-function BandCard({ bands, live }: { bands: DirectorBand[]; live: Map<string, DayStatus> }) {
-  const e = bands[0].events;
-  const one = bands.length === 1;
+function BandCard({ bands: list, live }: { bands: DirectorBand[]; live: Map<string, LiveStatus> }) {
+  const e = list[0].events;
+  const one = list.length === 1;
+  const rooms = hasRooms(e.event_type);
+  // Festivals: groups in the order they start (groups without times last).
+  const bands = rooms ? [...list].sort((a, b) => (firstRoom(a) ?? "~").localeCompare(firstRoom(b) ?? "~")) : list;
   return (
     <EventCard title={e.name} href={one ? `/dashboard/bands/${bands[0].id}` : undefined} event={e}>
       <ul className={one ? "" : "divide-y divide-border rounded-md border border-border"}>
         {bands.map((b) => {
           const status = bandStatus(b);
           const now = live.get(b.id);
+          const waiting = hasRooms(e.event_type) && status.text === "Times not posted yet";
           const row = (
             <>
               <span className="block text-sm">
                 <span className="font-medium">{b.band_name}</span> <span className="text-muted">· {b.school_name}</span>
               </span>
               <span className="mt-2 block">
-                {now ? (
+                {now && "festival" in now ? (
+                  <>
+                    <Badge tone={now.tone}>
+                      {now.tone === "warning" && <span aria-hidden>◆&nbsp;</span>}
+                      {now.text}
+                    </Badge>
+                    <span className="mt-1 block text-sm">{now.line}</span>
+                  </>
+                ) : now ? (
                   <DayStatusPill status={now} doneText={hasRooms(e.event_type) ? "Finished every room" : "Performed"} />
+                ) : rooms ? (
+                  <span className="block text-sm tabular-nums">{status.text}</span>
                 ) : (
                   <Badge tone={status.tone}>{status.text}</Badge>
                 )}
               </span>
+              {waiting && <span className="mt-1 block text-sm">Your times come by email once the organizer posts the schedule</span>}
             </>
           );
           return (
@@ -744,8 +794,12 @@ function BandCard({ bands, live }: { bands: DirectorBand[]; live: Map<string, Da
               {one ? (
                 row
               ) : (
-                <Link href={`/dashboard/bands/${b.id}`} className="block px-3 py-2.5 hover:bg-background">
-                  {row}
+                <Link href={`/dashboard/bands/${b.id}`} className="flex items-center gap-3 px-3 py-2.5 hover:bg-background">
+                  <span className="min-w-0 flex-1">{row}</span>
+                  {/* A row that opens its group's page. */}
+                  <svg aria-hidden viewBox="0 0 20 20" className="size-5 shrink-0 text-muted" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M7.5 5l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                 </Link>
               )}
             </li>
@@ -791,7 +845,7 @@ function HostYourOwn({ invited }: { invited: boolean }) {
   return (
     <section aria-labelledby="host-your-own" className="rounded-lg border border-brand/25 bg-brand-soft p-5 sm:p-6">
       <h2 id="host-your-own" className="text-lg font-semibold">
-        <LineIcon name="stadium" inline /> Host your own event
+        <LineIcon name="stadium" inline /> Run your own event
       </h2>
       <p className="mt-1 leading-7 text-muted">
         Set up and run your contest, festival, or school event in one place.

@@ -67,14 +67,14 @@ export function BandForm({
           <h2 className="font-semibold">School &amp; ensemble</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="School name">
-              <Input name="schoolName" required defaultValue={initial.school_name} placeholder="e.g. Cedar Ridge High School" />
+              <Input name="schoolName" required defaultValue={initial.school_name} placeholder="For example, Cedar Ridge High School" />
             </Field>
             <Field label={group ? "Group name" : "Band name"}>
               <Input
                 name="bandName"
                 required
                 defaultValue={initial.band_name}
-                placeholder={group ? "e.g. Varsity Treble Group or Jazz Band" : "e.g. Raider Regiment"}
+                placeholder={group ? "For example, Varsity Treble Choir or Jazz Band" : "For example, Raider Regiment"}
               />
             </Field>
             <Field label="Classification">
@@ -119,7 +119,7 @@ export function BandForm({
         <Card className="space-y-4">
           <h2 className="font-semibold">Who&apos;s coming</h2>
           <div className="grid grid-cols-2 gap-4">
-            <Field label={group ? "Participants" : "Student performers"}>
+            <Field label={group ? "Performers" : "Student performers"}>
               <NumberInput name="studentCount" required defaultValue={num(initial.student_count)} />
             </Field>
             <Field

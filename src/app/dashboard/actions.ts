@@ -163,8 +163,9 @@ export async function createEvent(_prev: ActionState, formData: FormData): Promi
     .from("events")
     .insert({
       event_type: isEventType(eventType) ? eventType : "band_contest",
-      // A band contest starts with no classifications: the host picks them in step 2 (Registration).
-      ...(eventType === "band_contest" ? { classifications: [] } : {}),
+      // A band contest starts with no classifications: the host picks them in step 2 (Registration). A festival's are
+      // optional and start empty too (owner, 2026-11-11).
+      ...(eventType === "band_contest" || eventType === "group_event" ? { classifications: [] } : {}),
       organization_id: v.organizationId,
       name: v.name,
       slug: slugify(v.name),
@@ -210,7 +211,10 @@ export async function createEvent(_prev: ActionState, formData: FormData): Promi
         ? `/dashboard/events/${data.id}/volunteering`
         : eventType === "band_contest"
           ? `/dashboard/events/${data.id}/bands${copied}`
-          : `/dashboard/events/${data.id}/edit?setup=1&section=team`,
+          : eventType === "group_event"
+            ? // A festival's step 2: Rooms and schedule.
+              `/dashboard/events/${data.id}/rooms`
+            : `/dashboard/events/${data.id}/edit?setup=1&section=team`,
   );
 }
 

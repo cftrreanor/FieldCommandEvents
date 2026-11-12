@@ -25,6 +25,7 @@ import { EventBannerSlot } from "@/components/event-banner-slot";
 import { dayStatus, groupSteps } from "@/lib/director-day";
 import { ContestDayCard, type ProgressRow } from "./contest-day-card";
 import { WithdrawBandButton } from "./withdraw-band";
+import { FestivalGroupPage } from "./festival-group";
 import { withdrawBand } from "@/app/dashboard/band-actions";
 import { eventLogoUrl, loadEventBrand } from "@/lib/event-brand";
 import { LineIcon } from "@/components/line-icon";
@@ -75,6 +76,11 @@ export default async function BandContestPage({ params, searchParams }: PageProp
     supabase.rpc("my_band_progress", { p_band_id: bandId }),
   ]);
   if (!event) missing();
+  // Festivals: their own group page (board 17).
+  if (hasRooms(event.event_type)) {
+    const { data: extra } = await supabase.from("bands").select("available_day").eq("id", bandId).maybeSingle();
+    return <FestivalGroupPage band={{ ...band, available_day: extra?.available_day ?? null }} event={event} registered={Boolean(registered)} saved={Boolean(saved)} />;
+  }
   const open = registrationIsOpen(event);
   // Group events: the group's time in each room (readable once posted).
   const group = hasRooms(event.event_type);
@@ -83,11 +89,12 @@ export default async function BandContestPage({ params, searchParams }: PageProp
         supabase.from("room_slots").select("room_id, starts_at, ends_at").eq("band_id", bandId).order("starts_at"),
         supabase.from("rooms").select("id, name, note").eq("event_id", band.event_id),
         // On the day: the team's taps for this group ("Arrived", "Done" per room).
-        supabase.from("group_checkins").select("room_id, created_at").eq("band_id", bandId),
+        supabase.from("group_checkins").select("room_id, created_at, kind").eq("band_id", bandId),
       ])
     : [{ data: [] }, { data: [] }, { data: [] }];
   const roomById = new Map((roomData ?? []).map((r) => [r.id, r]));
-  const tapped = (roomId: string | null) => (checkinData ?? []).find((c) => c.room_id === roomId);
+  // Only 'done' marks mean arrived (room null) or done in a room; 'in' rows are not done.
+  const tapped = (roomId: string | null) => (checkinData ?? []).find((c) => c.room_id === roomId && c.kind === "done");
   const arrived = tapped(null);
   const files = await filesFor([band.event_id], ["public", "directors"], () => event.timezone);
   const origin = await getOrigin();
@@ -140,7 +147,7 @@ export default async function BandContestPage({ params, searchParams }: PageProp
       : null;
   // On the day itself the day card comes first, so the info starts folded.
   const infoOpen = !contestDay && !groupDay && cookieStore.get(CONTEST_INFO_COOKIE)?.value !== "closed";
-  const people = `${band.student_count} ${group ? "participants" : "students"} · ${band.chaperone_count} chaperones`;
+  const people = `${band.student_count} ${group ? "performers" : "students"} · ${band.chaperone_count} chaperones`;
 
   const one = group ? "group" : "band";
   const withdrawn = Boolean(band.scratched_at);
