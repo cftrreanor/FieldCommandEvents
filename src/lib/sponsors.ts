@@ -35,8 +35,10 @@ export const LOGO = {
   maxBytes: 5 * 1024 * 1024,
   /** Every upload is resized to at most this wide (the master), then a copy is made for each tile size. */
   resizeTo: 1200,
-  /** Most pixels we'll open (about a 7000 × 5700 image); bigger images are refused before they're decoded. */
-  maxPixels: 40_000_000,
+  /** Most pixels we'll open (a 6000 × 4000 image); bigger images are refused before they're decoded. */
+  maxPixels: 24_000_000,
+  /** The size the "too big to open" message suggests (maxPixels). */
+  maxSide: [6000, 4000] as const,
   types: ["image/png", "image/jpeg"] as const,
 } as const;
 

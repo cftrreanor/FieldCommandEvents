@@ -28,10 +28,13 @@ export type ProcessedLogo = {
 /** Words for the organizer: what's wrong with the file and how to fix it, as sentences. */
 export class LogoError extends Error {}
 
-/** "This file is 7.4 MB, over the 5 MB limit. Ask Oak Street Dental for a PNG or JPG under 5 MB." */
+/** "It's 7.4 MB, over the 5 MB limit. …" (shown after the file's name). */
 export const tooBigMessage = (bytes: number, who = "the sponsor") =>
-  `This file is ${(bytes / 1024 / 1024).toFixed(1)} MB, over the ${LOGO.maxMB} MB limit. Ask ${who} for a PNG or JPG under ${LOGO.maxMB} MB.`;
-export const notImageMessage = (who = "the sponsor") => `This file isn't a PNG or JPG, so it can't show on a web page. Ask ${who} for a PNG or JPG.`;
+  `It's ${(bytes / 1024 / 1024).toFixed(1)} MB, over the ${LOGO.maxMB} MB limit. Save it smaller, or ask ${who} for a PNG or JPG under ${LOGO.maxMB} MB.`;
+/** "It's 8,000 × 6,000 pixels, too big to open. …" (both sides, so the fix is clear). */
+export const tooManyPixelsMessage = (width: number, height: number) =>
+  `It's ${width.toLocaleString("en-US")} × ${height.toLocaleString("en-US")} pixels, too big to open. Save it at ${LOGO.maxSide[0].toLocaleString("en-US")} × ${LOGO.maxSide[1].toLocaleString("en-US")} pixels or smaller, then upload it again.`;
+export const notImageMessage = (who = "the sponsor") => `It isn't a PNG or JPG, so it can't show on a web page. Ask ${who} for a PNG or JPG.`;
 
 /** What the file really is, from its first bytes (not its name or the type the browser claimed). */
 export function sniffImage(bytes: Uint8Array): "png" | "jpeg" | null {
@@ -52,7 +55,6 @@ export async function processLogoImage(input: Uint8Array, who = "the sponsor") {
   if (input.byteLength > LOGO.maxBytes) throw new LogoError(tooBigMessage(input.byteLength, who));
   const kind = sniffImage(input);
   if (!kind) throw new LogoError(notImageMessage(who));
-  const open = () => sharp(input, { limitInputPixels: LOGO.maxPixels, failOn: "error", autoOrient: true });
   let meta: Metadata;
   try {
     // Only the header is read here, so the pixel cap can be checked before anything is decoded.
@@ -62,14 +64,13 @@ export async function processLogoImage(input: Uint8Array, who = "the sponsor") {
   }
   if (meta.format !== kind) throw new LogoError(notImageMessage(who));
   if (!meta.width || !meta.height) throw new LogoError("We couldn't read this image. Save it again as a PNG or JPG, then upload it again.");
-  if (meta.width * meta.height > LOGO.maxPixels)
-    throw new LogoError(`This image is ${meta.width.toLocaleString("en-US")} pixels wide, too big to open. Save it under 6,000 pixels wide, then upload it again.`);
+  if (meta.width * meta.height > LOGO.maxPixels) throw new LogoError(tooManyPixelsMessage(meta.width, meta.height));
   // autoOrient: metadata reports the upright size.
   const width = meta.autoOrient?.width ?? meta.width;
   const height = meta.autoOrient?.height ?? meta.height;
   if (width < LOGO.refuseUnder)
     throw new LogoError(
-      `This logo is ${width} pixels wide, too small to show clearly. At least ${LOGO.minWidth} pixels wide is best; we can't use logos under ${LOGO.refuseUnder}. Ask ${who} for one at least ${LOGO.minWidth} pixels wide.`,
+      `It's ${width} pixels wide, and we can't use logos under ${LOGO.refuseUnder}. Ask ${who} for one ${LOGO.minWidth} pixels wide or more.`,
     );
 
   const alpha = kind === "png" && Boolean(meta.hasAlpha);
@@ -81,12 +82,18 @@ export async function processLogoImage(input: Uint8Array, who = "the sponsor") {
 
   let files: { name: string; body: Buffer }[];
   try {
-    files = await Promise.all([
-      encode(open().resize({ width: LOGO.resizeTo, withoutEnlargement: true })).then((body) => ({ name: `master.${ext}`, body })),
-      ...TILE_FILES.map((t) =>
-        encode(open().resize({ width: t.w, height: t.h, fit: "inside", withoutEnlargement: true })).then((body) => ({ name: `${t.file}.${ext}`, body })),
-      ),
-    ]);
+    // Decode the upload once, into the master (at most 1200 wide, upright, sRGB) as raw pixels; every tile size is
+    // made from that master, never from the upload again.
+    const { data, info } = await sharp(input, { limitInputPixels: LOGO.maxPixels, failOn: "error", autoOrient: true })
+      .resize({ width: LOGO.resizeTo, withoutEnlargement: true })
+      .toColourspace("srgb")
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const fromMaster = () => sharp(data, { raw: { width: info.width, height: info.height, channels: info.channels } });
+    files = [{ name: `master.${ext}`, body: await encode(fromMaster()) }];
+    for (const t of TILE_FILES) {
+      files.push({ name: `${t.file}.${ext}`, body: await encode(fromMaster().resize({ width: t.w, height: t.h, fit: "inside", withoutEnlargement: true })) });
+    }
   } catch {
     throw new LogoError("We couldn't read this image. Save it again as a PNG or JPG, then upload it again.");
   }

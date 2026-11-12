@@ -15,7 +15,7 @@ type Admin = ReturnType<typeof createAdminClient>;
  * directors' details a host imported from a spreadsheet once the event is over.
  * Sponsors (20270201000000_sponsors.sql): removed sponsors a day after Remove, then every sponsor logo file
  * nothing points to any more (removed or replaced logos, deleted events, purged closed accounts, uploads
- * never used), once it's a day old.
+ * never used), once it's a day old; and sponsors whose logo file is missing are set to show by name.
  */
 export async function runRetention(admin: Admin) {
   // Before the migration is run, every call is a schema error: skip quietly.
@@ -50,6 +50,8 @@ export async function runRetention(admin: Admin) {
 
   // Sponsors: rows first (closed accounts' and deleted events' went with them), then their files.
   const sponsorsPurged = await call("purge_removed_sponsors");
+  // Sponsors whose logo file is missing (a copy that never finished) show by name instead of a broken image.
+  const sponsorLogosCleared = await call("clear_missing_sponsor_logos");
   let sponsorFilesRemoved = 0;
   const { data: orphans, error: orphansError } = await admin.rpc("sponsor_logo_orphans", { p_limit: 2000 });
   if (orphansError && !isSchemaError(orphansError)) console.error("sponsor_logo_orphans failed", orphansError);
@@ -73,5 +75,5 @@ export async function runRetention(admin: Admin) {
     else usersDeleted++;
   }
 
-  return { accountsClosed, usersDeleted, pilotRequestsPurged, bandDetailsRemoved, boothContactsRemoved, bandPrefillsRemoved, filesDeleted, sponsorsPurged, sponsorFilesRemoved };
+  return { accountsClosed, usersDeleted, pilotRequestsPurged, bandDetailsRemoved, boothContactsRemoved, bandPrefillsRemoved, filesDeleted, sponsorsPurged, sponsorLogosCleared, sponsorFilesRemoved };
 }

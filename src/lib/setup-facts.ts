@@ -30,7 +30,7 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
   const count = async (q: PromiseLike<{ count: number | null }>) => (await q).count ?? 0;
   const head = { count: "exact" as const, head: true };
   const conferenceHere = hasConferences(type);
-  const [jobs, checkInStops, shifts, staff, invites, cohosts, files, finalsSlots, pathRooms, booths, conference, rooms, scheduleSlots, directorInvites, twoAtOnce] = await Promise.all([
+  const [jobs, checkInStops, shifts, staff, invites, cohosts, files, finalsSlots, pathRooms, booths, conference, rooms, scheduleSlots, directorInvites, twoAtOnce, sponsorData] = await Promise.all([
     loadJobs(supabase, eventId),
     count(supabase.from("stations").select("id", head).eq("event_id", eventId).not("checkpoint_kind", "is", null)),
     count(supabase.from("shifts").select("id", head).eq("event_id", eventId)),
@@ -53,9 +53,9 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
     // Director invitations sent or waiting for the opening day.
     type === "band_contest" ? count(supabase.from("band_invitations").select("id", head).eq("event_id", eventId)) : 0,
     hasRooms(type) ? roomTwoAtOnce(supabase, eventId) : null,
+    // The Sponsors add-on (band contests, festivals, and fairs): the optional step and "When you publish".
+    isSponsorKind(type) ? loadEventSponsors(eventId, event.organization_id, type) : null,
   ]);
-  // The Sponsors add-on (band contests, festivals, and fairs): the optional step and "When you publish".
-  const sponsorData = isSponsorKind(type) ? await loadEventSponsors(eventId, event.organization_id, type) : null;
   // Why the account's plan won't let this publish (packages: what's included, one at a time), or null.
   // For "one at a time", the event that's already published, to link to.
   const planBlock = event.status === "published" ? null : await publishBlock(supabase, eventId, type, event.organization_id);

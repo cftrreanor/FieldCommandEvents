@@ -14,12 +14,15 @@ export function Window({
   actions,
   onClose,
   wide = false,
+  row = false,
 }: {
   title: string;
   children: ReactNode;
   actions: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  /** The buttons side by side on phones too (each half the width), instead of stacked. */
+  row?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -58,7 +61,11 @@ export function Window({
         </h2>
         <div className="mt-3 space-y-4 text-sm leading-6">{children}</div>
       </div>
-      <div className="flex flex-col-reverse gap-3 border-t border-border px-5 py-4 sm:flex-row sm:flex-wrap sm:justify-end sm:px-6">{actions}</div>
+      <div
+        className={`flex gap-3 border-t border-border px-5 py-4 sm:flex-row sm:flex-wrap sm:justify-end sm:px-6 ${row ? "flex-row max-sm:[&>button]:flex-1" : "flex-col-reverse"}`}
+      >
+        {actions}
+      </div>
     </dialog>
   );
 }

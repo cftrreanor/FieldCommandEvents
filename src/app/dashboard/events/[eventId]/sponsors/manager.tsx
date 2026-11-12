@@ -11,7 +11,7 @@ import { displayLink, organizerSponsorLogoUrl, type Sponsor, type SponsorLevel }
 import type { ReuseSource } from "@/lib/sponsors-data";
 import { ArrowButton, LevelsEditor, RemoveLevelWindow, type Run } from "./levels";
 import { LOGO_TILE, LogoThumb } from "./logo-tile";
-import { ReuseWindow } from "./reuse-window";
+import { bringBackTitle, ReuseWindow } from "./reuse-window";
 import { SponsorWindow } from "./sponsor-window";
 import { ConfirmWindow, Window } from "./window";
 import { levelGets, listAnd, ordinal, plural, showLine, sponsorKindWords } from "./words";
@@ -20,8 +20,10 @@ const OUTLINE = "inline-flex min-h-11 items-center justify-center rounded-md bor
 
 export type SponsorsMode = "draft" | "live" | "after";
 
-type Failure = { where: string; text: string; retry: () => void };
+type Failure = { where: string; text: string; retry: () => void; noRetry?: boolean };
 type Undo = { sponsor: Sponsor; levelId: string | null; index: number };
+/** The line under a sponsor that just moved; a move into another level can be undone (back the other way). */
+type Moved = { id: string; text: string; undo: "up" | "down" | null };
 
 /**
  * The Sponsors page's body (board 3 with the light check's fixes and the owner's decisions): where sponsors stand,
@@ -32,6 +34,8 @@ type Undo = { sponsor: Sponsor; levelId: string | null; index: number };
 export function SponsorsManager({
   eventId,
   eventName,
+  eventDate,
+  eventStartsOn,
   eventType,
   publicUrl,
   previewHref,
@@ -46,6 +50,10 @@ export function SponsorsManager({
 }: {
   eventId: string;
   eventName: string;
+  /** "Sat, Dec 5, 2026", for the email to sponsors. */
+  eventDate: string;
+  /** yyyy-mm-dd, to tell whether year two's source was last year. */
+  eventStartsOn: string;
   eventType: string;
   publicUrl: string;
   previewHref: string;
@@ -65,7 +73,7 @@ export function SponsorsManager({
   const [pending, setPending] = useState(0);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [saved, setSaved] = useState(false);
-  const [moved, setMoved] = useState<{ id: string; text: string } | null>(null);
+  const [moved, setMoved] = useState<Moved | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
   const [shown, setShown] = useState<Record<string, boolean>>({});
   const [editing, setEditing] = useState<Sponsor | "new" | null>(null);
@@ -114,7 +122,9 @@ export function SponsorsManager({
     setPending((n) => n - 1);
     if (res.error) {
       const err = res.error.replace(/\.$/, "");
-      setFailure({ where, text: `Not saved. ${err}: ${what} didn't go through.`, retry: () => void runRaw(what, fn, where) });
+      // Undo after the daily cleanup: nothing to try again.
+      const gone = /removed for good/.test(err);
+      setFailure({ where, text: gone ? `${err}.` : `Not saved. ${err}: ${what} didn't go through.`, retry: () => void runRaw(what, fn, where), noRetry: gone });
       return false;
     }
     setSaved(true);
@@ -146,10 +156,17 @@ export function SponsorsManager({
       setMoved({
         id: s.id,
         text: result.crossed
-          ? `Moved to ${result.levelName}, ${ordinal(result.place)} of ${result.count}`
+          ? `Moved ${s.name} to ${result.levelName}`
           : `Moved to ${ordinal(result.place)} of ${result.count}${levels.length && result.levelName ? ` in ${result.levelName}` : ""}`,
+        // Back across: from the top of a level, up goes to the bottom of the one above, and down from there comes back.
+        undo: result.crossed ? (dir === "up" ? "down" : "up") : null,
       });
     }
+  };
+  const undoMove = (s: Sponsor) => {
+    const back = moved?.undo;
+    if (!back) return;
+    void move(s, back);
   };
 
   const toggle = async (s: Sponsor, on: boolean) => {
@@ -188,7 +205,7 @@ export function SponsorsManager({
     );
     if (!ok) return;
     setUndo(null);
-    toast(u.sponsor.presentedBy && !back ? `${u.sponsor.name} is back. Another sponsor is Presented by now, so they aren't` : `${u.sponsor.name} is back`);
+    toast(u.sponsor.presentedBy && !back ? `${u.sponsor.name} is back. Another sponsor presents the ${words.kind} now, so they don't` : `${u.sponsor.name} is back`);
   };
 
   const removeLevel = (l: SponsorLevel) => {
@@ -220,9 +237,11 @@ export function SponsorsManager({
           <span aria-hidden>▲ </span>
           {failure.text}
         </span>
-        <button type="button" onClick={failure.retry} className="inline-flex min-h-11 items-center rounded-md border-[1.5px] border-danger px-3">
-          Try again
-        </button>
+        {!failure.noRetry && (
+          <button type="button" onClick={failure.retry} className="inline-flex min-h-11 items-center rounded-md border-[1.5px] border-danger px-3">
+            Try again
+          </button>
+        )}
       </p>
     ) : null;
 
@@ -243,17 +262,19 @@ export function SponsorsManager({
 
       {yearTwo && lastYear && (
         <Card>
-          <h2 className="text-lg font-semibold">Bring back last year&apos;s sponsors and levels</h2>
+          <h2 className="text-lg font-semibold [overflow-wrap:anywhere]">{bringBackTitle(lastYear)}</h2>
           <p className="mt-1 text-sm text-muted">
+            {aboutAYearBefore(lastYear.startsOn, eventStartsOn) ? "Last year's " : ""}
             {lastYear.name} had {plural(lastYear.sponsors, "sponsor")}
             {lastYear.levels ? ` in ${plural(lastYear.levels, "level")}` : ""}. Bring them back with their logos and websites, then change anything.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             <Button type="button" onClick={() => setReuse("lastYear")}>
-              Bring back last year&apos;s sponsors and levels ({plural(lastYear.sponsors, "sponsor")}, {lastYear.levels ? plural(lastYear.levels, "level") : "no levels"})
+              Bring back {plural(lastYear.sponsors, "sponsor")}
+              {lastYear.levels ? ` and ${plural(lastYear.levels, "level")}` : ""}
             </Button>
             <Button type="button" variant="secondary" onClick={() => setFreshStart(true)}>
-              Start with your levels
+              Start from scratch
             </Button>
           </div>
         </Card>
@@ -316,6 +337,42 @@ export function SponsorsManager({
       )}
 
       <Card>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0 flex-1 basis-64">
+            <h2 className="text-lg font-semibold">Presented by</h2>
+            <p className="text-sm leading-6">
+              {presents ? (
+                <>
+                  {presents.name}
+                  {!presents.showPublic && <span className="text-muted"> · hidden, so the line doesn&apos;t show</span>}
+                </>
+              ) : undo?.sponsor.presentedBy ? (
+                <span className="text-muted">Nobody until you Undo or choose a sponsor</span>
+              ) : (
+                <span className="text-muted">Nobody yet. One sponsor&apos;s logo and name can show under your {words.kind}&apos;s name</span>
+              )}
+            </p>
+          </div>
+          {list.length ? (
+            <Button type="button" variant="secondary" onClick={() => setPresentedOpen(true)}>
+              {presents ? (
+                <>
+                  Change<span className="sr-only"> who presents the {words.kind}</span>
+                </>
+              ) : (
+                <>
+                  Choose a sponsor<span className="sr-only"> to present the {words.kind}</span>
+                </>
+              )}
+            </Button>
+          ) : (
+            <span className="text-sm text-muted">Add a sponsor first</span>
+          )}
+        </div>
+        {failureIn("presented")}
+      </Card>
+
+      <Card>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold">Sponsors</h2>
           <div className="flex flex-wrap gap-2">
@@ -351,6 +408,7 @@ export function SponsorsManager({
                   onToggle={(on) => toggle(s, on)}
                   onEdit={() => setEditing(s)}
                   moved={moved?.id === s.id ? moved.text : null}
+                  onUndoMove={moved?.id === s.id && moved.undo ? () => undoMove(s) : null}
                   failure={failureIn(s.id)}
                   disabled={busy}
                 />
@@ -362,7 +420,7 @@ export function SponsorsManager({
                 0,
                 <li key={`undo-${undo.sponsor.id}`} role="status" className="-mx-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-brand-soft px-3 py-3">
                   <span className="min-w-0 flex-1 basis-56 text-sm">
-                    <span className="font-semibold">{undo.sponsor.name} is removed,</span> logo and all{undo.sponsor.presentedBy ? ", and so is the Presented by line" : ""}.
+                    <span className="font-semibold">{undo.sponsor.name} is removed,</span> logo and all{undo.sponsor.presentedBy ? `, and so is the "Presented by" line` : ""}.
                   </span>
                   <Button ref={undoButton} type="button" variant="secondary" onClick={undoRemove} disabled={busy}>
                     Undo<span className="sr-only"> removing {undo.sponsor.name}</span>
@@ -397,39 +455,11 @@ export function SponsorsManager({
       </Card>
 
       <Card>
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <div className="min-w-0 flex-1 basis-64">
-            <h2 className="text-lg font-semibold">Presented by</h2>
-            <p className="text-sm leading-6">
-              {presents ? (
-                <>
-                  {presents.name}
-                  {!presents.showPublic && <span className="text-muted"> · hidden, so the line doesn&apos;t show</span>}
-                </>
-              ) : undo?.sponsor.presentedBy ? (
-                <span className="text-muted">Nobody until you Undo or Change</span>
-              ) : (
-                <span className="text-muted">Nobody yet. One sponsor&apos;s logo and name can show under your {words.kind}&apos;s name</span>
-              )}
-            </p>
-          </div>
-          {list.length ? (
-            <Button type="button" variant="secondary" onClick={() => setPresentedOpen(true)}>
-              Change<span className="sr-only"> Presented by</span>
-            </Button>
-          ) : (
-            <span className="text-sm text-muted">Add a sponsor first</span>
-          )}
-        </div>
-        {failureIn("presented")}
-      </Card>
-
-      <Card>
         <dl className="grid gap-3 text-sm leading-6 sm:grid-cols-2">
           <div>
             <dt className="font-semibold">Where sponsors show</dt>
             <dd className="text-muted">
-              Your public event page: Presented by under its name, and the thank-you section near the end. On {words.day}, one line at the end of {words.live}.
+              Your public event page: the &ldquo;Presented by&rdquo; line under its name, and the thank-you section near the end. On {words.day}, one line after {words.live}.
             </dd>
           </div>
           <div>
@@ -438,10 +468,9 @@ export function SponsorsManager({
           </div>
           {eventType === "fair" && (
             <div className="sm:col-span-2">
-              <dt className="font-semibold">Booth hosts</dt>
+              <dt className="font-semibold">Partners</dt>
               <dd className="text-muted">
-                The thank-you section also thanks your booth hosts as community partners, by name. A business that&apos;s a sponsor and a booth host shows once, as a
-                sponsor.
+                The thank-you section also thanks your booth hosts as partners, by name. A business that&apos;s a sponsor and a booth host shows once, as a sponsor.
               </dd>
             </div>
           )}
@@ -486,6 +515,7 @@ export function SponsorsManager({
           key={editing === "new" ? "new" : editing.id}
           eventId={eventId}
           eventName={eventName}
+          eventDate={eventDate}
           eventType={eventType}
           levels={levels}
           sponsors={list}
@@ -513,9 +543,9 @@ export function SponsorsManager({
           onConfirm={() => void remove(confirmRemove, true)}
         >
           <ul className="list-disc space-y-2 pl-5">
-            <li>They&apos;re Presented by, so the Presented by line under your {words.kind}&apos;s name goes too</li>
-            <li>Their tile leaves the thank-you section</li>
-            <li>Undo puts them back, Presented by too, until your next change</li>
+            <li>They present the {words.kind}, so the &ldquo;Presented by&rdquo; line under its name goes too</li>
+            <li>They leave the thank-you section</li>
+            <li>Undo puts them back, presenting again, until your next change</li>
           </ul>
         </ConfirmWindow>
       )}
@@ -560,7 +590,7 @@ export function SponsorsManager({
           onSave={(id) => {
             setPresentedOpen(false);
             const who = list.find((s) => s.id === id)?.name;
-            void run(who ? `making ${who} Presented by` : "clearing Presented by", () => setPresentedBy(eventId, id), "presented");
+            void run(who ? `choosing ${who} to present the ${words.kind}` : `clearing who presents the ${words.kind}`, () => setPresentedBy(eventId, id), "presented");
           }}
         />
       )}
@@ -569,6 +599,7 @@ export function SponsorsManager({
           eventId={eventId}
           sources={reuse === "lastYear" && lastYear ? [lastYear] : sources}
           levels={levels}
+          published={mode !== "draft"}
           yearTwo={reuse === "lastYear"}
           onClose={() => setReuse(null)}
           onDone={(message) => {
@@ -630,7 +661,7 @@ function StatusCard({
       </p>
       {mode === "after" && (
         <p className="mt-2 text-sm">
-          The {kind} is over. The thank-you stays on your public page; the live line ended with the day.
+          The {kind} is over. The thank-you stays on your public page; the &ldquo;Today&apos;s sponsors&rdquo; line ended with the day.
         </p>
       )}
       {mode === "draft" && <p className="mt-2 text-sm">Your public link works once you publish. Until then, Preview shows the page as families will see it.</p>}
@@ -651,7 +682,10 @@ function StatusCard({
   );
 }
 
-/** One sponsor: arrows (fixed columns), logo, name and link, Show on the public page, and Edit. */
+/**
+ * One sponsor: arrows (fixed columns), logo, name and link (with notes under the name), and on the right, in the
+ * same column on every row, Show on the public page and Edit.
+ */
 function SponsorRow({
   eventId,
   s,
@@ -661,6 +695,7 @@ function SponsorRow({
   onToggle,
   onEdit,
   moved,
+  onUndoMove,
   failure,
   disabled,
 }: {
@@ -672,6 +707,7 @@ function SponsorRow({
   onToggle: (on: boolean) => void;
   onEdit: () => void;
   moved: string | null;
+  onUndoMove: (() => void) | null;
   failure: ReactNode;
   disabled: boolean;
 }) {
@@ -681,46 +717,63 @@ function SponsorRow({
         <ArrowButton dir="up" label={up} data={`${s.id}-up`} firstLast={`${s.name} is first`} onClick={() => !disabled && onMove("up")} />
         <ArrowButton dir="down" label={down} data={`${s.id}-down`} firstLast={`${s.name} is last`} onClick={() => !disabled && onMove("down")} />
       </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
-        <LogoThumb src={organizerSponsorLogoUrl(eventId, s.logoVersion, "t2")} width={s.logoWidth} height={s.logoHeight} name={s.name} />
-        <div className="min-w-0 flex-1 basis-40">
-          <p className="flex flex-wrap items-center gap-2 font-medium [overflow-wrap:anywhere]">
-            {s.name}
-            {s.presentedBy && <Badge tone="info">Presented by</Badge>}
-            {!s.showPublic && <Badge tone="neutral">Hidden</Badge>}
-          </p>
-          <p className="text-sm text-muted [overflow-wrap:anywhere]">{s.website ? displayLink(s.website) : "No link"}</p>
-          {moved && (
-            <p role="status" className="text-sm font-medium">
-              <span aria-hidden className="text-success">
-                ✓{" "}
-              </span>
-              {moved}
+      <div className="grid min-w-0 items-start gap-x-4 gap-y-2 lg:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="flex min-w-0 items-start gap-x-4 gap-y-2 max-sm:flex-wrap">
+          <LogoThumb src={organizerSponsorLogoUrl(eventId, s.logoVersion, "t2")} width={s.logoWidth} height={s.logoHeight} name={s.name} />
+          <div className="min-w-0 flex-1 basis-40">
+            <p className="flex flex-wrap items-center gap-2 font-medium [overflow-wrap:anywhere]">
+              {s.name}
+              {s.presentedBy && <Badge tone="info">Presented by</Badge>}
+              {!s.showPublic && <Badge tone="neutral">Hidden</Badge>}
             </p>
-          )}
-        </div>
-        <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 lg:w-auto">
-          <div>
-            <button type="button" role="switch" aria-checked={s.showPublic} onClick={() => onToggle(!s.showPublic)} className="inline-flex min-h-11 items-center gap-2.5 text-left">
-              <span
-                aria-hidden
-                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 ${s.showPublic ? "border-brand bg-brand" : "border-field-border bg-background"}`}
-              >
-                <span className={`absolute size-4 rounded-full ${s.showPublic ? "left-[22px] bg-brand-foreground" : "left-[3px] bg-field-border"}`} />
-              </span>
-              <span className="text-sm">
-                Show <span className="sr-only">{s.name} </span>on the public page
-              </span>
-            </button>
+            <p className="text-sm text-muted [overflow-wrap:anywhere]">{s.website ? displayLink(s.website) : "No link"}</p>
             {s.presentedBy && (
-              <p className="text-xs leading-5 text-muted">{s.showPublic ? "Hiding them also hides the Presented by line" : "Hidden, so the Presented by line doesn't show"}</p>
+              <p className="text-xs leading-5 text-muted">{s.showPublic ? `Hiding them also hides the "Presented by" line` : `Hidden, so the "Presented by" line doesn't show`}</p>
+            )}
+            {moved && (
+              <p role="status" className="flex flex-wrap items-center gap-x-2 text-sm font-medium">
+                <span>
+                  <span aria-hidden className="text-success">
+                    ✓{" "}
+                  </span>
+                  {moved}
+                </span>
+                {onUndoMove && (
+                  <>
+                    <span aria-hidden className="text-muted">
+                      ·
+                    </span>
+                    <button
+                      type="button"
+                      onClick={onUndoMove}
+                      disabled={disabled}
+                      className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4 dark:text-foreground"
+                    >
+                      Undo<span className="sr-only"> moving {s.name}</span>
+                    </button>
+                  </>
+                )}
+              </p>
             )}
           </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 lg:flex-nowrap lg:justify-end">
+          <button type="button" role="switch" aria-checked={s.showPublic} onClick={() => onToggle(!s.showPublic)} className="inline-flex min-h-11 items-center gap-2.5 text-left">
+            <span
+              aria-hidden
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 ${s.showPublic ? "border-brand bg-brand" : "border-field-border bg-background"}`}
+            >
+              <span className={`absolute size-4 rounded-full ${s.showPublic ? "left-[22px] bg-brand-foreground" : "left-[3px] bg-field-border"}`} />
+            </span>
+            <span className="text-sm">
+              Show <span className="sr-only">{s.name} </span>on the public page
+            </span>
+          </button>
           <Button type="button" variant="secondary" onClick={onEdit}>
             Edit<span className="sr-only"> {s.name}</span>
           </Button>
         </div>
-        {failure && <div className="w-full">{failure}</div>}
+        {failure && <div className="lg:col-span-2">{failure}</div>}
       </div>
     </li>
   );
@@ -766,7 +819,7 @@ function PresentedWindow({
     >
       <Field
         label="Presented by"
-        hint={`One sponsor's logo and name show under your ${kind}'s name, on the public page and on ${day}.${hiddenCount ? ` Hidden sponsors can't be picked (${listAnd(sponsors.filter((x) => !x.showPublic && x.id !== current?.id).map((x) => x.name))}).` : ""}`}
+        hint={`One sponsor's logo and name show under your ${kind}'s name, on the public page and on ${day}.${hiddenCount ? ` A hidden sponsor can't present the ${kind} (${listAnd(sponsors.filter((x) => !x.showPublic && x.id !== current?.id).map((x) => x.name))}).` : ""}`}
       >
         <Select value={pick} onChange={(e) => setPick(e.target.value)}>
           <option value="">Nobody</option>
@@ -795,7 +848,7 @@ function PresentedWindow({
               </span>
             </p>
           ) : (
-            <p className="py-3 text-sm text-muted">No Presented by line</p>
+            <p className="py-3 text-sm text-muted">No &ldquo;Presented by&rdquo; line</p>
           )}
         </div>
       </div>
@@ -803,3 +856,8 @@ function PresentedWindow({
   );
 }
 
+/** Whether year two's source was about a year before this event (so "last year's" is true). */
+function aboutAYearBefore(source: string, event: string) {
+  const days = (Date.parse(event) - Date.parse(source)) / 86_400_000;
+  return days >= 300 && days <= 430;
+}

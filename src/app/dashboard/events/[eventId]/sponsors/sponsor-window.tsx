@@ -1,15 +1,39 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { copyDialog } from "@/components/confirm-dialog";
-import { Button, Field, FieldError, Input, Select } from "@/components/ui";
+import { Button, FieldError, Input, Select } from "@/components/ui";
 import { prepareSponsorLogoUpload, processSponsorLogo, saveSponsor, type UploadedLogo } from "@/app/dashboard/sponsor-actions";
 import { displayLink, LIVE_NAMES, LOGO, logoWarnings, MAX_LEVELS, normalizeSponsorLink, organizerSponsorLogoUrl, tileFor, TILES, type Sponsor, type SponsorLevel } from "@/lib/sponsors";
 import { TilePreview, LOGO_TILE } from "./logo-tile";
 import { Window } from "./window";
-import { LOGO_SHORT, LOGO_SPEC, logoEmail, logoWhere, ordinal, plural, sponsorKindWords, tileSizes } from "./words";
+import { listAnd, LOGO_SHORT, LOGO_SPEC, logoEmail, logoWhere, plural, sponsorKindWords, tileSizes } from "./words";
 
 const ERR_INPUT = "border-danger! ring-2 ring-danger/20";
+
+/** A labeled box with its error directly under it, above the hint (light check). */
+function SField({ label, hint, error, errorId, children }: { label: string; hint?: ReactNode; error?: string; errorId?: string; children: ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span data-field-label className="text-sm font-semibold">
+        {label}
+      </span>
+      {children}
+      {error && <FieldError id={errorId}>{error}</FieldError>}
+      {hint && <span className="text-sm text-muted">{hint}</span>}
+    </label>
+  );
+}
+
+/** What to do about each box, for the summary ("Enter a name and pick a level, then try again."). */
+const FIX: Record<string, string> = {
+  name: "enter a name",
+  level: "pick a level",
+  newLevel: "name the level",
+  firstLevel: "name the level",
+  website: "check the website",
+};
+const capital = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 type Upload = { phase: "uploading" | "checking"; pct: number; file: string; xhr: XMLHttpRequest | null };
 
@@ -39,6 +63,7 @@ function putWithProgress(url: string, file: File, onProgress: (pct: number) => v
 export function SponsorWindow({
   eventId,
   eventName,
+  eventDate,
   eventType,
   levels,
   sponsors,
@@ -51,6 +76,8 @@ export function SponsorWindow({
 }: {
   eventId: string;
   eventName: string;
+  /** "Sat, Dec 5, 2026", for the copied email. */
+  eventDate: string;
   eventType: string;
   levels: SponsorLevel[];
   /** The event's sponsors (for counts and who's Presented by now). */
@@ -77,7 +104,7 @@ export function SponsorWindow({
   // undefined: keep the saved logo; null: remove it; an upload: replace it.
   const [logo, setLogo] = useState<UploadedLogo | null | undefined>(undefined);
   const [upload, setUpload] = useState<Upload | null>(null);
-  const [logoError, setLogoError] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState<{ file: string; text: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [tried, setTried] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -117,10 +144,10 @@ export function SponsorWindow({
 
   // Errors per box, worked out the same way on leaving a box and on Add (nothing is red until then: L22).
   const check = (field: string) => {
-    if (field === "name") return name.trim() ? null : "Fill this in";
+    if (field === "name") return name.trim() ? null : "Enter the sponsor's name";
     if (field === "level") return levels.length && !level ? "Pick a level" : null;
-    if (field === "newLevel") return level === "new" && !newLevel.trim() ? "Fill this in" : null;
-    if (field === "firstLevel") return addingFirst && !newLevel.trim() ? "Fill this in" : null;
+    if (field === "newLevel") return level === "new" && !newLevel.trim() ? "Name the level" : null;
+    if (field === "firstLevel") return addingFirst && !newLevel.trim() ? "Name the level" : null;
     if (field === "website") return normalizeSponsorLink(website).error ?? null;
     return null;
   };
@@ -196,25 +223,22 @@ export function SponsorWindow({
 
   const pick = async (file: File) => {
     setLogoError(null);
+    const fail = (text: string) => setLogoError({ file: file.name, text: `${text.replace(/\.$/, "")}.` });
     const isPdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
     if (!(LOGO.types as readonly string[]).includes(file.type)) {
-      setLogoError(
-        isPdf
-          ? `${file.name} is a PDF, which can't show on a web page. Ask ${who} for a PNG or JPG, or save the PDF as a PNG and upload that.`
-          : `${file.name} isn't a PNG or JPG, so it can't show on a web page. Ask ${who} for a PNG or JPG.`,
-      );
+      fail(isPdf ? `A PDF can't show on a web page. Ask ${who} for a PNG or JPG` : `It isn't a PNG or JPG, so it can't show on a web page. Ask ${who} for a PNG or JPG`);
       return;
     }
     if (file.size > LOGO.maxBytes) {
       const mb = (file.size / 1024 / 1024).toFixed(1);
-      setLogoError(`This file is ${mb} MB, over the ${LOGO.maxMB} MB limit. Save it smaller, or ask ${who} for a PNG or JPG under ${LOGO.maxMB} MB.`);
+      fail(`It's ${mb} MB, over the ${LOGO.maxMB} MB limit. Save it smaller, or ask ${who} for a PNG or JPG under ${LOGO.maxMB} MB`);
       return;
     }
     setUpload({ phase: "uploading", pct: 0, file: file.name, xhr: null });
     const start = await prepareSponsorLogoUpload(eventId, { contentType: file.type, size: file.size, sponsor: name.trim() }).catch(() => ({ error: "No connection. Check it, then try again", url: undefined, path: undefined }));
     if (start.error || !start.url || !start.path) {
       setUpload(null);
-      setLogoError(`${(start.error ?? "We couldn't start the upload").replace(/\.$/, "")}.`);
+      fail(start.error ?? "We couldn't start the upload");
       return;
     }
     const sent = await putWithProgress(
@@ -226,14 +250,13 @@ export function SponsorWindow({
     if (sent !== "ok") {
       setUpload(null);
       setWaitingForUpload(false);
-      setLogoError(sent === "stopped" ? "Upload stopped. The logo wasn't changed." : "The upload didn't finish. Check your connection, then upload it again.");
+      fail(sent === "stopped" ? "Upload stopped. The logo wasn't changed" : "The upload didn't finish. Check your connection, then upload it again");
       return;
     }
     setUpload((u) => (u ? { ...u, phase: "checking", pct: 100 } : u));
     const done = await processSponsorLogo(eventId, start.path, name.trim()).catch(() => ({ error: "No connection. Check it, then upload it again", logo: undefined }));
     if (done.error || !done.logo) {
-      const msg = (done.error ?? "We couldn't use that image").replace(/\.$/, "");
-      setLogoError(`${msg}.`);
+      fail(done.error ?? "We couldn't use that image");
       setUpload(null);
       setWaitingForUpload(false);
       return;
@@ -245,7 +268,7 @@ export function SponsorWindow({
   };
 
   const copyEmail = async () => {
-    const text = logoEmail({ event: eventName, eventType, sponsor: name.trim() || undefined, from, group });
+    const text = logoEmail({ event: eventName, date: eventDate, eventType, sponsor: name.trim() || undefined, from, group });
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
@@ -262,12 +285,14 @@ export function SponsorWindow({
   return (
     <Window
       wide
+      row
       title={editing ? `Edit ${sponsor!.name}` : "Add a sponsor"}
       onClose={onClose}
       actions={
         <>
+          {/* On phones Remove sits in the window's body ("Remove this sponsor"), apart from Save and Cancel. */}
           {editing && (
-            <Button type="button" variant="warn" className="sm:mr-auto" onClick={() => onRemove(sponsor!)} disabled={saving}>
+            <Button type="button" variant="warn" className="mr-auto max-sm:hidden" onClick={() => onRemove(sponsor!)} disabled={saving}>
               Remove<span className="sr-only"> {sponsor!.name}</span>
             </Button>
           )}
@@ -294,17 +319,17 @@ export function SponsorWindow({
             {formError}
           </p>
         )}
-        <Field label="Name" error={errors.name} errorId={`${ids}-name-err`}>
+        <SField label="Name" error={errors.name} errorId={`${ids}-name-err`}>
           <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => leave("name")} placeholder="For example, Oak Street Dental" maxLength={100} required autoComplete="off" {...errorProps("name")} />
-        </Field>
+        </SField>
 
         {levels.length > 0 ? (
           <>
-            <Field
+            <SField
               label="Level"
               error={errors.level}
               errorId={`${ids}-level-err`}
-              hint={full ? "4 levels is the most. To change them, use Change levels on the Sponsors page." : undefined}
+              hint={full ? `You have ${MAX_LEVELS} levels, the most. To add one, remove a level in Change levels.` : undefined}
             >
               <Select value={level} onChange={(e) => setLevel(e.target.value)} onBlur={() => leave("level")} required {...errorProps("level")}>
                 <option value="" disabled>
@@ -317,23 +342,23 @@ export function SponsorWindow({
                 ))}
                 {!full && <option value="new">New level…</option>}
               </Select>
-            </Field>
+            </SField>
             {level === "new" && (
               <div className="-mt-1 rounded-md border border-border bg-background p-3">
-                <Field
+                <SField
                   label="New level's name"
                   error={errors.newLevel}
                   errorId={`${ids}-newLevel-err`}
-                  hint={errors.newLevel ? undefined : `It goes after ${levels.at(-1)!.name}, with ${TILES[levels.length].size}. You can change the order with Change levels.`}
+                  hint={`It goes after ${levels.at(-1)!.name}, with ${TILES[levels.length].size}. You can change the order with Change levels.`}
                 >
                   <Input value={newLevel} onChange={(e) => setNewLevel(e.target.value)} onBlur={() => leave("newLevel")} placeholder="For example, Friend" maxLength={40} required {...errorProps("newLevel")} />
-                </Field>
+                </SField>
               </div>
             )}
           </>
         ) : addingFirst ? (
           <div className="rounded-md border border-border bg-background p-3">
-            <Field
+            <SField
               label="First level's name"
               error={errors.firstLevel}
               errorId={`${ids}-firstLevel-err`}
@@ -344,7 +369,7 @@ export function SponsorWindow({
               }
             >
               <Input value={newLevel} onChange={(e) => setNewLevel(e.target.value)} onBlur={() => leave("firstLevel")} placeholder="For example, Gold" maxLength={40} required {...errorProps("firstLevel")} />
-            </Field>
+            </SField>
             <Button
               type="button"
               variant="ghost"
@@ -369,79 +394,85 @@ export function SponsorWindow({
           </div>
         )}
 
-        {/* The logo: one short line, then "Logo requirements" with the full list and the email to copy. */}
+        {/* The logo: one short line, then "Logo requirements" with the full list and the email to copy. A problem
+            with the file is one line inside the logo's box, naming the file. */}
         <div>
           <p className="text-sm font-semibold" id={`${ids}-logo`}>
             Logo (optional)
           </p>
-          <div className="mt-1.5 flex flex-wrap items-center gap-3">
-            {upload ? (
-              <span className="flex h-16 w-32 flex-col items-center justify-center gap-1.5 rounded-md border border-field-border bg-surface p-2 text-xs font-medium" role="status">
-                {upload.phase === "checking" ? "Checking…" : `Uploading… ${upload.pct}%`}
-                <span aria-hidden className="h-1.5 w-20 overflow-hidden rounded-full border border-field-border">
-                  <span className="block h-full bg-brand" style={{ width: `${upload.pct}%` }} />
+          <div className={`mt-1.5 rounded-md border p-3 ${logoError ? "border-danger" : "border-border"}`}>
+            <div className="flex flex-wrap items-center gap-3">
+              {upload ? (
+                <span className="flex h-16 w-32 flex-col items-center justify-center gap-1.5 rounded-md border border-field-border bg-surface p-2 text-xs font-medium" role="status">
+                  {upload.phase === "checking" ? "Checking…" : `Uploading… ${upload.pct}%`}
+                  <span aria-hidden className="h-1.5 w-20 overflow-hidden rounded-full border border-field-border">
+                    <span className="block h-full bg-brand" style={{ width: `${upload.pct}%` }} />
+                  </span>
                 </span>
-              </span>
-            ) : shown ? (
-              <span className={`flex h-16 w-32 items-center justify-center rounded-md p-2 ${LOGO_TILE}`}>
-                {/* eslint-disable-next-line @next/next/no-img-element -- our own resized copy */}
-                <img src={shown.src.t1} alt={`${who} logo`} className="max-h-full max-w-full object-contain" />
-              </span>
-            ) : (
-              <span className="flex h-16 w-32 items-center justify-center rounded-md border border-dashed border-field-border bg-surface p-2 text-xs">No logo yet</span>
-            )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/png,image/jpeg"
-              className="sr-only"
-              tabIndex={-1}
-              aria-hidden
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (f) void pick(f);
-              }}
-            />
-            {upload ? (
-              <Button type="button" variant="secondary" onClick={() => upload.xhr?.abort()} disabled={upload.phase === "checking"}>
-                Stop upload
-              </Button>
-            ) : shown ? (
-              <>
-                <Button type="button" variant="secondary" onClick={() => fileRef.current?.click()}>
-                  Replace logo
+              ) : shown ? (
+                <span className={`flex h-16 w-32 items-center justify-center rounded-md p-2 ${LOGO_TILE}`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- our own resized copy */}
+                  <img src={shown.src.t1} alt={`${who} logo`} className="max-h-full max-w-full object-contain" />
+                </span>
+              ) : (
+                <span className="flex h-16 w-32 items-center justify-center rounded-md border border-dashed border-field-border bg-surface p-2 text-xs">No logo yet</span>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg"
+                className="sr-only"
+                tabIndex={-1}
+                aria-hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) void pick(f);
+                }}
+              />
+              {upload ? (
+                <Button type="button" variant="secondary" onClick={() => upload.xhr?.abort()} disabled={upload.phase === "checking"}>
+                  Stop upload
                 </Button>
-                <Button type="button" variant="secondary" onClick={() => setLogo(null)}>
-                  Remove logo
+              ) : shown ? (
+                <>
+                  <Button type="button" variant="secondary" onClick={() => fileRef.current?.click()}>
+                    Replace logo
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={() => setLogo(null)}>
+                    Remove logo
+                  </Button>
+                </>
+              ) : (
+                <Button type="button" variant="secondary" onClick={() => fileRef.current?.click()} aria-describedby={`${ids}-logo`}>
+                  Upload logo
                 </Button>
-              </>
-            ) : (
-              <Button type="button" variant="secondary" onClick={() => fileRef.current?.click()} aria-describedby={`${ids}-logo`}>
-                Upload logo
-              </Button>
-            )}
+              )}
+            </div>
+            {logoError ? (
+              <p role="alert" className="mt-2 text-sm text-danger [overflow-wrap:anywhere]">
+                <span className="font-semibold">{logoError.file}:</span> {logoError.text}
+              </p>
+            ) : upload ? (
+              <p className="mt-2 text-sm [overflow-wrap:anywhere]">
+                {upload.file}: the sponsor is {editing ? "saved" : "added"} once the upload finishes.
+              </p>
+            ) : null}
           </div>
-          {logoError ? (
-            <p role="alert" className="mt-1.5 text-sm font-semibold text-danger">
-              {logoError}
-            </p>
-          ) : upload ? (
-            <p className="mt-1.5 text-sm">{upload.file}: the sponsor is {editing ? "saved" : "added"} once the upload finishes.</p>
-          ) : (
-            <p className="mt-1.5 text-sm text-muted">{LOGO_SHORT}. No logo? Their name shows instead.</p>
-          )}
+          <p className="mt-1.5 text-sm text-muted">{LOGO_SHORT}. No logo? Their name shows instead.</p>
           {warn && shown && (warn.small || warn.tall) && (
             <p className="mt-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm">
               {warn.small && warn.tall ? (
                 <>
-                  <span className="font-semibold">This logo is {shown.width} pixels wide, so it may look blurry,</span> and it&apos;s taller than it is wide, so it shows small. Ask{" "}
-                  {who} for a wide one at least {LOGO.minWidth} pixels wide. You can save this one for now.
+                  <span className="font-semibold">
+                    This logo is {shown.width} pixels wide and taller than it is wide, so it may look blurry and shows small.
+                  </span>{" "}
+                  Ask {who} for a wide logo, {LOGO.minWidth} pixels wide or more. You can save this one for now.
                 </>
               ) : warn.small ? (
                 <>
-                  <span className="font-semibold">This logo is {shown.width} pixels wide, so it may look blurry.</span> Ask {who} for one at least {LOGO.minWidth} pixels wide. You can
-                  save this one for now.
+                  <span className="font-semibold">This logo is {shown.width} pixels wide, so it may look blurry.</span> Ask {who} for one {LOGO.minWidth} pixels wide or more. You
+                  can save this one for now.
                 </>
               ) : (
                 <>
@@ -478,7 +509,7 @@ export function SponsorWindow({
                         <li key={t}>{t}</li>
                       ))}
                     </ul>
-                    <span className="mt-1 block">Phones use 2 or more image pixels for each screen pixel, so {LOGO.minWidth} pixels wide keeps the biggest tile sharp.</span>
+                    <span className="mt-1 block">Phones use 2 or more image pixels for each screen pixel, so {LOGO.minWidth} pixels wide keeps the biggest size sharp.</span>
                   </dd>
                 </div>
               </dl>
@@ -505,29 +536,37 @@ export function SponsorWindow({
             <div className="mt-2 grid items-start gap-3 sm:grid-cols-2">
               {levels.length > 0 && levelIndex !== 0 && (
                 <div>
-                  <p className="mb-1 text-xs">{levels[0].name} tile (the biggest level)</p>
+                  <p className="mb-1 text-xs">At {levels[0].name} size (the biggest)</p>
                   <TilePreview tile={TILES[0]} name={name} src={shown.src.t0} width={shown.width} height={shown.height} />
                 </div>
               )}
               <div>
                 <p className="mb-1 text-xs">
-                  {levels.length === 0 ? "Every sponsor's tile (no levels)" : levelIndex >= 0 ? `${levels[levelIndex].name} tile (their level)` : level === "new" ? `${ordinal(levels.length + 1)} level tile (the new level)` : "Their level's tile, once you pick one"}
+                  {levels.length === 0
+                    ? "At every sponsor's size (no levels)"
+                    : levelIndex === 0
+                      ? `At ${levels[0].name} size (the biggest, their level)`
+                      : levelIndex > 0
+                        ? `At ${levels[levelIndex].name} size (their level)`
+                        : level === "new"
+                          ? "At the new level's size"
+                          : "At their level's size, once you pick one"}
                 </p>
                 <TilePreview tile={tileHere} name={name} src={shown.src[tileHere.file]} width={shown.width} height={shown.height} />
               </div>
             </div>
-            <p className="mt-3 text-xs">Live line on {words.day}: names only, no logos</p>
+            <p className="mt-3 text-xs">On {words.day}: names only, no logos</p>
             <p className="mt-1 text-sm">
               {levels.length === 0
-                ? `It names the first ${LIVE_NAMES} sponsors in your list`
+                ? `${capital(words.liveShort)} names the first ${LIVE_NAMES} sponsors in your list`
                 : levelIndex === 0
-                  ? `${who === "the sponsor" ? "They're" : `${who} is`} named if among the first ${LIVE_NAMES} ${firstLevel} sponsors`
-                  : `Not named: the live line names the first ${LIVE_NAMES} ${firstLevel} sponsors`}
+                  ? `Named on ${words.day} if among the first ${LIVE_NAMES} ${firstLevel} sponsors`
+                  : `Not named on ${words.day}: ${words.liveShort} names the first ${LIVE_NAMES} ${firstLevel} sponsors`}
             </p>
           </div>
         )}
 
-        <Field label="Website (optional)" error={errors.website} errorId={`${ids}-website-err`} hint={errors.website ? undefined : (websiteNote ?? "Their logo opens it in a new tab.")}>
+        <SField label="Website (optional)" error={errors.website} errorId={`${ids}-website-err`} hint={websiteNote ?? "Their logo or name links here, in a new tab."}>
           <Input
             value={website}
             onChange={(e) => {
@@ -542,7 +581,7 @@ export function SponsorWindow({
             maxLength={400}
             {...errorProps("website")}
           />
-        </Field>
+        </SField>
 
         <div>
           <label className="inline-flex min-h-11 cursor-pointer items-center gap-2.5">
@@ -564,16 +603,25 @@ export function SponsorWindow({
             <span className="font-medium">Presented by</span>
             <span className="block text-muted">
               {show
-                ? `Their logo and name show under your ${words.kind}'s name.${currentPresents && !sponsor?.presentedBy ? ` ${currentPresents.name} is now; this replaces them.` : ""}`
+                ? `Their logo and name show under your ${words.kind}'s name.${currentPresents && !sponsor?.presentedBy ? ` ${currentPresents.name} is presenting now. Checking this replaces them.` : ""}`
                 : canPresent
-                  ? "While they're hidden, the Presented by line doesn't show either."
-                  : "Hidden sponsors can't be Presented by. Show them on the public page first."}
+                  ? `While they're hidden, the "Presented by" line doesn't show either.`
+                  : `A hidden sponsor can't present the ${words.kind}. Show them on the public page first.`}
             </span>
           </span>
         </label>
+        {editing && (
+          <div className="border-t border-border pt-2 sm:hidden">
+            <Button type="button" variant="quiet-danger" className="px-0!" onClick={() => onRemove(sponsor!)} disabled={saving}>
+              Remove this sponsor
+            </Button>
+          </div>
+        )}
         {tried && Object.keys(errors).length > 0 && (
           <FieldError>
-            <span role="alert">Fill in or check the boxes outlined in red.</span>
+            <span role="alert">
+              {capital(listAnd([...new Set(Object.keys(errors).map((k) => FIX[k] ?? "check the boxes outlined in red"))]))}, then try again.
+            </span>
           </FieldError>
         )}
         <button type="submit" hidden aria-hidden tabIndex={-1} />

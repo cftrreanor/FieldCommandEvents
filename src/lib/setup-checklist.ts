@@ -498,7 +498,7 @@ function sponsorsEffect(f: SetupFacts): string | null {
   const what = f.eventType === "band_contest" ? "contest" : f.eventType === "fair" ? "fair" : "festival";
   const who = s.showing === 1 ? "Your 1 sponsor shows" : `Your ${s.showing} sponsors show`;
   return s.presentedBy
-    ? `${who} on it: Presented by ${s.presentedBy} under the ${what}'s name, and the thank-you section.`
+    ? `${who} on it: "Presented by ${s.presentedBy}" under the ${what}'s name, and the thank-you section.`
     : `${who} on it, in the thank-you section.`;
 }
 

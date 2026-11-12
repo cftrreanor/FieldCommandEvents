@@ -213,13 +213,19 @@ export default async function AccountPage({ params }: PageProps<"/admin/accounts
                   <Th>Status</Th>
                   <Th className="text-right">Groups</Th>
                   <Th className="text-right">Volunteers</Th>
-                  {showSponsorCounts && <Th className="text-right">Sponsors</Th>}
+                  {showSponsorCounts && <Th className="hidden text-right xl:table-cell">Sponsors</Th>}
                 </tr>
               </thead>
               <tbody>
                 {events.map((e) => (
                   <Tr key={e.id}>
-                    <Td className="font-medium">{e.name}</Td>
+                    <Td className="font-medium">
+                      {e.name}
+                      {/* Narrower screens: the count under the name, so it's never scrolled out of view. */}
+                      {showSponsorCounts && (
+                        <span className="block text-xs font-normal text-muted xl:hidden">{sponsorAddOn.perEvent[e.id] ?? 0} {(sponsorAddOn.perEvent[e.id] ?? 0) === 1 ? "sponsor" : "sponsors"}</span>
+                      )}
+                    </Td>
                     <Td className="whitespace-nowrap text-muted">{eventTypeLabel(e.event_type)}</Td>
                     <Td className={`whitespace-nowrap ${e.ends_on < today ? "text-muted" : ""}`}>{formatDate(e.starts_on, { year: undefined })}</Td>
                     <Td>
@@ -227,7 +233,7 @@ export default async function AccountPage({ params }: PageProps<"/admin/accounts
                     </Td>
                     <Td className="text-right">{bands[e.id] ?? 0}</Td>
                     <Td className="text-right">{volunteers[e.id] ?? 0}</Td>
-                    {showSponsorCounts && <Td className="text-right">{sponsorAddOn.perEvent[e.id] ?? 0}</Td>}
+                    {showSponsorCounts && <Td className="hidden text-right xl:table-cell">{sponsorAddOn.perEvent[e.id] ?? 0}</Td>}
                   </Tr>
                 ))}
                 {events.length === 0 && <EmptyRow cols={showSponsorCounts ? 7 : 6}>No events yet.</EmptyRow>}

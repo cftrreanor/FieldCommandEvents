@@ -78,7 +78,7 @@ export function FairBooths({ booths, partnersThanked = false, after }: { booths:
       </div>
       {hosts.length > 0 && !partnersThanked && (
         <p className="mt-8 rounded-md bg-surface px-4 py-3 text-sm leading-6 text-muted">
-          <span className="font-semibold text-foreground">Thank you to our community partners:</span> {hosts.join(", ")}.
+          <span className="font-semibold text-foreground">Thank you to our partners:</span> {hosts.join(", ")}.
         </p>
       )}
       {after}

@@ -36,7 +36,7 @@ function AddLevel({ eventId, count, run, primary }: { eventId: string; count: nu
   if (count >= MAX_LEVELS) return <p className="mt-3 text-sm text-muted">4 levels is the most. Remove one to add another.</p>;
   const add = async () => {
     if (!name.trim()) {
-      setError("Fill this in");
+      setError("Name the level");
       return;
     }
     setError(null);
@@ -77,7 +77,7 @@ function LevelName({ eventId, level, rank, run }: { eventId: string; level: Spon
   const save = async () => {
     if (value.trim() === level.name) return;
     if (!value.trim()) {
-      setError("Give the level a name");
+      setError("Name the level");
       return;
     }
     setError(null);

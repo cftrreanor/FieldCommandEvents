@@ -13,9 +13,10 @@ export const hasSponsorsCard = (s: EventSponsors | null): s is EventSponsors => 
 export function SponsorsOffLine({ count }: { count: number }) {
   return (
     <p className="text-sm leading-6">
-      <span className="font-semibold">Sponsors are off for your account, so none show on your public page.</span>{" "}
+      <span className="font-semibold">Sponsors are off for your account, so none show on your public pages.</span>{" "}
       <span className="text-muted">
-        Your {plural(count, "sponsor")} {count === 1 ? "is" : "are"} kept and come back if it&apos;s turned on again. To ask about it, email {brand.supportEmail}
+        We kept your {plural(count, "sponsor")}, and {count === 1 ? "it shows" : "they show"} again if Sponsors is turned back on. To ask about it, email{" "}
+        {brand.supportEmail}
       </span>
     </p>
   );

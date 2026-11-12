@@ -16,7 +16,8 @@
 --   * Copying last year's contest or festival copies no sponsors (copy_band_contest_setup and
 --     copy_group_event_setup never touch these tables); the Sponsors page offers reuse_sponsors instead.
 --   * Cleanup (daily job): removed sponsors are deleted after a day; files no sponsor points to (removed,
---     replaced, deleted events, closed accounts, abandoned uploads) are listed by sponsor_logo_orphans.
+--     replaced, deleted events, closed accounts, abandoned uploads) are listed by sponsor_logo_orphans; sponsors
+--     whose logo file is missing are set to show by name (clear_missing_sponsor_logos).
 --
 -- Safe to run twice.
 -- =============================================================================
@@ -199,7 +200,7 @@ declare
   new_id uuid;
 begin
   if char_length(btrim(coalesce(p_name, ''))) = 0 then
-    raise exception 'Give the level a name.' using errcode = 'P0001';
+    raise exception 'Name the level.' using errcode = 'P0001';
   end if;
   if exists (select 1 from sponsor_levels where event_id = p_event and lower(btrim(name)) = lower(btrim(p_name))) then
     raise exception 'There''s already a level called %.', btrim(p_name) using errcode = 'P0001';
@@ -216,6 +217,12 @@ begin
 end;
 $$;
 revoke execute on function public.add_sponsor_level_internal(uuid, text) from public, anon, authenticated;
+
+-- "contest", "festival", or "fair", for messages people read.
+create or replace function public.sponsor_kind_word(p_type text)
+returns text
+language sql immutable
+as $$ select case p_type when 'band_contest' then 'contest' when 'group_event' then 'festival' when 'fair' then 'fair' else 'event' end $$;
 
 -- 4. Sponsors ---------------------------------------------------------------------------------------------
 -- Add (p_sponsor null) or edit a sponsor. p_level is one of the event's levels; with p_new_level_name a new
@@ -273,9 +280,9 @@ begin
   if not has_levels then
     lvl := null;
   end if;
-  -- Hidden sponsors can't become Presented by (the one who has it may be hidden; the row says so).
+  -- Hidden sponsors can't become "Presented by" (the one who has it may be hidden; the row says so).
   if p_presented_by and not p_show and not coalesce(cur.presented_by, false) then
-    raise exception 'Hidden sponsors can''t be Presented by. Show them on the public page first.' using errcode = 'P0001';
+    raise exception 'A hidden sponsor can''t present the %. Show them on the public page first.', public.sponsor_kind_word(e.event_type::text) using errcode = 'P0001';
   end if;
   if p_presented_by then
     update sponsors set presented_by = false, updated_at = now()
@@ -361,9 +368,14 @@ returns jsonb
 language plpgsql security definer set search_path = public
 as $$
 declare
-  s public.sponsors := public.sponsor_for_change(p_sponsor);
+  s public.sponsors;
   keeps boolean;
 begin
+  -- The daily job deleted it (a day after Remove): say so, not "only hosts".
+  if not exists (select 1 from sponsors where id = p_sponsor) then
+    raise exception 'That sponsor was removed for good.' using errcode = 'P0002';
+  end if;
+  s := public.sponsor_for_change(p_sponsor);
   if s.removed_at is null then
     return jsonb_build_object('presented_by', s.presented_by);
   end if;
@@ -412,7 +424,7 @@ begin
       raise exception 'That sponsor was removed or isn''t on this event.' using errcode = 'P0002';
     end if;
     if not s.show_public then
-      raise exception 'Hidden sponsors can''t be Presented by. Show them on the public page first.' using errcode = 'P0001';
+      raise exception 'A hidden sponsor can''t present the %. Show them on the public page first.', public.sponsor_kind_word(e.event_type::text) using errcode = 'P0001';
     end if;
   end if;
   update sponsors set presented_by = false, updated_at = now() where event_id = e.id and presented_by and id is distinct from p_sponsor;
@@ -514,7 +526,7 @@ begin
     return public.add_sponsor_level_internal(e.id, p_name);
   end if;
   if char_length(btrim(coalesce(p_name, ''))) = 0 then
-    raise exception 'Give the level a name.' using errcode = 'P0001';
+    raise exception 'Name the level.' using errcode = 'P0001';
   end if;
   if exists (select 1 from sponsor_levels where event_id = e.id and id <> p_level and lower(btrim(name)) = lower(btrim(p_name))) then
     raise exception 'There''s already a level called %.', btrim(p_name) using errcode = 'P0001';
@@ -588,7 +600,7 @@ begin
       raise exception 'That level isn''t on this event.' using errcode = 'P0001';
     end if;
   else
-    if p_to is null and exists (select 1 from sponsors where level_id = p_level) then
+    if p_to is null and exists (select 1 from sponsors where event_id = ev and level_id = p_level) then
       raise exception 'Pick a level for its sponsors first.' using errcode = 'P0001';
     end if;
     if p_to is not null and (p_to = p_level or not exists (select 1 from sponsor_levels where id = p_to and event_id = ev)) then
@@ -597,10 +609,10 @@ begin
   end if;
   select coalesce(max(position), 0) into start_at from sponsors where event_id = ev and level_id is not distinct from p_to and removed_at is null;
   update sponsors s set level_id = p_to, position = start_at + o.n
-    from (select id, row_number() over (order by position, created_at, id) as n from sponsors where level_id = p_level) o
-   where s.id = o.id;
+    from (select id, row_number() over (order by position, created_at, id) as n from sponsors where event_id = ev and level_id = p_level) o
+   where s.id = o.id and s.event_id = ev;
   get diagnostics n = row_count;
-  delete from sponsor_levels where id = p_level;
+  delete from sponsor_levels where id = p_level and event_id = ev;
   perform public.renumber_sponsor_levels(ev);
   perform public.renumber_sponsors(ev, p_to);
   return n;
@@ -609,9 +621,9 @@ $$;
 revoke execute on function public.remove_sponsor_level(uuid, uuid) from public, anon;
 grant execute on function public.remove_sponsor_level(uuid, uuid) to authenticated;
 
--- 6. Reuse: "Add from your other events" and year two's "Bring back last year's sponsors and levels" -------
--- Events the person hosts that have sponsors, newest first (not this one). same_kind marks last year's
--- candidates (the most recent earlier event of the same kind).
+-- 6. Reuse: "Add sponsors from other events" and year two's "Bring back sponsors from …" ---------------------
+-- Events of the same account the person hosts that have sponsors, newest first (not this one). same_kind marks
+-- year two's candidates (the most recent earlier event of the same kind).
 create or replace function public.sponsor_reuse_sources(p_event uuid)
 returns table (event_id uuid, name text, event_type text, starts_on date, sponsors integer, levels integer, same_kind boolean)
 language sql stable security definer set search_path = public
@@ -622,6 +634,7 @@ as $$
          e.event_type = (select event_type from events where id = p_event)
     from events e
    where e.id <> p_event
+     and e.organization_id = (select organization_id from events where id = p_event)
      and public.is_event_admin(p_event)
      and public.is_event_admin(e.id)
      and exists (select 1 from sponsors s where s.event_id = e.id and s.removed_at is null)
@@ -630,15 +643,20 @@ $$;
 revoke execute on function public.sponsor_reuse_sources(uuid) from public, anon;
 grant execute on function public.sponsor_reuse_sources(uuid) to authenticated;
 
--- Copy sponsors from another event the person hosts into this one. p_sponsors: which ones (null: all).
--- p_with_levels: also bring every level of the source (year two), in its order, where there's room.
--- p_levels: { "<source level name>": "<this event's level id>" } for levels that don't match by name; a
--- source level with no match and no choice becomes a new level if there's room (4 at most), or stops with
--- "Pick a level for …". Skips sponsors already here (copied from the same one, or the same name). Presented
--- by isn't copied; they're added showing. Returns { added, skipped, logos: [{ id, from, to }] }: the server
--- copies each logo's files from → to (and clears the logo with clear_sponsor_logo if a copy fails).
+-- Copy sponsors from another of the account's events the person hosts into this one. p_sponsors: which ones
+-- (null: all). p_with_levels: also bring every level of the source (year two), in its order, where there's room.
+-- p_levels: { "<source level name>": "<this event's level id>" } for levels that don't match by name ("" for
+-- sponsors with no level there); a source level with no match and no choice becomes a new level if there's room
+-- (4 at most), or stops with "Pick a level for …". Every level used must be this event's. Skips sponsors already
+-- here (copied from the same one, or the same name). "Presented by" isn't copied. p_show: whether they show on
+-- the public page (null: hidden on a published event, so the organizer can check first; showing on a draft).
+-- Rows are added without their logo: the server copies each logo's files from → to, then attaches it with
+-- attach_reused_sponsor_logo, so no row ever points at a file that isn't there. Returns
+-- { added, skipped, logos: [{ id, from, to }] }.
+drop function if exists public.reuse_sponsors(uuid, uuid, uuid[], jsonb, boolean);
 create or replace function public.reuse_sponsors(p_event uuid, p_from uuid, p_sponsors uuid[] default null,
-                                                 p_levels jsonb default '{}'::jsonb, p_with_levels boolean default false)
+                                                 p_levels jsonb default '{}'::jsonb, p_with_levels boolean default false,
+                                                 p_show boolean default null)
 returns jsonb
 language plpgsql security definer set search_path = public
 as $$
@@ -654,9 +672,11 @@ declare
   logos jsonb := '[]'::jsonb;
   map jsonb := '{}'::jsonb;
   had_levels boolean;
+  shows boolean := coalesce(p_show, e.status <> 'published');
 begin
-  if p_from is null or p_from = p_event or not public.is_event_admin(p_from) then
-    raise exception 'You can only add sponsors from events you host.' using errcode = '42501';
+  if p_from is null or p_from = p_event or not public.is_event_admin(p_from)
+     or (select organization_id from events where id = p_from) is distinct from e.organization_id then
+    raise exception 'You can only add sponsors from your account''s events that you host.' using errcode = '42501';
   end if;
   had_levels := exists (select 1 from sponsor_levels where event_id = p_event);
 
@@ -684,7 +704,7 @@ begin
     target := null;
     if exists (select 1 from sponsor_levels where event_id = p_event) or src.level_name is not null then
       if src.level_name is null then
-        -- From an event without levels into one with them: the last level.
+        -- From an event without levels into one with them: the chosen level, or the last one.
         target := nullif(p_levels ->> '', '')::uuid;
         if target is null then
           select id into target from sponsor_levels where event_id = p_event order by position desc limit 1;
@@ -702,20 +722,21 @@ begin
           end if;
           target := public.add_sponsor_level_internal(p_event, src.level_name);
         end if;
-        if not exists (select 1 from sponsor_levels where id = target and event_id = p_event) then
-          raise exception 'That level isn''t on this event.' using errcode = 'P0001';
-        end if;
         map := map || jsonb_build_object(src.level_name, target);
+      end if;
+      -- Whichever way it was chosen, the level must be this event's.
+      if target is null or not exists (select 1 from sponsor_levels where id = target and event_id = p_event) then
+        raise exception 'That level isn''t on this event.' using errcode = 'P0001';
       end if;
     end if;
 
     new_id := gen_random_uuid();
     new_path := case when src.logo_path is null then null
                      else e.organization_id::text || '/' || e.id::text || '/' || gen_random_uuid()::text || '/' || split_part(src.logo_path, '/', 4) end;
-    insert into sponsors (id, event_id, level_id, name, logo_path, logo_width, logo_height, website, position, show_public, presented_by, copied_from, created_by)
-    values (new_id, p_event, target, src.name, new_path, src.logo_width, src.logo_height, src.website,
+    insert into sponsors (id, event_id, level_id, name, website, position, show_public, presented_by, copied_from, created_by)
+    values (new_id, p_event, target, src.name, src.website,
             coalesce((select max(position) from sponsors where event_id = p_event and level_id is not distinct from target and removed_at is null), 0) + 1,
-            true, false, src.id, auth.uid());
+            shows, false, src.id, auth.uid());
     added := added + 1;
     if new_path is not null then
       logos := logos || jsonb_build_array(jsonb_build_object('id', new_id, 'from', src.logo_path, 'to', new_path));
@@ -730,22 +751,35 @@ begin
   return jsonb_build_object('added', added, 'skipped', skipped, 'logos', logos);
 end;
 $$;
-revoke execute on function public.reuse_sponsors(uuid, uuid, uuid[], jsonb, boolean) from public, anon;
-grant execute on function public.reuse_sponsors(uuid, uuid, uuid[], jsonb, boolean) to authenticated;
+revoke execute on function public.reuse_sponsors(uuid, uuid, uuid[], jsonb, boolean, boolean) from public, anon;
+grant execute on function public.reuse_sponsors(uuid, uuid, uuid[], jsonb, boolean, boolean) to authenticated;
 
--- A reused logo whose files couldn't be copied: the sponsor goes on without one.
-create or replace function public.clear_sponsor_logo(p_sponsor uuid)
+-- A reused sponsor's logo, once the server has copied its files to p_path (in this event's folder). Its size
+-- comes from the sponsor it was copied from.
+drop function if exists public.clear_sponsor_logo(uuid);
+create or replace function public.attach_reused_sponsor_logo(p_sponsor uuid, p_path text)
 returns void
 language plpgsql security definer set search_path = public
 as $$
 declare
   s public.sponsors := public.sponsor_for_change(p_sponsor);
+  e public.events;
+  src public.sponsors;
 begin
-  update sponsors set logo_path = null, logo_width = null, logo_height = null, updated_at = now() where id = s.id;
+  select * into e from events where id = s.event_id;
+  select * into src from sponsors where id = s.copied_from;
+  if src.id is null or src.logo_path is null then
+    raise exception 'That sponsor wasn''t copied with a logo.' using errcode = 'P0001';
+  end if;
+  if p_path is null or p_path not like e.organization_id::text || '/' || e.id::text || '/%'
+     or split_part(p_path, '/', 4) <> split_part(src.logo_path, '/', 4) then
+    raise exception 'That logo belongs to another event.' using errcode = 'P0001';
+  end if;
+  update sponsors set logo_path = p_path, logo_width = src.logo_width, logo_height = src.logo_height, updated_at = now() where id = s.id;
 end;
 $$;
-revoke execute on function public.clear_sponsor_logo(uuid) from public, anon;
-grant execute on function public.clear_sponsor_logo(uuid) to authenticated;
+revoke execute on function public.attach_reused_sponsor_logo(uuid, text) from public, anon;
+grant execute on function public.attach_reused_sponsor_logo(uuid, text) to authenticated;
 
 -- 7. The public read ---------------------------------------------------------------------------------------
 -- What the main public event page shows: published, the add-on on, shown, not removed. An event's hosts also
@@ -773,6 +807,29 @@ as $$
 $$;
 revoke execute on function public.public_sponsors(text) from public;
 grant execute on function public.public_sponsors(text) to anon, authenticated, service_role;
+
+-- One public logo's file, for its route: only while public_sponsors would show that sponsor with that logo version
+-- (one cheap lookup by sponsor, version, and page, instead of the whole list). published: whether shared caches may
+-- keep it (a draft's preview is only for its hosts).
+create or replace function public.public_sponsor_logo(p_slug text, p_sponsor uuid, p_version text)
+returns table (logo_path text, published boolean)
+language sql stable security definer set search_path = public
+as $$
+  select s.logo_path, e.status = 'published'
+    from sponsors s
+    join events e on e.id = s.event_id
+   where s.id = p_sponsor
+     and e.slug = p_slug
+     and s.logo_path is not null
+     and split_part(s.logo_path, '/', 3) = p_version
+     and e.event_type::text in ('band_contest', 'group_event', 'fair')
+     and public.org_sponsors_on(e.organization_id)
+     and (e.status = 'published' or public.is_event_admin(e.id))
+     and s.show_public
+     and s.removed_at is null
+$$;
+revoke execute on function public.public_sponsor_logo(text, uuid, text) from public;
+grant execute on function public.public_sponsor_logo(text, uuid, text) to anon, authenticated, service_role;
 
 -- 8. Logos ------------------------------------------------------------------------------------------------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -822,3 +879,23 @@ end;
 $$;
 revoke execute on function public.sponsor_logo_orphans(integer) from public, anon, authenticated;
 grant execute on function public.sponsor_logo_orphans(integer) to service_role;
+
+-- Sponsors whose logo file is missing (a copy or upload that never finished, or a file removed by hand), an hour
+-- after their last change: they show by name instead of a broken image. Returns how many.
+create or replace function public.clear_missing_sponsor_logos()
+returns integer
+language plpgsql security definer set search_path = public
+as $$
+declare
+  n int;
+begin
+  update sponsors s set logo_path = null, logo_width = null, logo_height = null, updated_at = now()
+   where s.logo_path is not null
+     and s.updated_at < now() - interval '1 hour'
+     and not exists (select 1 from storage.objects o where o.bucket_id = 'sponsor-logos' and o.name = s.logo_path);
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+revoke execute on function public.clear_missing_sponsor_logos() from public, anon, authenticated;
+grant execute on function public.clear_missing_sponsor_logos() to service_role;

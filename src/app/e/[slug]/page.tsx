@@ -23,7 +23,6 @@ import { FairBooths, boothHosts, type PublicBooth } from "./fair-booths";
 import { PresentedBy, SponsorLiveLine, SponsorThanks, partnersNotSponsors } from "./public-sponsors";
 import { isSponsorKind, type PublicSponsor } from "@/lib/sponsors";
 import { loadPublicSponsors } from "@/lib/sponsors-data";
-import { createAdminClient } from "@/lib/supabase/server";
 import { LineIcon } from "@/components/line-icon";
 
 type Params = { params: Promise<{ slug: string }> };
@@ -59,7 +58,7 @@ async function loadEvent(slug: string) {
   const supabase = await createClient();
   const { data } = await supabase
     .from("events")
-    .select("id, name, status, event_type, organization_id, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, public_notes, volunteer_signup_open, band_registration_open, band_registration_deadline, band_registration_opens_on, performance_order_published, finals_published, schedule_updated_at, parent_registration_open, parent_registration_closes_at, parent_walk_ins_allowed")
+    .select("id, name, status, event_type, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, public_notes, volunteer_signup_open, band_registration_open, band_registration_deadline, band_registration_opens_on, performance_order_published, finals_published, schedule_updated_at, parent_registration_open, parent_registration_closes_at, parent_walk_ins_allowed")
     .eq("slug", slug)
     .maybeSingle();
   return data;
@@ -110,13 +109,13 @@ export default async function EventPublicPage({ params }: Params) {
   const none = Promise.resolve({ data: [] as unknown[] });
   // Sponsors load here and only here (never the layout, shared headers, metadata, other pages, or emails).
   const sponsorKind = isSponsorKind(event.event_type) ? event.event_type : null;
-  const [{ data: scheduleData }, { data: finalsData }, { data: breakData }, { data: progressData }, { data: boothData }, { sponsors, groupName }] = await Promise.all([
+  const [{ data: scheduleData }, { data: finalsData }, { data: breakData }, { data: progressData }, { data: boothData }, sponsors] = await Promise.all([
     roomsHere ? none : supabase.rpc("public_schedule", { p_slug: slug }),
     roomsHere ? none : supabase.rpc("public_finals", { p_slug: slug }),
     roomsHere ? none : supabase.rpc("public_breaks", { p_slug: slug }),
     roomsHere ? none : supabase.rpc("public_progress", { p_slug: slug }),
     hasBooths(event.event_type) && event.status === "published" ? supabase.rpc("public_fair_booths", { p_slug: slug }) : none,
-    sponsorKind ? loadSponsors(slug, event.organization_id) : Promise.resolve({ sponsors: [] as PublicSponsor[], groupName: null }),
+    sponsorKind ? loadPublicSponsors(slug) : Promise.resolve([] as PublicSponsor[]),
   ]);
   const booths = (boothData ?? []) as PublicBooth[];
   const progress = (progressData ?? []) as ProgressRow[];
@@ -184,12 +183,16 @@ export default async function EventPublicPage({ params }: Params) {
           : fairDay && booths.length > 0
             ? "whats-at-the-event"
             : null;
-  const liveLine = liveAt ? <SponsorLiveLine sponsors={sponsors} /> : null;
+  // The same place on every kind: after the live list and the volunteer card. On a fair it follows the zone list,
+  // set apart by a rule so it doesn't read as one of the zones.
+  const liveLine = liveAt ? (
+    <SponsorLiveLine sponsors={sponsors} className={liveAt === "whats-at-the-event" ? "mt-8 border-t border-border pt-4" : "mt-6"} />
+  ) : null;
   // Fairs: one section for sponsors and the booths' community partners (a business that's both shows once).
   const partners = sponsors.length && hasBooths(event.event_type) ? partnersNotSponsors(boothHosts(booths), sponsors) : [];
   const heading = (
     <EventHeading band={band} title={event.name}>
-      <PresentedBy slug={slug} sponsors={sponsors} onDay={isEventDay} />
+      <PresentedBy slug={slug} sponsors={sponsors} />
       <p className="mt-2 text-muted">
         {event.starts_on === event.ends_on && event.window_start && event.window_end
           ? `${formatDate(event.starts_on)} · ${formatTimeRange(event.window_start, event.window_end, tz)}`
@@ -319,10 +322,11 @@ export default async function EventPublicPage({ params }: Params) {
 
       {!festivalDay && maps}
 
-      {roomsHere && event.status === "published" && <FestivalPublic slug={slug} event={event} liveEnd={liveAt === "happening-now" && liveLine} />}
+      {roomsHere && event.status === "published" && <FestivalPublic slug={slug} event={event} />}
 
-      {/* A festival on its day leads with Happening now and Find a group; the volunteer card comes after. */}
+      {/* A festival on its day leads with Happening now and Find a group; the volunteer card comes after, then the day's sponsor line. */}
       {festivalDay && cards}
+      {liveAt === "happening-now" && liveLine}
       {festivalDay && maps}
 
       {bandsHere && (
@@ -374,7 +378,7 @@ export default async function EventPublicPage({ params }: Params) {
       )}
 
       {sponsorKind && (
-        <SponsorThanks slug={slug} kind={sponsorKind} sponsors={sponsors} group={groupName} partners={partners} backTo={liveAt ?? undefined} />
+        <SponsorThanks slug={slug} kind={sponsorKind} sponsors={sponsors} eventName={event.name} partners={partners} backTo={liveAt ?? undefined} />
       )}
     </main>
     </>
@@ -434,14 +438,6 @@ function ScheduleList({
       })}
     </ol>
   );
-}
-
-/** The main page's sponsors, and the account's name for "With thanks to everyone supporting …" when there are any. */
-async function loadSponsors(slug: string, orgId: string | null) {
-  const sponsors = await loadPublicSponsors(slug);
-  if (!sponsors.length || !orgId) return { sponsors, groupName: null };
-  const { data } = await createAdminClient().from("organizations").select("name").eq("id", orgId).maybeSingle();
-  return { sponsors, groupName: (data?.name as string | undefined) ?? null };
 }
 
 /** Has this visitor volunteered for this event, from this device or with their account? */

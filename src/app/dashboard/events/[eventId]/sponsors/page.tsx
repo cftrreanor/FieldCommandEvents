@@ -9,7 +9,7 @@ import { missing } from "@/lib/schema-check";
 import { isSponsorKind } from "@/lib/sponsors";
 import { loadEventSponsors, loadLastYearSource, loadReuseSources } from "@/lib/sponsors-data";
 import { createClient } from "@/lib/supabase/server";
-import { utcToZonedDate } from "@/lib/time";
+import { formatDate, utcToZonedDate } from "@/lib/time";
 import { StepPage } from "../conferences/step-page";
 import { SponsorsManager, type SponsorsMode } from "./manager";
 import { SponsorsOffLine } from "./sponsors-card";
@@ -74,6 +74,8 @@ export default async function SponsorsPage({ params }: PageProps<"/dashboard/eve
     <SponsorsManager
       eventId={eventId}
       eventName={event.name}
+      eventDate={formatDate(event.starts_on)}
+      eventStartsOn={event.starts_on}
       eventType={event.event_type}
       publicUrl={publicUrl}
       previewHref={`/e/${event.slug}`}

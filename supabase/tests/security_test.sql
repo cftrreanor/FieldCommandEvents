@@ -9878,6 +9878,13 @@ do $$ begin
   assert (select level_rank from public.public_sponsors('sp-band') where name = 'Ridge Line Pizza') = 0, 'Gold is the first level';
   assert (select logo_version from public.public_sponsors('sp-band') where name = 'Ridge Line Pizza') = '5b000000-0000-0000-0000-0000000000f1',
          'the logo''s version, not its path';
+  -- The logo route's one check: that sponsor, that version, on that page.
+  assert (select published from public.public_sponsor_logo('sp-band', (select id from public.public_sponsors('sp-band') where name = 'Ridge Line Pizza'),
+          '5b000000-0000-0000-0000-0000000000f1')), 'a shown logo is served, cacheable once published';
+  assert not exists (select 1 from public.public_sponsor_logo('sp-band', (select id from public.public_sponsors('sp-band') where name = 'Ridge Line Pizza'),
+          '5b000000-0000-0000-0000-0000000000f9')), 'not an old version';
+  assert not exists (select 1 from public.public_sponsor_logo('sp-other', (select id from public.public_sponsors('sp-band') where name = 'Ridge Line Pizza'),
+          '5b000000-0000-0000-0000-0000000000f1')), 'and not through another event''s page';
 end $$;
 reset role;
 set role authenticated;
@@ -9970,6 +9977,10 @@ begin
            where sp.event_id = '5b000000-0000-0000-0000-0000000000e1' and sp.name = 'Kolache Corner') = 'Friend', 'the picked level is used';
   assert (select l.name from public.sponsors sp join public.sponsor_levels l on l.id = sp.level_id
            where sp.event_id = '5b000000-0000-0000-0000-0000000000e1' and sp.name = 'Big Sky Roofing') = 'Silver', 'matched by name';
+  assert not exists (select 1 from public.sponsors where event_id = '5b000000-0000-0000-0000-0000000000e1' and copied_from is not null and show_public),
+         'on a published event, copies arrive hidden so the organizer can check first';
+  assert (select logo_path is null from public.sponsors where event_id = fest and name = 'Ridge Line Pizza'),
+         'a copied logo isn''t attached until its files are copied';
 
   -- Not from another account's event the host doesn't run.
   ok := false;
@@ -9991,8 +10002,77 @@ do $$ begin
 end $$;
 reset role;
 
+-- Reuse uses only this event's levels, stays inside the account (even for a co-host of another account's event),
+-- and attaches a copied logo only to its own copy, in this event's folder.
+insert into public.event_staff (event_id, user_id, role)
+values ('5b000000-0000-0000-0000-0000000000e9', '0000005b-0000-0000-0000-000000000001', 'co_host');
+insert into public.sponsors (event_id, name) values ('5b000000-0000-0000-0000-0000000000e9', 'Other Account Pizza');
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000005b-0000-0000-0000-000000000001","email":"sphost@example.com"}';
+do $$
+declare
+  ok boolean := false;
+  cp uuid;
+  gold_there constant uuid := (select id from public.sponsor_levels where event_id = '5b000000-0000-0000-0000-0000000000e2' and name = 'Gold');
+begin
+  perform public.save_sponsor('5b000000-0000-0000-0000-0000000000e7', null, 'Lone Star Sheet Music');
+  begin
+    perform public.reuse_sponsors('5b000000-0000-0000-0000-0000000000e1', '5b000000-0000-0000-0000-0000000000e7', null, jsonb_build_object('', gold_there), false);
+  exception when raise_exception then ok := sqlerrm = 'That level isn''t on this event.';
+  end;
+  assert ok, 'a level from another event can''t be used, even for sponsors with no level';
+  ok := false;
+  begin
+    perform public.remove_sponsor_level((select id from public.sponsor_levels where event_id = '5b000000-0000-0000-0000-0000000000e1' and name = 'Friend'), gold_there);
+  exception when raise_exception then ok := true;
+  end;
+  assert ok, 'removing a level moves its sponsors only to a level on the same event';
+
+  assert public.is_event_admin('5b000000-0000-0000-0000-0000000000e9'), 'the host co-hosts another account''s event';
+  assert not exists (select 1 from public.sponsor_reuse_sources('5b000000-0000-0000-0000-0000000000e1') where event_id = '5b000000-0000-0000-0000-0000000000e9'),
+         'but isn''t offered its sponsors';
+  ok := false;
+  begin
+    perform public.reuse_sponsors('5b000000-0000-0000-0000-0000000000e1', '5b000000-0000-0000-0000-0000000000e9');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'or able to copy them into their own account';
+
+  cp := (select id from public.sponsors where event_id = '5b000000-0000-0000-0000-0000000000e3' and name = 'Ridge Line Pizza');
+  ok := false;
+  begin
+    perform public.attach_reused_sponsor_logo(cp, '5b000000-0000-0000-0000-000000000001/5b000000-0000-0000-0000-0000000000e1/5b000000-0000-0000-0000-0000000000f3/master.jpg');
+  exception when raise_exception then ok := true;
+  end;
+  assert ok, 'a copied logo goes only in its own event''s folder';
+  ok := false;
+  begin
+    perform public.attach_reused_sponsor_logo((select id from public.sponsors where event_id = '5b000000-0000-0000-0000-0000000000e7' and name = 'Lone Star Sheet Music'),
+      '5b000000-0000-0000-0000-000000000001/5b000000-0000-0000-0000-0000000000e7/5b000000-0000-0000-0000-0000000000f3/master.jpg');
+  exception when raise_exception then ok := true;
+  end;
+  assert ok, 'and only on a sponsor copied with a logo';
+  perform public.attach_reused_sponsor_logo(cp, '5b000000-0000-0000-0000-000000000001/5b000000-0000-0000-0000-0000000000e3/5b000000-0000-0000-0000-0000000000f3/master.jpg');
+  assert (select logo_width = 900 and logo_height = 300 and logo_path like '%/5b000000-0000-0000-0000-0000000000f3/master.jpg' from public.sponsors where id = cp),
+         'attached with the size of the logo it came from';
+end $$;
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000005b-0000-0000-0000-000000000003","email":"spother@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.attach_reused_sponsor_logo((select id from public.sponsors where name = 'Ridge Line Pizza' and event_id = '5b000000-0000-0000-0000-0000000000e3'), null);
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'another account''s host can''t attach a logo to this account''s sponsor';
+end $$;
+reset role;
+
 -- Cleanup: removed sponsors after a day, and files nothing points to.
 update public.sponsors set removed_at = now() - interval '2 days' where name = 'Oak Street Dental';
+do $$ begin perform set_config('sp.purged', (select id::text from public.sponsors where name = 'Oak Street Dental'), false); end $$;
 insert into storage.objects (bucket_id, name, created_at) values
   ('sponsor-logos', '5b000000-0000-0000-0000-000000000001/5b000000-0000-0000-0000-0000000000e1/5b000000-0000-0000-0000-0000000000f1/master.png', now() - interval '3 days'),
   ('sponsor-logos', '5b000000-0000-0000-0000-000000000001/5b000000-0000-0000-0000-0000000000e1/5b000000-0000-0000-0000-0000000000f1/t0.png', now() - interval '3 days'),
@@ -10020,6 +10100,35 @@ do $$ begin
            '5b000000-0000-0000-0000-000000000001/5b000000-0000-0000-0000-0000000000e1/5b000000-0000-0000-0000-0000000000f9/t0.png',
            'uploads/5b000000-0000-0000-0000-0000000000e1/old.png'],
          'orphans: an unused version and an old upload, not files in use or made today';
+end $$;
+reset role;
+-- Sponsors whose logo file is missing show by name (an hour after their last change).
+update public.sponsors set updated_at = now() - interval '2 hours';
+set role service_role;
+do $$ begin
+  assert public.clear_missing_sponsor_logos() >= 2, 'logos whose files are missing are cleared';
+  assert (select logo_path is null and logo_width is null from public.sponsors where event_id = '5b000000-0000-0000-0000-0000000000e2' and name = 'Ridge Line Pizza'),
+         'last year''s, whose file was never stored';
+  assert (select logo_path is not null from public.sponsors where event_id = '5b000000-0000-0000-0000-0000000000e1' and name = 'Ridge Line Pizza'),
+         'not one whose file is there';
+end $$;
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"sub":"0000005b-0000-0000-0000-000000000001","email":"sphost@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.clear_missing_sponsor_logos();
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'only the daily job clears missing logos';
+  ok := false;
+  begin
+    perform public.restore_sponsor(current_setting('sp.purged')::uuid);
+  exception when sqlstate 'P0002' then ok := sqlerrm = 'That sponsor was removed for good.';
+  end;
+  assert ok, 'Undo after the daily cleanup says it was removed for good';
 end $$;
 reset role;
 -- Deleting an event deletes its sponsors (their files become orphans).

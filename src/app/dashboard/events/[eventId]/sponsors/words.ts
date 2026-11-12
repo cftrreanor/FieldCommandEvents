@@ -8,8 +8,10 @@ export type SponsorKindWords = {
   kind: string;
   /** "contest day" */
   day: string;
-  /** Where the live line goes on the day. */
+  /** Where the day's sponsor line goes ("the live schedule"). */
   live: string;
+  /** The same, as the subject of a sentence ("the schedule names …"). */
+  liveShort: string;
   /** Where sponsors never show, for the "where it shows" box. */
   never: string;
 };
@@ -17,12 +19,24 @@ export type SponsorKindWords = {
 /** Each kind's own words (pattern 23). */
 export function sponsorKindWords(eventType: string): SponsorKindWords {
   if (eventType === "band_contest") {
-    return { kind: "contest", day: "contest day", live: "the live schedule", never: "Volunteer sign-up, band registration, directors' pages, and emails" };
+    return {
+      kind: "contest",
+      day: "contest day",
+      live: "the live schedule",
+      liveShort: "the schedule",
+      never: "The volunteer sign-up and band registration pages, directors' pages, and emails",
+    };
   }
   if (eventType === "fair") {
-    return { kind: "fair", day: "fair day", live: "What's at the event", never: "Volunteer sign-up, partner pages, and emails" };
+    return { kind: "fair", day: "fair day", live: "What's at the event", liveShort: "What's at the event", never: "The volunteer sign-up page and emails" };
   }
-  return { kind: "festival", day: "festival day", live: "Happening now", never: "Registration, directors' pages, volunteer sign-up, and emails" };
+  return {
+    kind: "festival",
+    day: "festival day",
+    live: "Happening now",
+    liveShort: "Happening now",
+    never: "The volunteer sign-up and group registration pages, directors' pages, and emails",
+  };
 }
 
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -49,18 +63,20 @@ export const LEVEL_EXAMPLES = ["For example, Gold", "For example, Silver", "For 
 // Logos: one short line where you upload, the full requirements one tap away, and the email to copy.
 // ---------------------------------------------------------------------------------------------
 
-export const LOGO_SHORT = `PNG or JPG, at least ${LOGO.minWidth} pixels wide, up to ${LOGO.maxMB} MB`;
+/** The logo rule, said one way everywhere. */
+export const LOGO_SHORT = `PNG or JPG, ${LOGO.minWidth} pixels wide or more, up to ${LOGO.maxMB} MB`;
 
 /** The full requirements (light check: transparent background, "Best: 1200 × 400", one minimum). */
 export const LOGO_SPEC: { k: string; v: string }[] = [
   { k: "File", v: "PNG (a transparent background is best) or JPG" },
   {
     k: "Size",
-    v: `At least ${LOGO.minWidth} pixels wide is best; we can't use logos under ${LOGO.refuseUnder}. Best: ${LOGO.ideal[0]} × ${LOGO.ideal[1]} pixels, a wide logo about 3 times as wide as tall, which shows biggest`,
+    v: `${LOGO.minWidth} pixels wide or more looks sharp. Smaller logos may look blurry, and we can't use logos under ${LOGO.refuseUnder} pixels wide. Best: ${LOGO.ideal[0]} × ${LOGO.ideal[1]} pixels, about 3 times as wide as tall`,
   },
   { k: "Square or tall logos", v: "They show smaller than wide ones: the same height, less wide, with the name under them" },
   { k: "File size", v: `Up to ${LOGO.maxMB} MB. We resize it to at most ${LOGO.resizeTo} pixels wide and make a copy for each level's size` },
-  { k: "Not accepted", v: "PDF, SVG, Word, or PowerPoint files, photos of banners or signs, and screenshots of a website" },
+  { k: "Not accepted", v: "PDF, SVG, Word, or PowerPoint files" },
+  { k: "Don't work well", v: "Photos of banners or signs, and screenshots of a website" },
   { k: "Shows best", v: "Big, simple shapes with a little empty space around them. Tiny text and thin lines blur at small sizes" },
 ];
 
@@ -73,20 +89,20 @@ export function tileSizes(levels: string[]) {
 /** Where a logo appears, said in the requirements and in the email. */
 export function logoWhere(eventType: string) {
   const w = sponsorKindWords(eventType);
-  return `On the ${w.kind}'s public page, in the thank-you to sponsors near the end. The Presented by sponsor's logo also shows under the ${w.kind}'s name.`;
+  return `On the ${w.kind}'s public page, in the thank-you to sponsors near the end. The "Presented by" sponsor's logo also shows under the ${w.kind}'s name.`;
 }
 
 /** The email organizers copy to ask a sponsor for their logo (signed with their name and their group's). */
-export function logoEmail({ event, eventType, sponsor, from, group }: { event: string; eventType: string; sponsor?: string; from: string; group: string }) {
+export function logoEmail({ event, date, eventType, sponsor, from, group }: { event: string; date: string; eventType: string; sponsor?: string; from: string; group: string }) {
   const w = sponsorKindWords(eventType);
   return `Subject: Your logo for ${event}
 
 Hi${sponsor ? ` ${sponsor}` : ""},
 
-Thank you for sponsoring ${event}. We'd like to thank you on the ${w.kind}'s public page, in the thank-you to our sponsors near the end. Please send us your logo:
+Thank you for sponsoring ${event} on ${date}. We'd like to thank you on the ${w.kind}'s public page, in the thank-you to our sponsors near the end. Please send us your logo:
 
 - a PNG with a transparent background (best) or a JPG
-- at least ${LOGO.minWidth} pixels wide. Best: ${LOGO.ideal[0]} × ${LOGO.ideal[1]} pixels
+- ${LOGO.minWidth} pixels wide or more (${LOGO.ideal[0]} × ${LOGO.ideal[1]} pixels is best)
 - a wide version if you have one, about 3 times as wide as tall
 - up to ${LOGO.maxMB} MB
 

@@ -135,14 +135,14 @@ export async function saveSponsor(
   await requireUser();
   const fieldErrors: Record<string, string> = {};
   const name = String(input.name ?? "").trim();
-  if (!name) fieldErrors.name = "Enter the sponsor's name.";
+  if (!name) fieldErrors.name = "Enter the sponsor's name";
   else if (name.length > SPONSOR_NAME_MAX) fieldErrors.name = `Shorten the name to ${SPONSOR_NAME_MAX} characters or fewer.`;
   const newLevel = String(input.newLevelName ?? "").trim();
   if (newLevel.length > LEVEL_NAME_MAX) fieldErrors.newLevelName = `Shorten the level's name to ${LEVEL_NAME_MAX} characters or fewer.`;
   const link = normalizeSponsorLink(input.website);
   if (link.error) fieldErrors.website = link.error;
   if (input.sponsorId && !isId(input.sponsorId)) return { error: GONE };
-  if (input.levelId && !isId(input.levelId)) fieldErrors.levelId = "Pick a level.";
+  if (input.levelId && !isId(input.levelId)) fieldErrors.levelId = "Pick a level";
   if (Object.keys(fieldErrors).length) return { error: Object.values(fieldErrors)[0], fieldErrors };
 
   const logo = input.logo;
@@ -224,7 +224,7 @@ export async function moveSponsor(eventId: string, sponsorId: string, dir: "up" 
 export async function saveSponsorLevel(eventId: string, levelId: string | null, name: string): Promise<Fail & { id?: string }> {
   await requireUser();
   const n = String(name ?? "").trim();
-  if (!n) return { error: "Give the level a name." };
+  if (!n) return { error: "Name the level." };
   if (n.length > LEVEL_NAME_MAX) return { error: `Shorten the level's name to ${LEVEL_NAME_MAX} characters or fewer.` };
   const { data, error } = await call<string>("save_sponsor_level", { p_event: eventId, p_level: levelId || null, p_name: n });
   if (error) return { error };
@@ -267,7 +267,8 @@ export type ReuseCandidate = Sponsor & {
 export async function getReuseCandidates(eventId: string, fromEventId: string): Promise<Fail & { levels?: SponsorLevel[]; sponsors?: ReuseCandidate[] }> {
   await requireUser();
   const [event, from] = await Promise.all([eventFor(eventId), eventFor(fromEventId)]);
-  if (!event || !from) return { error: "You can only add sponsors from events you host. Pick one of your own events." };
+  if (!event || !from || from.organization_id !== event.organization_id)
+    return { error: "You can only add sponsors from your account's events that you host. Pick one of them." };
   const [here, src] = await Promise.all([loadEventSponsors(event.id, event.organization_id, event.event_type), loadReuseCandidates(fromEventId)]);
   const keys = new Set(here.sponsors.map((s) => sponsorNameKey(s.name)));
   const copied = new Set(here.sponsors.map((s) => s.copiedFrom).filter(Boolean));
@@ -293,12 +294,13 @@ export async function getReuseCandidates(eventId: string, fromEventId: string): 
  * Copy sponsors from another event the person hosts ("Add from your other events"; year two: withLevels to
  * "Bring back last year's sponsors and levels"). sponsorIds: which ones (omit for all). levelMap: for source
  * levels with no level of the same name here, { "<source level name>": "<level id here>" } (needed once this
- * event has 4 levels). Logos are copied into this event's folder; logosFailed counts any that couldn't be.
+ * event has 4 levels). show: whether they show on the public page (omit: hidden on a published event, showing on a
+ * draft). Logos are copied into this event's folder; logosFailed counts any that couldn't be.
  */
 export async function reuseSponsors(
   eventId: string,
   fromEventId: string,
-  options: { sponsorIds?: string[] | null; levelMap?: Record<string, string>; withLevels?: boolean } = {},
+  options: { sponsorIds?: string[] | null; levelMap?: Record<string, string>; withLevels?: boolean; show?: boolean } = {},
 ): Promise<Fail & { added?: number; skipped?: number; logosFailed?: number }> {
   await requireUser();
   const ids = options.sponsorIds?.filter(isId) ?? null;
@@ -308,15 +310,15 @@ export async function reuseSponsors(
     p_sponsors: ids,
     p_levels: options.levelMap ?? {},
     p_with_levels: Boolean(options.withLevels),
+    p_show: typeof options.show === "boolean" ? options.show : null,
   });
   if (error || !data) return { error: error ?? "We couldn't add them. Check your connection, then try again." };
   const admin = createAdminClient();
   let logosFailed = 0;
+  // Rows arrive without their logo: copy the files first, then attach (a failed copy leaves the name showing).
   for (const l of data.logos ?? []) {
-    if (!(await copyLogoFiles(admin, l.from, l.to))) {
-      logosFailed++;
-      await call("clear_sponsor_logo", { p_sponsor: l.id });
-    }
+    const copied = await copyLogoFiles(admin, l.from, l.to);
+    if (!copied || (await call("attach_reused_sponsor_logo", { p_sponsor: l.id, p_path: l.to })).error) logosFailed++;
   }
   await refresh(eventId);
   return { added: data.added, skipped: data.skipped, logosFailed };
