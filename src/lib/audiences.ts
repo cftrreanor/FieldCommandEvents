@@ -178,8 +178,9 @@ export const audiences = {
     path: "/choir-festivals",
     eventType: "group_event",
     icon: "group",
-    name: "Choir and group festivals",
-    metaTitle: "Choir, Orchestra & Group Festival Scheduling Software",
+    // The same name as the event picker and badge ("Choir, orchestra, or group festival").
+    name: "Choir, orchestra, and group festivals",
+    metaTitle: "Choir, Orchestra, and Group Festival Scheduling Software",
     metaDescription:
       "Run a choir or orchestra festival, theater, or speech and debate event: groups register online and move through your rooms on a schedule worked out for you, directors are emailed their times, and families follow each room as your team marks it.",
     eyebrow: "For choir directors and fine arts directors",
@@ -198,14 +199,14 @@ export const audiences = {
         body: "Share one link, and directors fill in their group, school, and performers, plus a classification, chaperones, buses, and when their group can come, only if you ask. They confirm with a code we email them, with no account to set up first.",
         points: [
           "Import last year's directors from a spreadsheet, and their details are filled in for them",
-          "See every registered group with totals for participants, chaperones, and buses, filter by classification, and download the list",
+          "See every registered group with totals for performers, chaperones, and buses, filter by classification, and download the list",
           "Set a deadline that closes on its own and a limit on how many groups can register, then reopen with a new deadline if a director asks for more time",
           "Headcounts only: student names are never collected",
         ],
       },
       {
         title: "Rooms and a schedule built for you",
-        body: "Add your rooms, such as warm-up, performance, sight-reading, or a clinic, and the order groups move through them. Set the start time, the minutes between groups, and the passing time, and every group's itinerary is worked out for you.",
+        body: "Add your rooms, such as warm-up, performance, sight-reading, or a clinic, and the order groups move through them. Set when the first group starts, how often a new group starts, and the walking time between rooms, and every group's times are worked out for you.",
         points: [
           "Add a note to each room, like “Room 112, east hallway”, and list hospitality rooms that aren't part of the rotation",
           "Change the order, skip a room for one group, or add a break, and every later time updates for you",
@@ -217,13 +218,13 @@ export const audiences = {
         title: "What visiting directors get",
         body: "Every director has one page for their group: each room and time, your information for directors, and your maps and documents. Fewer calls and emails land on you.",
         points: [
-          "Their room-by-room itinerary, added to their calendar in one tap",
+          "Their room-by-room times, added to their calendar in one tap",
           "Their group's progress on the day, as your team marks it",
           "Changes and withdrawing allowed until registration closes, and you're emailed if a group withdraws",
         ],
         screen: {
           src: "/screens/group-director-itinerary.webp",
-          alt: "A choir director's page on a phone: the festival, a What's next checklist, and their group's room-by-room times.",
+          alt: "A choir director's page on a phone on the festival day: where their group is now, then its times room by room, with each room the team has marked done.",
         },
       },
       {
@@ -237,12 +238,12 @@ export const audiences = {
         ],
         screen: {
           src: "/screens/group-room-taps.webp",
-          alt: "One room's view on event day on a phone: the group on now, the group up next, and a Done tap that shows who made it.",
+          alt: "One room's page on event day on a phone: the group in the room now, a button to mark it done and the next group in, and the room's list with each group's time and state.",
         },
       },
       {
         title: "Families follow each room live",
-        body: "The public festival page shows who's in each room now and who's up next, as your team marks it, under your logo and colors, so families know where to be.",
+        body: "The public festival page shows who's in each room now and who's up next, as your team marks it, in your colors, with your logo, so families know where to be.",
         points: [
           "Families never see contact details or headcounts",
           "Post a banner when something changes, and anyone with the schedule open is told it was updated",
@@ -250,7 +251,7 @@ export const audiences = {
         ],
         screen: {
           src: "/screens/group-public-rooms.webp",
-          alt: "The public festival page on a phone in the host's colors, with the host's logo and the group on now in each room.",
+          alt: "The public festival page on a phone in the organizer's colors, with the group in each room now and the group up next.",
         },
       },
     ],
@@ -259,25 +260,25 @@ export const audiences = {
         title: "Set up rooms and the order",
         body: "Add the rooms every group visits. Each group's times are worked out for you, room by room.",
         screen: "/screens/group-rooms-schedule.webp",
-        alt: "Rooms and schedule: each choir's warm-up, main stage, and sight-reading times.",
+        alt: "Rooms and schedule on a phone: the first group's time in each room, and a 15-minute break before the next group.",
       },
       {
         title: "Groups register",
         body: "Directors fill in their group, school, and headcounts, then confirm with a code we email. They can change it until registration closes.",
         screen: "/screens/group-registration-confirm-code.webp",
-        alt: "The group registration form on a phone, with a note that it takes about 5 minutes and is confirmed with an emailed code.",
+        alt: "The end of the group registration form on a phone: buses, the times a group can come, notes for the organizer, and the director's email, where a code is sent to confirm.",
       },
       {
         title: "Families follow each room live",
         body: "The public page shows who's in each room now and up next, as your team marks it.",
         screen: "/screens/group-room-schedule-live.webp",
-        alt: "The public schedule, room by room, with the group on now and the group up next.",
+        alt: "One room's list on the public festival page: each group's time, the groups done, and the group in the room now, with the other rooms a tap away.",
       },
       {
         title: "Run the day",
         body: "Mark each group arrived, in each room, and done, and see who's behind.",
         screen: "/screens/group-event-day.webp",
-        alt: "The event day page: which groups are here, which are running over, and Done buttons for each room.",
+        alt: "The event day page on a phone: who's in each room now and up next, and a group's card with Mark arrived.",
       },
     ],
     privacy: [
@@ -289,7 +290,7 @@ export const audiences = {
     faqs: [
       {
         q: "How is the room schedule built?",
-        a: "Add your rooms in the order groups move through them and how long each takes, then set the start time, the minutes between groups, and the passing time. Every group's times are worked out for you. Change the order, skip a room for one group, or add a break, and every later time updates. When you post the schedule, every director is emailed their group's times. Change a time later, and you can email only the directors it affects.",
+        a: "Add your rooms in the order groups move through them and how long each takes, then set when the first group starts, how often a new group starts, and the walking time between rooms. Every group's times are worked out for you. Change the order, skip a room for one group, or add a break, and every later time updates. When you post the schedule, every director is emailed their group's times. Change a time later, and you can email only the directors it affects.",
       },
       {
         q: "Does it work for orchestra, theater, or speech and debate?",

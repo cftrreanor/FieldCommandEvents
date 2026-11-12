@@ -46,15 +46,18 @@ export function SaveFooter({
   if (posted) {
     return (
       <div className={`${BAR} ${edge}`}>
-        <p className="min-w-0 flex-1 basis-full text-sm sm:basis-auto" role="status">
+        {/* Phones: one line (the change cut short, its full words in the save window), with the buttons beside it. */}
+        <p className="min-w-0 flex-1 text-sm max-sm:truncate" role="status" title={posted.summary}>
           <span className="font-medium text-warning">
             <span aria-hidden>◆ </span>Not saved yet:
           </span>{" "}
           {posted.summary}
         </p>
-        <div className="ml-auto flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" onClick={posted.onUndo} disabled={posted.busy}>
-            Undo my changes
+        <div className="ml-auto flex shrink-0 gap-2">
+          <Button type="button" variant="secondary" onClick={posted.onUndo} disabled={posted.busy} className="max-sm:px-3">
+            <span>
+              Undo<span className="max-sm:hidden"> my changes</span>
+            </span>
           </Button>
           <Button type="button" onClick={posted.onSave} disabled={posted.busy} aria-busy={posted.busy}>
             {posted.busy ? "Saving…" : "Save"}
@@ -67,7 +70,8 @@ export function SaveFooter({
   const tail = notPosted ? " · not posted yet" : "";
   return (
     <div className={`${BAR} ${edge}`}>
-      <div className={`min-w-0 flex-1 text-sm ${todo || status.kind === "incomplete" || status.kind === "failed" ? "basis-full sm:basis-auto" : ""}`} role="status">
+      {/* One line on phones: the status beside the button (only an error takes its own line). */}
+      <div className={`min-w-0 flex-1 text-sm ${status.kind === "failed" ? "basis-full sm:basis-auto" : ""}`} role="status">
         {status.kind === "failed" ? (
           <p className="flex flex-wrap items-center gap-x-2 font-semibold text-danger">
             <span>
@@ -94,7 +98,9 @@ export function SaveFooter({
           </p>
         ) : todo ? (
           <p className="font-medium text-warning">
-            <span aria-hidden>◆ </span>Not saved yet. {todo}
+            <span aria-hidden>◆ </span>
+            <span className="max-sm:hidden">Not saved yet. </span>
+            {todo}
           </p>
         ) : (
           <p className="text-muted">Saves as you go{tail}</p>
@@ -107,8 +113,7 @@ export function SaveFooter({
             todo && status.kind !== "saved" ? "border border-field-border bg-surface hover:bg-background" : "bg-brand text-brand-foreground hover:bg-brand-hover"
           }`}
         >
-          <span className="hidden sm:inline">Next up:&nbsp;</span>
-          {next.label} →
+          Next up:&nbsp;{next.label} →
         </Link>
       )}
     </div>

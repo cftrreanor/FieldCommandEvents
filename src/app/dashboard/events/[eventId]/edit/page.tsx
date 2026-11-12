@@ -306,7 +306,10 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
     : event.event_type === "band_contest"
       ? `Your event is live${bandsNow || volunteersNow ? `, and ${[bandsNow ? people(bandsNow, "band", "bands").replace(/ ha(s|ve)$/, "") : null, volunteersNow ? people(volunteersNow, "volunteer", "volunteers").replace(/ ha(s|ve)$/, "") : null].filter(Boolean).join(" and ")} ${bandsNow + volunteersNow === 1 ? "has" : "have"} signed up` : ""}. Unpublishing hides its public pages and closes band registration and volunteer sign-up.${bandsNow || volunteersNow ? " They stay registered and signed up, and nobody is emailed." : " Nobody is emailed."} After you publish again, open volunteer sign-up again from the event page.`
       : hasRooms(event.event_type)
-        ? `Your festival is live${bandsNow || volunteersNow ? `, and ${[bandsNow ? (bandsNow === 1 ? "1 group" : `${bandsNow} groups`) : null, volunteersNow ? (volunteersNow === 1 ? "1 volunteer" : `${volunteersNow} volunteers`) : null].filter(Boolean).join(" and ")} ${bandsNow + volunteersNow === 1 ? "has" : "have"} signed up` : ""}. Unpublishing hides the festival page and closes group registration and volunteer sign-up.${bandsNow || volunteersNow ? " They stay registered and signed up, and nobody is emailed." : " Nobody is emailed."}`
+        ? `Your festival is live.${[
+            bandsNow ? ` ${bandsNow === 1 ? "1 group has" : `${bandsNow} groups have`} registered` : "",
+            volunteersNow ? `${bandsNow ? " and" : ""} ${volunteersNow === 1 ? "1 volunteer has" : `${volunteersNow} volunteers have`} signed up` : "",
+          ].join("")}${bandsNow || volunteersNow ? "." : ""} Unpublishing hides the festival page and closes group registration and volunteer sign-up.${bandsNow || volunteersNow ? " They stay registered and signed up, and nobody is emailed." : " Nobody is emailed."}`
       : event.event_type === "volunteer"
         ? `Your event is live${volunteersNow ? `, and ${people(volunteersNow, "volunteer", "volunteers")} signed up` : ""}. Unpublishing hides its public pages and closes volunteer sign-up.${volunteersNow ? " They keep their shifts, and nobody is emailed." : " Nobody is emailed."}`
         : "Your event is live. Unpublishing hides its public pages and stops every sign-up and registration. Nobody is emailed.";

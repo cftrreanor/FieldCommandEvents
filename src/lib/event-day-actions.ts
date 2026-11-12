@@ -76,7 +76,7 @@ export const loadDayActions = cache(async (eventId: string): Promise<DayActions 
     if (access.canManage) job("board", "board", "Check on every band", "Check on bands", "Who's late, and who's next on the field", "/contest-day");
     else if (lead) for (const st of myStations) stationJob(st);
   } else if (hasRooms(type)) {
-    job("groups", "groups", "Check groups in", "Check groups in", "Tap Arrived, then Done in each room", "/event-day");
+    job("groups", "groups", "Mark groups arrived", "Mark groups arrived", "Mark arrived, then in and done in each room", "/event-day");
   } else if (hasParents(type) && parents.data) {
     job("parents", "parents", "Check in parents", "Check in parents", "At the door, after checking a photo ID", "/parents/check-in");
   } else if (hasBooths(type)) {
@@ -96,7 +96,7 @@ export const loadDayActions = cache(async (eventId: string): Promise<DayActions 
     else job("schedule", "schedule", "Look up a band's time", "Look up times", "Warm-up and performance times", "/schedule");
   }
   if (hasRooms(type) && hasSchedule) {
-    if (access.isHost) job("push", "schedule", "Push the schedule back", "Push schedule back", "Running behind? Move every later time", "/event-day#push-back");
+    if (access.isHost) job("push", "schedule", "Push the schedule back", "Push the schedule back", "Running behind? Move every later time", "/event-day#push-back");
     else job("schedule", "schedule", "Look up a group's room and time", "Look up times", "Every room's schedule", "/rooms#board-heading");
   }
   if (access.canManage && !hasConferences(type)) {

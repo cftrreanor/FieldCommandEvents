@@ -171,7 +171,8 @@ function AreaCard({ id, title, children, highlight = false }: { id: string; titl
   );
 }
 
-function Meter({ value, of, label }: { value: number; of: number; label: string }) {
+/** `done`: green once full (a schedule isn't done until it's posted, so it stays brand blue until then). */
+function Meter({ value, of, label, done = true }: { value: number; of: number; label: string; done?: boolean }) {
   const pct = of ? Math.min(100, Math.round((value / of) * 100)) : 0;
   return (
     <div
@@ -182,7 +183,7 @@ function Meter({ value, of, label }: { value: number; of: number; label: string 
       aria-valuemin={0}
       aria-valuemax={100}
     >
-      <div className={`h-full rounded-full ${pct >= 100 ? "bg-success" : "bg-brand"}`} style={{ width: `${pct}%` }} />
+      <div className={`h-full rounded-full ${pct >= 100 && done ? "bg-success" : "bg-brand"}`} style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -212,14 +213,20 @@ export function FestivalCards({ f, dayFirst }: { f: FestivalFacts; dayFirst: boo
   );
   const rooms = (
     <AreaCard key="schedule" id="schedule" title="Rooms and schedule">
-      <p className="mt-1 text-sm">{f.posted ? <Badge tone="success">Posted</Badge> : <Badge>Not posted</Badge>}</p>
+      {f.posted ? (
+        <p className="mt-1 text-sm">
+          <Badge tone="success">Posted</Badge>
+        </p>
+      ) : (
+        <p className="mt-1 text-sm font-semibold">Not posted: directors haven&apos;t got their times</p>
+      )}
       <div className="mt-3 flex items-baseline justify-between gap-2 text-sm">
         <span className="font-semibold">
           {registered === 0 ? "No groups to schedule yet" : `${f.withTimes} of ${plural(registered, "group", "groups")} ${registered === 1 ? "has" : "have"} times`}
         </span>
         <span className="text-muted">{plural(f.rooms, "room", "rooms")}</span>
       </div>
-      {registered > 0 && <Meter value={f.withTimes} of={registered} label="Groups with times" />}
+      {registered > 0 && <Meter value={f.withTimes} of={registered} label="Groups with times" done={f.posted} />}
       {showNoTimes && (
         <p className="mt-2 text-sm font-medium text-warning">
           <span aria-hidden>◆ </span>
@@ -269,7 +276,7 @@ export function FestivalCards({ f, dayFirst }: { f: FestivalFacts; dayFirst: boo
     <AreaCard key="day" id="day" title="Event day" highlight={f.isEventDay}>
       <p className="mt-1 text-sm text-muted">{f.dates}</p>
       <div className="mt-3 text-sm leading-6">
-        {f.dayLine ?? <p>Mark each group arrived and done in each room. Families follow along on the festival page.</p>}
+        {f.dayLine ?? <p>Mark each group arrived, then in and done in each room. Families follow along on the festival page.</p>}
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         <Link href={`${base}/event-day`} className={dayFirst ? BTN : BTN_OUTLINE}>
@@ -303,7 +310,7 @@ export function FestivalDraftCards({ f }: { f: FestivalFacts }) {
           : f.pathRooms === 0
             ? `${plural(f.rooms, "room", "rooms")}, none in the rotation yet`
             : `${plural(f.pathRooms, "room", "rooms")}${outside > 0 ? ` and ${outside} outside the rotation` : ""}${f.minutesPerGroup > 0 ? ` · ${hours}` : ""}`,
-      button: f.rooms === 0 ? { label: "Add a room", href: `${base}/rooms` } : { label: "Change rooms", href: `${base}/rooms` },
+      button: f.rooms === 0 ? { label: "Add a room", href: `${base}/rooms` } : { label: "Change rooms and schedule", href: `${base}/rooms` },
     },
     {
       id: "registration",

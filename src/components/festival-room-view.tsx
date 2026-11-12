@@ -49,7 +49,7 @@ export function FestivalRoomView({
     run(
       "handoff",
       () => handOff(now?.bandId ?? null, next?.bandId ?? null),
-      now && next ? `Marked ${now.name} done and ${next.name} in` : now ? `Marked ${now.name} done` : `Marked ${next!.name} in`,
+      now && next ? `Marked ${now.name} done and ${next.name} in ${roomName}` : now ? `Marked ${now.name} done in ${roomName}` : `Marked ${next!.name} in ${roomName}`,
       async () => {
         if (next) {
           const r = await mark(next.bandId, "in", false);
@@ -59,7 +59,7 @@ export function FestivalRoomView({
       },
     );
   const doneOnly = () =>
-    run("done", () => handOff(now!.bandId, null), `Marked ${now!.name} done`, () => mark(now!.bandId, "done", false));
+    run("done", () => handOff(now!.bandId, null), `Marked ${now!.name} done in ${roomName}`, () => mark(now!.bandId, "done", false));
   const inOnly = (r: RoomRow) =>
     run(`in:${r.bandId}`, () => mark(r.bandId, "in", true), `Marked ${r.name} in ${roomName}`, () => mark(r.bandId, "in", false));
 
@@ -69,7 +69,7 @@ export function FestivalRoomView({
       <div className="rounded-lg border border-border bg-surface p-4 shadow-card sm:p-6">
         {now ? (
           <>
-            <p className="text-sm text-muted">Now, since {now.since}</p>
+            <p className="text-sm text-muted">In {roomName} since {now.since}</p>
             <p className="text-xl font-semibold">{now.name}</p>
           </>
         ) : (
@@ -81,17 +81,17 @@ export function FestivalRoomView({
         <div className="mt-4 space-y-2">
           {now && next && (
             <Button type="button" className={big} disabled={busy !== null} onClick={() => void doneAndNext()}>
-              {busy === "handoff" ? "Saving…" : `Done, ${next.name} is in`}
+              {busy === "handoff" ? "Saving…" : `Done · mark ${next.name} in`}
             </Button>
           )}
           {now && (
             <Button type="button" variant={next ? "secondary" : "primary"} className={big} disabled={busy !== null} onClick={() => void doneOnly()}>
-              {busy === "done" ? "Saving…" : "Done, next group isn't here yet"}
+              {busy === "done" ? "Saving…" : `Mark ${now.name} done`}
             </Button>
           )}
           {!now && next && (
             <Button type="button" className={big} disabled={busy !== null} onClick={() => void doneAndNext()}>
-              {busy === "handoff" ? "Saving…" : `${next.name} is in`}
+              {busy === "handoff" ? "Saving…" : `Mark ${next.name} in`}
             </Button>
           )}
           {!now && !next && <p className="text-sm">Every group with a time here today is done or marked.</p>}

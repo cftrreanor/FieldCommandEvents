@@ -41,7 +41,7 @@ export default async function RegisteredPage({ params, searchParams }: PageProps
             {band.band_name} is registered
           </h1>
           <p className="mt-2 text-sm leading-6">
-            We emailed a copy to <span className="break-all">{user.email}</span>. {when}
+            We emailed a copy to <span className="inline-block max-w-full [overflow-wrap:anywhere]">{user.email}.</span> {when}
           </p>
           <p className="mt-2 text-sm leading-6">
             You can change your answers {deadline ? `until registration closes ${formatDate(deadline)}` : "while registration is open"}.

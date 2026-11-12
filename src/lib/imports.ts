@@ -46,7 +46,7 @@ const bandFields = (words: { one: string; One: string }, trucks: boolean): Impor
   { key: "classification", label: "Classification", aliases: ["class", "division", "conference", "size"], example: "5A", choice: true },
   { key: "schoolAddress", label: "School address", aliases: ["address", "mailing address", "street address"], example: "100 School Rd, Lakeview, TX 75001" },
   { key: "assistantDirectors", label: "Assistant directors", aliases: ["assistants", "assistant director", "other directors"], example: "Sam Ortiz, Ana Ruiz" },
-  { key: "studentCount", label: words.one === "band" ? "Students" : "Participants", aliases: ["students", "participants", "performers", "members", "student count", "number of students"], example: "85" },
+  { key: "studentCount", label: words.one === "band" ? "Students" : "Performers", aliases: ["students", "participants", "performers", "members", "student count", "number of students"], example: "85" },
   { key: "chaperoneCount", label: "Chaperones", aliases: ["chaperone", "chaperone count", "number of chaperones", "adults"], example: "6" },
   ...(trucks
     ? [

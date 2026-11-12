@@ -78,7 +78,7 @@ export default async function FestivalRegisterPage({ params }: Params) {
             <>
               {" · "}
               <a href={mapUrl} target="_blank" rel="noreferrer" className="font-medium text-brand underline-offset-4 hover:underline">
-                Get directions
+                Directions<span className="sr-only"> (opens in a new tab)</span>
               </a>
             </>
           )}

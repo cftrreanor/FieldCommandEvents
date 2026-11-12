@@ -33,7 +33,7 @@ type Meals = { orders: Record<string, MealOrder>; options: string[]; priceCents:
 function download(bands: BandRow[], words: Words, groups: boolean, fileName: string, meals: Meals | null) {
   const mealOptions = meals ? mealOptionsOrDefault(meals.options) : [];
   const head = [
-    `${words.One} name`, "School", "Classification", groups ? "Participants" : "Students", "Chaperones", "Buses",
+    `${words.One} name`, "School", "Classification", groups ? "Performers" : "Students", "Chaperones", "Buses",
     ...(groups ? [] : ["Box trucks", "Trucks + trailers", "Semis"]),
     "Head director", "Director email", "Director phone", "Assistant directors", `${words.One} contact email`, "School address",
     "Scheduling conflicts", "Accessibility or staging needs", ...mealOptions.map((o) => `Meals: ${o}`), ...(meals ? ["Meal note"] : []), "Registered", "Withdrawn",
@@ -70,7 +70,7 @@ export function RegisteredBands({
   meals?: Meals | null;
   classifications: string[];
   words: Words;
-  /** Group events: participants and buses only. */
+  /** Group events: performers and buses only. */
   groups: boolean;
   fileName: string;
 }) {
@@ -139,9 +139,9 @@ export function RegisteredBands({
           {/* Totals for planning parking, seating, and check-in. */}
           <dl className="mt-4 grid grid-cols-2 gap-3 rounded-lg border border-border bg-surface p-4 text-sm sm:grid-cols-4">
             <Total label={withdrawn ? `${words.Many} (${withdrawn} withdrawn)` : words.Many} value={coming.length} />
-            <Total label={groups ? "Participants" : "Students"} value={sum("student_count")} />
+            <Total label={groups ? "Performers" : "Students"} value={sum("student_count")} />
             <Total label="Chaperones" value={sum("chaperone_count")} />
-            <Total label="Vehicles" value={vehicles(totals, groups)} />
+            <Total label={groups ? "Buses" : "Vehicles"} value={vehicles(totals, groups)} />
           </dl>
           {meals && (
             // What to order: the total by option, the cost, and how many bands ordered.
@@ -179,7 +179,7 @@ export function RegisteredBands({
                       )}
                       <span className="text-muted">
                         {" "}
-                        · {b.school_name} · {b.classification} · {n(b.student_count, groups ? "participant" : "student")}
+                        · {b.school_name} · {b.classification} · {n(b.student_count, groups ? "performer" : "student")}
                         {meals && mealTotal(meals.orders[b.id]?.counts ?? {}) > 0 && ` · ${n(mealTotal(meals.orders[b.id]!.counts), "meal")}`}
                       </span>
                     </span>
@@ -199,9 +199,9 @@ export function RegisteredBands({
                     <Detail label={`${words.One} contact`}>{b.contact_email}</Detail>
                     <Detail label="School address">{b.school_address || "Not given"}</Detail>
                     <Detail label="People">
-                      {n(b.student_count, groups ? "participant" : "student")} · {n(b.chaperone_count, "chaperone")}
+                      {n(b.student_count, groups ? "performer" : "student")} · {n(b.chaperone_count, "chaperone")}
                     </Detail>
-                    <Detail label="Vehicles">{vehicles(b, groups)}</Detail>
+                    <Detail label={groups ? "Buses" : "Vehicles"}>{vehicles(b, groups)}</Detail>
                     <Detail label="Scheduling conflicts">{b.contest_day_conflicts ?? "None"}</Detail>
                     <Detail label="Accessibility or staging needs">{b.special_needs ?? "None"}</Detail>
                     {meals && (

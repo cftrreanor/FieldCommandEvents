@@ -22,8 +22,16 @@ export type ScheduleGroup = {
 };
 
 const OUT = "inline-flex min-h-11 items-center justify-center gap-1 rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand";
+// 44 by 44. One that can't be used keeps the same fill (dark mode read a darker fill as "pressed"), with a muted
+// border and arrow.
 const ARROW =
-  "inline-flex size-11 shrink-0 items-center justify-center rounded-md border border-field-border bg-surface hover:border-brand disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-disabled";
+  "inline-flex size-11 shrink-0 items-center justify-center rounded-md border border-field-border bg-surface hover:border-brand disabled:cursor-not-allowed disabled:border-border disabled:text-disabled disabled:hover:border-border";
+const MENU_ITEM = "flex min-h-11 w-full items-center rounded px-3 text-left text-sm hover:bg-background";
+/** Closes the menu a tapped item is in. */
+const closeMenu = (e: { currentTarget: HTMLElement }) => {
+  const d = e.currentTarget.closest("details");
+  if (d) d.open = false;
+};
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const ordinal = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th"}`;
 
@@ -182,6 +190,15 @@ export function ScheduleEditor({
     );
   }
 
+  // A break that ends up first in a day (after a move) starts the whole day later: the save window says so.
+  const lateStarts = days.flatMap((d) => {
+    const head = onDay(plan.order, d)[0];
+    const t = head && head.extraMinutes > 0 ? times.get(head.bandId)?.[0] : null;
+    return t
+      ? [{ day: d, text: `${multi ? `${weekday(d)}'s` : "The"} first group, ${name(head.bandId)}, now starts at ${clock(t.startsAt, tz)}, ${head.extraMinutes} minutes after the first start you set, because of the break before it.` }]
+      : [];
+  });
+
   const moveItem = moving ? plan.order.find((o) => o.bandId === moving) : null;
   const breakItem = breakFor ? plan.order.find((o) => o.bandId === breakFor) : null;
 
@@ -299,17 +316,18 @@ export function ScheduleEditor({
                         </>
                       )}
                     </span>
-                    <span className="flex gap-1">
-                      <button type="button" onClick={() => setBreakFor(o.bandId)} className="inline-flex min-h-11 items-center px-2 font-semibold text-brand underline underline-offset-4">
-                        Change<span className="sr-only"> the break before {label}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => add({ k: "break", bandId: o.bandId, minutes: 0, label: `Took out the break before ${label}` })}
-                        className="inline-flex min-h-11 items-center px-2 font-semibold text-brand underline underline-offset-4"
-                      >
-                        Remove<span className="sr-only"> the break before {label}</span>
-                      </button>
+                    <span className="flex gap-2">
+                      <Button type="button" variant="secondary" onClick={() => setBreakFor(o.bandId)}>
+                        <span>
+                          Change<span className="sr-only"> the break before {label}</span>
+                        </span>
+                      </Button>
+                      {/* The red outline every Remove has. */}
+                      <Button type="button" variant="danger" onClick={() => add({ k: "break", bandId: o.bandId, minutes: 0, label: `Took out the break before ${label}` })}>
+                        <span>
+                          Remove<span className="sr-only"> the break before {label}</span>
+                        </span>
+                      </Button>
                     </span>
                   </div>
                 )}
@@ -349,11 +367,12 @@ export function ScheduleEditor({
                     )}
                   </div>
                   {/* Times are words, not boxes: nothing here to type in (light check). */}
-                  <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+                  {/* Phones: one line per room (room, then its time). Wider screens: a column per room. */}
+                  <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-3 sm:gap-y-2">
                     {path.map((r) => {
                       const t = mine.find((x) => x.roomId === r.id);
                       return (
-                        <div key={r.id}>
+                        <div key={r.id} className="flex flex-wrap justify-between gap-x-3 sm:block">
                           <dt className="font-semibold">{r.name}</dt>
                           <dd className="tabular-nums">{o.skipped.includes(r.id) ? "Skipped for this group" : t ? span(t.startsAt, t.endsAt, tz) : "No time yet"}</dd>
                         </div>
@@ -372,7 +391,65 @@ export function ScheduleEditor({
                       {request.text}
                     </p>
                   )}
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  {/* Phones: the changes under one "Change" menu, so each card stays short. */}
+                  <details className="relative mt-3 sm:hidden">
+                    <summary className={`${OUT} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}>
+                      Change<span className="sr-only"> {label}</span> <span aria-hidden>▾</span>
+                    </summary>
+                    <div className="absolute z-20 mt-1 w-64 rounded-md border border-field-border bg-surface p-1 shadow-elevated">
+                      <button
+                        type="button"
+                        className={MENU_ITEM}
+                        onClick={(e) => {
+                          closeMenu(e);
+                          setMoving(o.bandId);
+                        }}
+                      >
+                        Move to…
+                      </button>
+                      {path.map((r) => {
+                        const on = o.skipped.includes(r.id);
+                        return (
+                          <button
+                            key={r.id}
+                            type="button"
+                            className={MENU_ITEM}
+                            onClick={(e) => {
+                              closeMenu(e);
+                              add({ k: "skip", bandId: o.bandId, roomId: r.id, on: !on, label: on ? `Added ${r.name} back for ${label}` : `Skipped ${r.name} for ${label}` });
+                            }}
+                          >
+                            {on ? `Add ${r.name} back` : `Skip ${r.name}`}
+                          </button>
+                        );
+                      })}
+                      {o.extraMinutes === 0 && i > 0 && (
+                        <button
+                          type="button"
+                          className={MENU_ITEM}
+                          onClick={(e) => {
+                            closeMenu(e);
+                            setBreakFor(o.bandId);
+                          }}
+                        >
+                          Add a break before
+                        </button>
+                      )}
+                      {g?.withdrawn && (
+                        <button
+                          type="button"
+                          className={MENU_ITEM}
+                          onClick={(e) => {
+                            closeMenu(e);
+                            add({ k: "drop", bandId: o.bandId, label: `Took ${label} off the schedule` });
+                          }}
+                        >
+                          Take off the schedule
+                        </button>
+                      )}
+                    </div>
+                  </details>
+                  <div className="mt-3 flex flex-wrap gap-2 max-sm:hidden">
                     <button type="button" className={OUT} onClick={() => setMoving(o.bandId)}>
                       Move to…<span className="sr-only"> (move {label})</span>
                     </button>
@@ -389,7 +466,7 @@ export function ScheduleEditor({
                               type="button"
                               className="flex min-h-11 w-full items-center rounded px-3 text-left text-sm hover:bg-background"
                               onClick={(e) => {
-                                (e.currentTarget.closest("details") as HTMLDetailsElement).open = false;
+                                closeMenu(e);
                                 add({ k: "skip", bandId: o.bandId, roomId: r.id, on: !on, label: on ? `Added ${r.name} back for ${label}` : `Skipped ${r.name} for ${label}` });
                               }}
                             >
@@ -399,7 +476,8 @@ export function ScheduleEditor({
                         })}
                       </div>
                     </details>
-                    {o.extraMinutes === 0 && (
+                    {/* No break before the first group of a day: the day's first start does that. */}
+                    {o.extraMinutes === 0 && i > 0 && (
                       <button type="button" className={OUT} onClick={() => setBreakFor(o.bandId)}>
                         Add a break before<span className="sr-only"> {label}</span>
                       </button>
@@ -468,7 +546,14 @@ export function ScheduleEditor({
       <SaveTimesWindow
         key={saving.open ? "open" : "closed"}
         open={saving.open}
-        intro={<p>{summarize(labels)}.</p>}
+        intro={
+          <>
+            <p>{summarize(labels)}.</p>
+            {lateStarts.map((l) => (
+              <p key={l.day}>{l.text}</p>
+            ))}
+          </>
+        }
         changes={changes}
         busy={saving.busy}
         error={saving.error}

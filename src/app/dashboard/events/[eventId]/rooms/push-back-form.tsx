@@ -26,6 +26,7 @@ export function PushBackButton({
   onDone,
   className,
   label = "Push the schedule back",
+  fromBar = false,
 }: {
   eventId: string;
   /** Every group with times, in order (each day's groups together). */
@@ -39,6 +40,8 @@ export function PushBackButton({
   onDone?: () => void;
   className?: string;
   label?: string;
+  /** Event day: the day bar's "Push the schedule back" tab opens this window (its button is hidden on phones). */
+  fromBar?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -86,6 +89,7 @@ export function PushBackButton({
         type="button"
         variant="secondary"
         className={className}
+        data-opens-from-bar={fromBar || undefined}
         onClick={() => {
           setError(null);
           setOpen(true);

@@ -164,7 +164,8 @@ export function FestivalForm({
             </Field>
             {update ? null : email ? (
               <p className="text-sm">
-                We&apos;ll email a copy, and your group&apos;s times once the organizer {when}, to <span className="font-semibold break-all">{email}</span>.
+                {/* The address moves to its own line as a whole rather than breaking mid-word (only one longer than the line breaks). */}
+                We&apos;ll email a copy to <span className="inline-block max-w-full font-semibold [overflow-wrap:anywhere]">{email}</span> now, and your group&apos;s times once the organizer {when}.
               </p>
             ) : (
               <Field label="Your email" hint={`We'll send a code here to confirm, then your group's times once the organizer ${when}. No account or password.`}>

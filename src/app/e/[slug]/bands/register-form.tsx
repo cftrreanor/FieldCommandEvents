@@ -147,7 +147,7 @@ function SavedBand({
       <p className="text-muted">{b.school_name}</p>
       <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
         <Detail label="Classification" value={b.classification} />
-        <Detail label="People" value={`${b.student_count ?? 0} ${kind === "group" ? "participants" : "students"} · ${b.chaperone_count ?? 0} chaperones`} />
+        <Detail label="People" value={`${b.student_count ?? 0} ${kind === "group" ? "performers" : "students"} · ${b.chaperone_count ?? 0} chaperones`} />
         <Detail label="Vehicles" value={vehicles || "None"} />
         <Detail label="Head director" value={[b.head_director_name, b.head_director_phone].filter(Boolean).join(" · ")} />
         <Detail label={kind === "group" ? "Group contact email" : "Band contact email"} value={b.contact_email} />

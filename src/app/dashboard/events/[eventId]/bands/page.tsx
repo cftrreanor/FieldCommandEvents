@@ -250,7 +250,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
         <SavedBy eventId={eventId} area="bands" className="mt-2" />
         <p className="mt-2 max-w-3xl text-muted">What group directors fill in when they register their group. Registration opens when you publish.</p>
         <a href={`/e/${event.slug}/${hasRooms(event.event_type) ? "register" : "bands"}`} target="_blank" className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4">
-          Preview what directors see <span className="sr-only">(opens in a new tab)</span>
+          Preview the form <span className="sr-only">(opens in a new tab)</span>
         </a>
         <div className="mt-6">{festivalForm({ href: `/dashboard/events/${eventId}/volunteering`, label: "Volunteers" })}</div>
       </div>

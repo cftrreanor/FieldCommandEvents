@@ -43,7 +43,8 @@ export function DayBoard({
   dayLabel: string;
   isHost: boolean;
   roomsHref: string;
-  push: { groups: PushGroup[]; defaultGroup?: string; posted: boolean; version: number | null; multiDay: boolean } | null;
+  /** `inBar`: the phone's day bar has "Push the schedule back", so the page's own button is hidden on phones. */
+  push: { groups: PushGroup[]; defaultGroup?: string; posted: boolean; version: number | null; multiDay: boolean; inBar: boolean } | null;
 }) {
   const [q, setQ] = useState("");
   const [showDone, setShowDone] = useState(false);
@@ -141,8 +142,8 @@ export function DayBoard({
             posted={push.posted}
             version={push.version}
             multiDay={push.multiDay}
-            label="Running behind? Push the schedule back"
-            className="w-full sm:w-auto"
+            fromBar={push.inBar}
+            className={`w-full sm:w-auto ${push.inBar ? "max-lg:hidden" : ""}`}
           />
         )}
       </div>

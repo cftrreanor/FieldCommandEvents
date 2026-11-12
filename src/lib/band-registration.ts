@@ -88,7 +88,7 @@ export async function createRegistration(
               },
             ]),
       ],
-      button: { label: custom?.button || (group ? "See your group's page" : "View my registration"), url: `${origin}/dashboard/bands/${data.id}` },
+      button: { label: custom?.button || (group ? "See your group's page" : "View my registration"), url: `${origin}/dashboard/${group ? "groups" : "bands"}/${data.id}` },
     });
     await sendEmail({ to: user.email, subject: custom?.subject || `Registered: ${v.band_name} at ${event?.name ?? "the event"}`, html, text, eventId });
 

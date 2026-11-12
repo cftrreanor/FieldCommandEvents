@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { EventBannerSlot } from "@/components/event-banner-slot";
 import { Card } from "@/components/ui";
+import { loadDayActions } from "@/lib/event-day-actions";
 import { hasRooms } from "@/lib/event-types";
 import { groupState, roomNowNext } from "@/lib/festival-day";
 import { shortDay, weekday } from "@/lib/rooms";
@@ -24,7 +25,7 @@ export const maxDuration = 300;
 export default async function EventDayPage({ params, searchParams }: PageProps<"/dashboard/events/[eventId]/event-day">) {
   const { eventId } = await params;
   const { day: dayParam } = await searchParams;
-  const d = await loadFestivalDay(eventId, dayParam);
+  const [d, dayActions] = await Promise.all([loadFestivalDay(eventId, dayParam), loadDayActions(eventId)]);
   if (!d.event) missing();
   const { event, access } = d;
   if (!hasRooms(event.event_type) || !d.onTeam) redirect(`/dashboard/events/${eventId}`);
@@ -91,7 +92,7 @@ export default async function EventDayPage({ params, searchParams }: PageProps<"
         <div>
           <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">Event day</h1>
           <p className="mt-1 text-sm text-muted">
-            Saved · updated {time(d.now.toISOString())} · times in {zoneName(tz)}
+            Saved · updated {time(d.now.toISOString())} · All times are {zoneName(tz)}
           </p>
         </div>
         {multiDay && (
@@ -143,6 +144,7 @@ export default async function EventDayPage({ params, searchParams }: PageProps<"
                 posted: event.performance_order_published,
                 version: event.room_schedule_version ?? null,
                 multiDay,
+                inBar: Boolean(dayActions?.actions.some((a) => a.id === "push")),
               }
             : null
         }

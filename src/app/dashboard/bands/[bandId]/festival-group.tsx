@@ -146,7 +146,7 @@ export async function FestivalGroupPage({
         </p>
         {event.venue_address && (
           <a href={mapUrl} target="_blank" rel="noreferrer" className={LINK}>
-            Get directions <span className="sr-only">(opens in a new tab)</span>
+            Directions <span className="sr-only">(opens in a new tab)</span>
           </a>
         )}
       </header>
@@ -202,7 +202,7 @@ export async function FestivalGroupPage({
                 })}
               </ol>
               <p className="mt-2 text-sm text-muted">
-                Times in {zoneName(tz)} ({zoneAbbreviation(slots[0].starts_at, tz)})
+                All times are {zoneName(tz)} ({zoneAbbreviation(slots[0].starts_at, tz)})
               </p>
               {calendar && (
                 <div className="mt-3 flex flex-wrap items-center gap-x-4">
@@ -299,6 +299,7 @@ export async function FestivalGroupPage({
                 removes={!event.performance_order_published}
                 one="group"
                 label="Withdraw your group"
+                outline
                 action={withdrawBand.bind(null, band.id)}
               />
             </div>

@@ -26,8 +26,9 @@ const asRooms = (rows: Row[]): Room[] => {
   return rows.filter(complete).map((r) => ({ id: r.id ?? r.key, name: r.name.trim(), note: r.note.trim() || null, path_order: r.onPath ? ++stop : null, minutes: Number(r.minutes) || 20 }));
 };
 const EX = "placeholder:italic placeholder:text-disabled";
+// 44 by 44; one that can't be used keeps the same fill, with a muted border and arrow (as on Group times).
 const ARROW =
-  "inline-flex size-11 shrink-0 items-center justify-center rounded-md border border-field-border bg-surface hover:border-brand disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-disabled";
+  "inline-flex size-11 shrink-0 items-center justify-center rounded-md border border-field-border bg-surface hover:border-brand disabled:cursor-not-allowed disabled:border-border disabled:text-disabled disabled:hover:border-border";
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const ordinal = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th"}`;
 
@@ -346,13 +347,12 @@ export function RoomsEditor({
             </>
           )}
           {(rows.length > 1 || r.id || r.name || r.minutes || r.note) && (
-            <button
-              type="button"
-              onClick={() => void remove(r)}
-              className="inline-flex min-h-11 items-center rounded-md px-3 text-sm font-semibold text-danger underline underline-offset-4 hover:bg-danger/5"
-            >
-              Remove {label}
-            </button>
+            // Always at the row's right end, away from the arrows: the red outline every Remove has.
+            <Button type="button" variant="danger" onClick={() => void remove(r)} className="ml-auto">
+              <span>
+                Remove<span className="max-sm:sr-only"> {label}</span>
+              </span>
+            </Button>
           )}
         </div>
         <div className={`mt-3 grid gap-3 ${inPath ? "sm:grid-cols-[1fr_9rem_1fr]" : "sm:grid-cols-2"}`}>

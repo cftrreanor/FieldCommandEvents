@@ -116,7 +116,7 @@ function isToday(e: { starts_on: string; ends_on: string; timezone: string }) {
  */
 const DAY_SCREEN: Record<string, { path: string; label: string }> = {
   band_contest: { path: "contest-day", label: "Check on every band" },
-  group_event: { path: "event-day", label: "Check groups in" },
+  group_event: { path: "event-day", label: "Mark groups arrived" },
   school_visit: { path: "parents/check-in", label: "Check in parents" },
   conference: { path: "conferences/meetings", label: "Run today's meetings" },
   fair: { path: "booths/check-in", label: "Check in booths and partners" },
@@ -405,6 +405,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             key: bands[0].events.id,
             past: isPast(bands[0].events),
             node: <BandCard bands={bands} live={live} />,
+            wide: hasRooms(bands[0].events.event_type) && bands.length > 1,
           }))}
         />
       )}
@@ -444,7 +445,8 @@ function Section({
   action?: ReactNode;
   /** A note under the heading, e.g. when a free pilot ends. */
   notice?: ReactNode;
-  items: { key: string; past: boolean; node: ReactNode }[];
+  /** `wide`: the card takes the full width (a festival with a row per group). */
+  items: { key: string; past: boolean; node: ReactNode; wide?: boolean }[];
   empty?: ReactNode;
   /** Shown when everything is in the past. */
   nothingUpcoming?: ReactNode;
@@ -454,7 +456,9 @@ function Section({
   const grid = (list: typeof items) => (
     <ul className="grid gap-4 sm:grid-cols-2">
       {list.map((i) => (
-        <li key={i.key}>{i.node}</li>
+        <li key={i.key} className={i.wide ? "sm:col-span-2" : undefined}>
+          {i.node}
+        </li>
       ))}
     </ul>
   );
@@ -672,8 +676,11 @@ function bandStatus(b: DirectorBand): { text: string; tone: "brand" | "accent" |
     `${e.starts_on !== e.ends_on ? `${formatDate(utcToZonedDate(iso, e.timezone), { year: undefined })}, ` : ""}${formatTime(iso, e.timezone)} ${zoneAbbreviation(iso, e.timezone)}`;
   if (isPast(e)) return { text: "Completed", tone: "neutral" };
   if (hasRooms(e.event_type)) {
-    const first = e.performance_order_published ? (b.room_slots ?? []).map((s) => s.starts_at).sort()[0] : undefined;
-    return first ? { text: `First room ${at(first)}`, tone: "brand" } : { text: "Times not posted yet", tone: "neutral" };
+    // Always with the date (rows are sorted by it), as plain words rather than a badge.
+    const first = firstRoom(b);
+    return first
+      ? { text: `First room ${formatDate(utcToZonedDate(first, e.timezone), { year: undefined })}, ${formatTime(first, e.timezone)} ${zoneAbbreviation(first, e.timezone)}`, tone: "neutral" }
+      : { text: "Times not posted yet", tone: "neutral" };
   }
   const finals = e.finalists_revealed ? b.finals_slots[0] : undefined;
   if (finals) return { text: finals.perform_at ? `Finalist · performs ${at(finals.perform_at)}` : "Finalist", tone: "accent" };
@@ -681,6 +688,11 @@ function bandStatus(b: DirectorBand): { text: string; tone: "brand" | "accent" |
   const perform = e.performance_order_published ? slot?.perform_at : null;
   if (perform) return { text: `Performs ${at(perform)}`, tone: "brand" };
   return { text: registrationIsOpen(e) ? "Registered · times not posted yet" : "Registration closed · times not posted yet", tone: "neutral" };
+}
+
+/** A festival group's first room time, once the schedule is posted. */
+function firstRoom(b: DirectorBand) {
+  return b.events.performance_order_published ? (b.room_slots ?? []).map((s) => s.starts_at).sort()[0] : undefined;
 }
 
 /** A band's (or group's) steps today, from the host team's taps. Null when there's nothing to track. */
@@ -739,9 +751,12 @@ async function liveStatus(b: DirectorBand, now: Date): Promise<LiveStatus | null
 type DirectorBand = MyBand & { events: NonNullable<MyBand["events"]> };
 
 /** One contest, with a row per band you brought (each opens that band's page). */
-function BandCard({ bands, live }: { bands: DirectorBand[]; live: Map<string, LiveStatus> }) {
-  const e = bands[0].events;
-  const one = bands.length === 1;
+function BandCard({ bands: list, live }: { bands: DirectorBand[]; live: Map<string, LiveStatus> }) {
+  const e = list[0].events;
+  const one = list.length === 1;
+  const rooms = hasRooms(e.event_type);
+  // Festivals: groups in the order they start (groups without times last).
+  const bands = rooms ? [...list].sort((a, b) => (firstRoom(a) ?? "~").localeCompare(firstRoom(b) ?? "~")) : list;
   return (
     <EventCard title={e.name} href={one ? `/dashboard/bands/${bands[0].id}` : undefined} event={e}>
       <ul className={one ? "" : "divide-y divide-border rounded-md border border-border"}>
@@ -765,6 +780,8 @@ function BandCard({ bands, live }: { bands: DirectorBand[]; live: Map<string, Li
                   </>
                 ) : now ? (
                   <DayStatusPill status={now} doneText={hasRooms(e.event_type) ? "Finished every room" : "Performed"} />
+                ) : rooms ? (
+                  <span className="block text-sm tabular-nums">{status.text}</span>
                 ) : (
                   <Badge tone={status.tone}>{status.text}</Badge>
                 )}
@@ -777,8 +794,12 @@ function BandCard({ bands, live }: { bands: DirectorBand[]; live: Map<string, Li
               {one ? (
                 row
               ) : (
-                <Link href={`/dashboard/bands/${b.id}`} className="block px-3 py-2.5 hover:bg-background">
-                  {row}
+                <Link href={`/dashboard/bands/${b.id}`} className="flex items-center gap-3 px-3 py-2.5 hover:bg-background">
+                  <span className="min-w-0 flex-1">{row}</span>
+                  {/* A row that opens its group's page. */}
+                  <svg aria-hidden viewBox="0 0 20 20" className="size-5 shrink-0 text-muted" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M7.5 5l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                 </Link>
               )}
             </li>
@@ -824,7 +845,7 @@ function HostYourOwn({ invited }: { invited: boolean }) {
   return (
     <section aria-labelledby="host-your-own" className="rounded-lg border border-brand/25 bg-brand-soft p-5 sm:p-6">
       <h2 id="host-your-own" className="text-lg font-semibold">
-        <LineIcon name="stadium" inline /> Host your own event
+        <LineIcon name="stadium" inline /> Run your own event
       </h2>
       <p className="mt-1 leading-7 text-muted">
         Set up and run your contest, festival, or school event in one place.

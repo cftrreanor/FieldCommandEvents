@@ -122,7 +122,7 @@ export default async function RoomsPage({ params, searchParams }: PageProps<"/da
       </Link>
       <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">Rooms and schedule</h1>
       <SavedBy eventId={eventId} area="schedule" className="mt-2" />
-      <p className="mt-1 text-sm text-muted">All times in {zoneName(tz)}</p>
+      <p className="mt-1 text-sm text-muted">All times are {zoneName(tz)}</p>
 
       <Card className="mt-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -159,9 +159,9 @@ export default async function RoomsPage({ params, searchParams }: PageProps<"/da
         <SetupTabs
           label="Rooms and schedule"
           tabs={[
-            { key: "times", label: "Group times", status: plural(active.length, "group", "groups"), href: `${base}?tab=times`, active: current === "times" },
-            { key: "rooms", label: "Rooms", status: plural(pathCount, "room", "rooms"), href: `${base}?tab=rooms`, active: current === "rooms" },
-            { key: "lists", label: "Each room's list", status: "By room", href: `${base}?tab=lists`, active: current === "lists" },
+            { key: "times", label: "Group times", short: "Groups", status: plural(active.length, "group", "groups"), href: `${base}?tab=times`, active: current === "times" },
+            { key: "rooms", label: "Rooms", short: "Rooms", status: plural(pathCount, "room", "rooms"), href: `${base}?tab=rooms`, active: current === "rooms" },
+            { key: "lists", label: "Each room's list", short: "By room", status: plural(snap.rooms.length, "list", "lists"), href: `${base}?tab=lists`, active: current === "lists" },
           ]}
         />
       </div>
@@ -253,7 +253,7 @@ async function TeamView({ eventId, name, tz, live }: { eventId: string; name: st
         ← {name}
       </Link>
       <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">Rooms and schedule</h1>
-      <p className="mt-1 text-sm text-muted">All times in {zoneName(tz)}</p>
+      <p className="mt-1 text-sm text-muted">All times are {zoneName(tz)}</p>
       {live && <AutoRefresh status className="mt-1" />}
       <div className="mt-6">
         {(rooms ?? []).length ? (

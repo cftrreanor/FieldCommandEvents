@@ -559,7 +559,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
                 {groupStatus.behind.length > 0 && (
                   <p className="text-danger">Running over: {[...new Set(groupStatus.behind.map((b) => groupName(b.bandId)))].join(", ")}</p>
                 )}
-                {!isEventDay && <p className="text-muted">Check groups in and track each room on {formatDate(event.starts_on, { year: undefined })}.</p>}
+                {!isEventDay && <p className="text-muted">Mark groups arrived and track each room on {formatDate(event.starts_on, { year: undefined })}.</p>}
               </div>
               <Link href={`/dashboard/events/${eventId}/event-day`} className={dayFirst ? BTN : BTN_OUTLINE}>
                 Open event day
@@ -1161,7 +1161,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
               {/* A meetings draft with no day or hours picked: its stored dates are placeholders. */}
               {conferenceHere && !conference?.times_saved_at ? "Day and hours not set yet" : `${formatDateRange(event.starts_on, event.ends_on)} · ${windowLabel}`}
             </p>
-            <p className="mt-1 text-sm text-muted">All times are {zoneName(tz)}.</p>
+            <p className="mt-1 text-sm text-muted">All times are {zoneName(tz)}</p>
             <SavedBy eventId={eventId} area={SAVE_AREAS} label="Last change" className="mt-2" />
             {event.venue_address && (
               <p className="mt-1 text-sm text-muted">
@@ -1226,8 +1226,9 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         )}
 
         {navLinks.length >= 4 && (
-          <nav aria-label="On this page" className={fest ? "mt-6" : "relative -mx-4 mt-6 overflow-x-auto px-4 sm:mx-0 sm:overflow-visible sm:px-0"}>
-            <ul className={fest ? "flex flex-wrap gap-2" : "flex gap-2 whitespace-nowrap sm:flex-wrap"}>
+          // The same quick links on every kind of event (festivals match band contests).
+          <nav aria-label="On this page" className="relative -mx-4 mt-6 overflow-x-auto px-4 sm:mx-0 sm:overflow-visible sm:px-0">
+            <ul className="flex gap-2 whitespace-nowrap sm:flex-wrap">
               {navLinks.map((l) => (
                 <li key={l.id}>
                   <a
@@ -1871,7 +1872,7 @@ function LogisticsTotals({ bands, noTrucks = false }: { bands: BandTotals[]; noT
       <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
         {(
           [
-            [noTrucks ? "Participants" : "Students", total("student_count")],
+            [noTrucks ? "Performers" : "Students", total("student_count")],
             ["Chaperones", total("chaperone_count")],
             ["Buses", total("bus_count")],
             // Group events don't ask about trucks.
@@ -2051,9 +2052,9 @@ async function festivalFacts(
           <AutoRefresh seconds={30} />
           <p>
             <span className="font-medium">
-              {status.here} of {status.total} groups here
+              {status.here} of {status.total} groups marked arrived
             </span>
-            {status.finished > 0 && <span className="text-muted"> · {status.finished} finished every room</span>}
+            {status.finished > 0 && <span className="text-muted"> · {status.finished} done in every room</span>}
           </p>
           {status.late.length > 0 && <p className="font-medium text-warning">Not marked arrived: {status.late.map((d) => ctx.groupName(d.bandId)).join(", ")}</p>}
         </>

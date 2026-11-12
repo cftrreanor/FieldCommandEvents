@@ -69,8 +69,9 @@ export async function composeScheduleEmail(m: ScheduleEmailInput) {
     return `${span(t.startsAt, t.endsAt, tz, " to ")}, ${r?.name ?? "A room"}${r?.note ? ` (${r.note})` : ""}`;
   });
   const where = [m.event.venue_name, m.event.venue_address].filter(Boolean).join(", ");
-  const groupPage = `${m.origin}/dashboard/bands/${m.band.id}`;
-  const calendar = `${m.origin}/dashboard/bands/${m.band.id}/calendar?round=rooms`;
+  // A festival word in the address; it leads to the group's page (next.config.ts).
+  const groupPage = `${m.origin}/dashboard/groups/${m.band.id}`;
+  const calendar = `${m.origin}/dashboard/groups/${m.band.id}/calendar?round=rooms`;
 
   const html = emailShell({
     content: [

@@ -1,6 +1,6 @@
 // Festivals on the day (build 3, 2026-11-11): each group's state from the posted times and the team's marks, and
 // each room's "Now" and "Up next". One rule (light check, round 2): "Now" comes only from the team's marks, and a
-// group past its start in a room with no mark is "Not marked in [room]", never "late". Pure, so the team's Event day,
+// group past its start in a room with no mark is "Due in [room], not marked", never "late". Pure, so the team's Event day,
 // a room's page, the door page, and the public page all say the same thing.
 //
 // Marks (group_checkins.kind): room null + 'done' = arrived; 'no_show' (room null) = didn't come; 'in' + a room = in
@@ -44,8 +44,8 @@ export type GroupState = {
 
 const MIN = 60_000;
 /**
- * A few minutes either way is on time (light check on the built update): a group is "N min behind", or "Not marked
- * in" a room, only once it's this late. Amber is kept for what someone has to act on ("Not marked in").
+ * A few minutes either way is on time (light check on the built update): a group is "N min behind", or "Due in [room],
+ * not marked", only once it's this late. Amber is kept for what someone has to act on ("Due in [room], not marked").
  */
 export const GRACE_MINUTES = 5;
 
@@ -58,13 +58,13 @@ export function listWords(items: string[]) {
 const byKind = (marks: Mark[], band: string, room: string | null, kind: MarkKind) =>
   marks.find((m) => m.band_id === band && (m.room_id ?? null) === room && m.kind === kind) ?? null;
 
-/** "8:31 AM by Maria Chen" (the name only when there is one). */
+/** "8:31 AM by Dana Ortiz", or "2:21 PM · marked at the door" for a door link's mark (the name only when there is one). */
 const stamp = (m: Mark, time: (iso: string) => string) =>
-  `${time(m.created_at)}${!m.actor_name ? "" : m.actor_name.startsWith("At the door of ") ? ` at ${m.actor_name.slice(3)}` : ` by ${m.actor_name}`}`;
+  `${time(m.created_at)}${!m.actor_name ? "" : m.actor_name.startsWith("At the door of ") ? " · marked at the door" : ` by ${m.actor_name}`}`;
 
 /**
  * One group's state. `live` is true when the day shown is today in the festival's time zone: only then do times
- * that have passed say "Not marked in". `roomName` names a room from its id.
+ * that have passed say "Due in [room], not marked". `roomName` names a room from its id.
  */
 export function groupState({
   bandId,
@@ -163,8 +163,8 @@ export function groupState({
     const first = rooms[0].slot;
     return {
       ...base,
-      status: past(first.starts_at) ? { text: `Not marked in ${roomName(first.room_id)}`, tone: "warning" } : { text: "Not here yet", tone: "neutral" },
-      line: `Not here yet · ${roomName(first.room_id)} at ${time(first.starts_at)}`,
+      status: past(first.starts_at) ? { text: `Due in ${roomName(first.room_id)}, not marked`, tone: "warning" } : { text: "Not here yet", tone: "neutral" },
+      line: `Not here yet · first: ${roomName(first.room_id)} at ${time(first.starts_at)}`,
       tap: arriveTap,
       alt: noShowTap,
     };
@@ -174,7 +174,7 @@ export function groupState({
   const where = doneNames.length ? `Done in ${listWords(doneNames)}` : `Marked arrived ${stamp(arrived, time)}`;
   return {
     ...base,
-    status: next && past(next.starts_at) ? { text: `Not marked in ${roomName(next.room_id)}`, tone: "warning" } : { text: "On time", tone: "info" },
+    status: next && past(next.starts_at) ? { text: `Due in ${roomName(next.room_id)}, not marked`, tone: "warning" } : { text: "On time", tone: "info" },
     line: next ? `${where} · next: ${roomName(next.room_id)} at ${time(next.starts_at)}` : where,
     tap: next ? inTap(next) : null,
     alt: null,
@@ -182,28 +182,56 @@ export function groupState({
 }
 
 /**
- * A room's "Now" (only from a mark: a group marked in and not done there) and "Up next" (the first group with a
- * time there that day that isn't done, in, or marked didn't come). Give it one day's slots only, so "Up next" never
- * crosses into another day.
+ * The room a group goes to next (its first room, in time order, that it isn't done in or in now), or null. A group
+ * shows as "Up next" only there (light check on the built update), never in two rooms at once.
  */
-export function roomNowNext(roomId: string, daySlots: Slot[], marks: Mark[]) {
+export function nextRoomOf(bandId: string, slots: Slot[], marks: Mark[]) {
+  const mine = slots.filter((s) => s.band_id === bandId).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  const inNow = (room: string) => byKind(marks, bandId, room, "in") && !byKind(marks, bandId, room, "done");
+  return mine.find((s) => !byKind(marks, bandId, s.room_id, "done") && !inNow(s.room_id)) ?? null;
+}
+
+/**
+ * A room's "Now" (only from a mark: a group marked in and not done there) and "Up next" (the first group with a
+ * time there that day that isn't done, in, or marked didn't come, and, with `headingOnly`, goes here next rather than
+ * to another room first). `later`: with `headingOnly`, whether groups are still to come here after other rooms. Give
+ * it one day's slots only, so "Up next" never crosses into another day.
+ */
+export function roomNowNext(roomId: string, daySlots: Slot[], marks: Mark[], { headingOnly = false }: { headingOnly?: boolean } = {}) {
   const here = daySlots.filter((s) => s.room_id === roomId).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   const isIn = (b: string) => byKind(marks, b, roomId, "in");
   const isDone = (b: string) => byKind(marks, b, roomId, "done");
   const gone = (b: string) => byKind(marks, b, null, "no_show") && !byKind(marks, b, null, "done");
   const nowList = here.filter((s) => isIn(s.band_id) && !isDone(s.band_id)).sort((a, b) => isIn(b.band_id)!.created_at.localeCompare(isIn(a.band_id)!.created_at));
   const now = nowList[0] ? { slot: nowList[0], since: isIn(nowList[0].band_id)!.created_at } : null;
-  const next = here.find((s) => !isDone(s.band_id) && !isIn(s.band_id) && !gone(s.band_id)) ?? null;
-  return { now, next, list: here };
+  const waiting = here.filter((s) => !isDone(s.band_id) && !isIn(s.band_id) && !gone(s.band_id));
+  const next = (headingOnly ? waiting.find((s) => nextRoomOf(s.band_id, daySlots, marks)?.room_id === roomId) : waiting[0]) ?? null;
+  return { now, next, later: !next && waiting.length > 0, list: here };
 }
 
-/** A group's state in one room, for a room's list: "Done", "In now", "Arrived", "Not here yet", or "Didn't come". */
+/**
+ * A group's live line for families ("Now in Clinic Room", "Done", "Next: Sight-Reading at 3:55 PM"), from room marks
+ * only (the public page never sees arrived or didn't come). Null when it has no times that day.
+ */
+export function publicGroupLine(bandId: string, daySlots: Slot[], marks: Mark[], roomName: (id: string) => string, time: (iso: string) => string) {
+  const mine = daySlots.filter((s) => s.band_id === bandId);
+  if (!mine.length) return null;
+  const current = mine.find((s) => byKind(marks, bandId, s.room_id, "in") && !byKind(marks, bandId, s.room_id, "done"));
+  if (current) return `Now in ${roomName(current.room_id)}`;
+  const next = nextRoomOf(bandId, daySlots, marks);
+  return next ? `Next: ${roomName(next.room_id)} at ${time(next.starts_at)}` : "Done";
+}
+
+/**
+ * A group's state in one room, for a room's list: "Done", "In now", "Not in this room yet" (at the festival, not
+ * here yet), "Not at the festival yet" (not marked arrived), or "Didn't come".
+ */
 export function roomRowState(bandId: string, roomId: string, marks: Mark[]): { text: string; tone: Tone } {
   if (byKind(marks, bandId, roomId, "done")) return { text: "Done", tone: "success" };
   if (byKind(marks, bandId, roomId, "in")) return { text: "In now", tone: "info" };
-  if (byKind(marks, bandId, null, "done")) return { text: "Arrived", tone: "neutral" };
+  if (byKind(marks, bandId, null, "done")) return { text: "Not in this room yet", tone: "neutral" };
   if (byKind(marks, bandId, null, "no_show")) return { text: "Didn't come", tone: "neutral" };
-  return { text: "Not here yet", tone: "neutral" };
+  return { text: "Not at the festival yet", tone: "neutral" };
 }
 
 /** The festival day (YYYY-MM-DD) a group is on: from its times, else its saved day, else the first day. */

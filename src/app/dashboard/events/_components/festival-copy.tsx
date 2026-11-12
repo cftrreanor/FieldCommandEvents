@@ -63,7 +63,7 @@ export function FestivalCopy({ festivals, today }: { festivals: PastFestival[]; 
             </ul>
           </div>
           <p>
-            Not copied: registered groups, their times, the team&apos;s marks, volunteers who signed up, and your team. You can invite last year&apos;s team
+            Not copied: registered groups, their times, who arrived and which rooms were done, volunteers who signed up, and your team. You can invite last year&apos;s team
             after.
           </p>
           <div className="grid gap-4 sm:grid-cols-2" data-required-marks>
@@ -71,7 +71,7 @@ export function FestivalCopy({ festivals, today }: { festivals: PastFestival[]; 
             <Field key={source.id} label="New name">
               <Input name="name" required maxLength={120} defaultValue={source.newName} />
             </Field>
-            <Field label="First day" hint={`${source.when}: ${source.date}`}>
+            <Field label="First day" hint={`${source.name} was on ${source.date}`}>
               <DateField name="startsOn" required min={today} />
             </Field>
           </div>

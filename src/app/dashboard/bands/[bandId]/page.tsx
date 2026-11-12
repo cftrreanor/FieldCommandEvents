@@ -147,7 +147,7 @@ export default async function BandContestPage({ params, searchParams }: PageProp
       : null;
   // On the day itself the day card comes first, so the info starts folded.
   const infoOpen = !contestDay && !groupDay && cookieStore.get(CONTEST_INFO_COOKIE)?.value !== "closed";
-  const people = `${band.student_count} ${group ? "participants" : "students"} · ${band.chaperone_count} chaperones`;
+  const people = `${band.student_count} ${group ? "performers" : "students"} · ${band.chaperone_count} chaperones`;
 
   const one = group ? "group" : "band";
   const withdrawn = Boolean(band.scratched_at);

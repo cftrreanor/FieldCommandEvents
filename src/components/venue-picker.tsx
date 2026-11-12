@@ -26,7 +26,7 @@ export function VenuePicker({
   initial,
   timezone,
   kind = "Venue",
-  example = "e.g. Panther Stadium",
+  example = "For example, Panther Stadium",
   required = true,
 }: {
   /** Off in a step that saves itself: the rest saves while the address is still to come. */
@@ -215,7 +215,7 @@ function VenueSearch({
             aria-autocomplete="list"
             aria-activedescendant={showList && active >= 0 ? `${listId}-${active}` : undefined}
             autoComplete="off"
-            placeholder="e.g. Panther Stadium, Cedar Park"
+            placeholder="For example, Panther Stadium, Cedar Park"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);

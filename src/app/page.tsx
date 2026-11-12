@@ -46,7 +46,7 @@ const kinds = [
   },
   {
     icon: "group" as const,
-    title: "Choir and group festivals",
+    title: "Choir, orchestra, and group festivals",
     summary: "Choir and orchestra festivals, theater, and speech and debate",
     href: audiences.groups.path,
   },

@@ -118,7 +118,7 @@ export function FestivalRegistration({
   const failed = counts.failed > 0;
   const anySaved = cls.saved || fields.some((f) => f.state === "saved");
   const outline =
-    "inline-flex min-h-11 items-center rounded-full border-[1.5px] border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand disabled:cursor-not-allowed disabled:text-disabled";
+    "inline-flex min-h-11 items-center rounded-md border-[1.5px] border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand disabled:cursor-not-allowed disabled:text-disabled";
   const sets = SETS.filter((set) => set.names.some((n) => !list.some((x) => x.toLowerCase() === n.toLowerCase())));
 
   /** A yes-or-no question for each group, saved as soon as it's switched. */
@@ -151,7 +151,7 @@ export function FestivalRegistration({
         <div className="grid gap-6 sm:grid-cols-2">
           <AutoField
             id="reg-deadline"
-            label="Registration closes"
+            label="Registration deadline"
             required
             hint={`Directors can register, change, or withdraw their group through the end of this day, your time. It must be before the festival (${festival.label}).`}
             saver={deadline}
@@ -178,7 +178,7 @@ export function FestivalRegistration({
         <fieldset>
           <legend className="text-sm font-semibold">Classifications (optional)</legend>
           <p id="cls-hint" className="mt-1 text-sm text-muted">
-            Divisions directors pick from, if your festival uses them. You can sort the schedule by them later.
+            What directors pick from, like 1A to 6A or Varsity, if your festival uses them. You can sort the schedule by them later.
           </p>
           {list.length > 0 && (
             <ul className="mt-3 flex flex-wrap items-start gap-2" aria-label="Classifications">
@@ -215,12 +215,8 @@ export function FestivalRegistration({
               </button>
             ))}
             {!typing && (
-              // An empty slot to fill in: dashed, as everywhere (L27).
-              <button
-                type="button"
-                onClick={() => setTyping(true)}
-                className="inline-flex min-h-11 items-center rounded-full border-[1.5px] border-dashed border-field-border px-4 text-sm font-semibold hover:border-brand"
-              >
+              // A button like the others beside it (12 px corners, solid outline: light check on the built update).
+              <button type="button" onClick={() => setTyping(true)} className={outline}>
                 Type your own
               </button>
             )}
@@ -232,7 +228,7 @@ export function FestivalRegistration({
                 existing={list}
                 onAdd={add}
                 busy={cls.busy}
-                placeholder={list.length ? "Add another" : "Like Concert or Chamber"}
+                placeholder={list.length ? "Add another" : "For example, Concert or Chamber"}
                 label="Add a classification"
                 describedBy={[cls.failure && "cls-error", "cls-hint"].filter(Boolean).join(" ")}
                 invalid={Boolean(cls.failure)}
@@ -268,8 +264,8 @@ export function FestivalRegistration({
                 </span>
               </span>
             </p>
-            {ask("ask-chaperones", chaperones, "How many chaperones", "For seating and meals.")}
-            {ask("ask-buses", buses, "How many buses", "For bus parking.")}
+            {ask("ask-chaperones", chaperones, "How many chaperones", "For seating and meals")}
+            {ask("ask-buses", buses, "How many buses", "For bus parking")}
             {ask(
               "ask-availability",
               availability,
@@ -326,8 +322,7 @@ export function FestivalRegistration({
         </div>
         {next && (
           <Link href={next.href} className="ml-auto inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover">
-            <span className="hidden sm:inline">Next up:&nbsp;</span>
-            {next.label} →
+            Next up:&nbsp;{next.label} →
           </Link>
         )}
         {draft && !deadline.value && (

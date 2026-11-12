@@ -2,8 +2,8 @@ import Link from "next/link";
 import { RoomSchedule, type ScheduleRoom, type ScheduleSlot } from "@/components/room-schedule";
 import { Badge, Card } from "@/components/ui";
 import { deadlinePassed, opensLater, registrationIsOpen } from "@/lib/bands";
-import { roomNowNext, type Mark, type Slot } from "@/lib/festival-day";
-import { longDay } from "@/lib/rooms";
+import { publicGroupLine, roomNowNext, type Mark, type Slot } from "@/lib/festival-day";
+import { longDay, span } from "@/lib/rooms";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatTime, utcToZonedDate, zoneName } from "@/lib/time";
 import { FindGroup, type FoundGroup } from "./find-group";
@@ -66,7 +66,10 @@ export async function FestivalPublic({ slug, event }: { slug: string; event: Fes
     </Link>
   );
 
-  // Find a group: every group with times, its day first, each room's time with AM or PM.
+  // Find a group: every group with times, its day, each room's times as a row, and on the day where it is now.
+  const todaysSlots: Slot[] = slots
+    .filter((s) => dayOf(s.starts_at) === today)
+    .map((s) => ({ room_id: s.room_id, band_id: s.band_id, starts_at: s.starts_at, ends_at: s.ends_at }));
   const found: FoundGroup[] = [...new Set(slots.map((s) => s.band_id))].map((id) => {
     const mine = slots.filter((s) => s.band_id === id).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
     return {
@@ -74,9 +77,16 @@ export async function FestivalPublic({ slug, event }: { slug: string; event: Fes
       name: mine[0].band_name,
       school: mine[0].school_name,
       day: longDay(dayOf(mine[0].starts_at)),
-      times: mine.map((s) => ({ room: roomName.get(s.room_id) ?? "Room", time: time(s.starts_at) })),
+      times: mine.map((s) => ({ room: roomName.get(s.room_id) ?? "Room", time: span(new Date(s.starts_at), new Date(s.ends_at), tz) })),
+      status: phase === "day" ? publicGroupLine(id, todaysSlots, marks, (r) => roomName.get(r) ?? "A room", time) : null,
     };
   });
+  // Rooms outside the rotation (a hospitality room, where buses park): listed at every stage, with no times.
+  const alsoAt = outside.length > 0 && (
+    <p className="mt-4 text-sm">
+      <span className="font-semibold">Also at the festival:</span> {outside.map((r) => `${r.name}${r.note ? ` (${r.note})` : ""}`).join(", ")}
+    </p>
+  );
 
   return (
     <>
@@ -122,6 +132,7 @@ export async function FestivalPublic({ slug, event }: { slug: string; event: Fes
               {deadline && !deadlinePassed(event) ? `, after registration closes ${formatDate(deadline)}` : ""}.
             </p>
           </Card>
+          {alsoAt}
         </>
       )}
 
@@ -157,8 +168,9 @@ export async function FestivalPublic({ slug, event }: { slug: string; event: Fes
             <h2 id="schedule-heading" className="text-xl font-semibold">
               {phase === "after" ? "Final schedule" : "Schedule"}
             </h2>
-            <p className="mt-1 mb-4 text-sm text-muted">Room by room. All times {zoneName(tz)}</p>
+            <p className="mt-1 mb-4 text-sm text-muted">Room by room. All times are {zoneName(tz)}</p>
             <RoomSchedule rooms={rooms} slots={slots} timezone={tz} columns={1} />
+            {alsoAt}
           </section>
           {phase !== "after" && !open && <div className="mt-6">{directorLink}</div>}
         </>
@@ -176,7 +188,7 @@ export async function FestivalPublic({ slug, event }: { slug: string; event: Fes
   function onTheDay() {
     const todays = slots.filter((s) => dayOf(s.starts_at) === today);
     const name = new Map(slots.map((s) => [s.band_id, s.band_name]));
-    const daySlots: Slot[] = todays.map((s) => ({ room_id: s.room_id, band_id: s.band_id, starts_at: s.starts_at, ends_at: s.ends_at }));
+    const daySlots = todaysSlots;
     const main = mainRoom(path);
     const others = path.filter((r) => r !== main);
     const list = (room: ScheduleRoom) => {
@@ -213,30 +225,27 @@ export async function FestivalPublic({ slug, event }: { slug: string; event: Fes
           </div>
           <ul className="mt-3 space-y-3">
             {path.map((r) => {
-              const { now: cur, next } = roomNowNext(r.id, daySlots, marks);
+              // A group is "Up next" only in the room it goes to next.
+              const { now: cur, next, later } = roomNowNext(r.id, daySlots, marks, { headingOnly: true });
               return (
                 <li key={r.id} className="rounded-md border border-border p-3">
                   <p className="text-sm font-semibold">{r.name}</p>
                   {r.note && <p className="text-xs text-muted">{r.note}</p>}
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    <div>
+                  <div className="mt-2 grid grid-cols-2 gap-3">
+                    <div className="min-w-0">
                       <p className="text-xs text-muted">Now</p>
                       <p className="text-base font-semibold">{cur ? name.get(cur.slot.band_id) : "Between groups"}</p>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-xs text-muted">Up next</p>
-                      <p className="text-base font-semibold">{next ? name.get(next.band_id) : "No one else today"}</p>
+                      <p className="text-base font-semibold">{next ? name.get(next.band_id) : later ? "No group on the way yet" : "No one else today"}</p>
                     </div>
                   </div>
                 </li>
               );
             })}
           </ul>
-          {outside.length > 0 && (
-            <p className="mt-3 text-sm">
-              Also at the festival: {outside.map((r) => `${r.name}${r.note ? ` (${r.note})` : ""}`).join(", ")}
-            </p>
-          )}
+          {alsoAt}
         </Card>
 
         <FindGroup groups={found} className="mt-4" />
@@ -248,16 +257,32 @@ export async function FestivalPublic({ slug, event }: { slug: string; event: Fes
             </h2>
             {main.note && <p className="text-sm text-muted">{main.note}</p>}
             {list(main)}
-            {others.map((r) => (
-              <details key={r.id} className="group mt-3 border-t border-border pt-2">
-                <summary className="inline-flex min-h-11 cursor-pointer items-center text-sm font-semibold text-brand underline underline-offset-4">
-                  {r.name} today
-                </summary>
-                {r.note && <p className="text-sm text-muted">{r.note}</p>}
-                {list(r)}
-              </details>
-            ))}
-            <p className="mt-3 text-xs text-muted">All times {zoneName(tz)}</p>
+            {others.length > 0 && (
+              <div className="mt-4 divide-y divide-border border-y border-border">
+                {others.map((r) => (
+                  <details key={r.id} className="group">
+                    {/* A full-width row: the chevron turns down when it's open. */}
+                    <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 py-2 text-sm font-semibold hover:text-brand [&::-webkit-details-marker]:hidden">
+                      <span>
+                        {r.name} {multiDay ? `· ${longDay(today)}` : "today"}
+                      </span>
+                      <span className="flex items-center gap-2 text-xs font-medium text-muted">
+                        <span className="group-open:hidden">Show</span>
+                        <span className="hidden group-open:inline">Hide</span>
+                        <svg aria-hidden viewBox="0 0 20 20" className="size-5 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M7.5 5l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </span>
+                    </summary>
+                    <div className="pb-3">
+                      {r.note && <p className="text-sm text-muted">{r.note}</p>}
+                      {list(r)}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+            <p className="mt-3 text-xs text-muted">All times are {zoneName(tz)}</p>
             <div className="mt-3">
               <Link href="/dashboard" className={OUT}>
                 Group directors: see your group&apos;s page
