@@ -710,7 +710,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                         <p>
                           The first time, the event fills with sample data for its kind: sign-ups and shifts with a dozen volunteers
                           {bandsHere ? ", six bands" : groupsHere ? ", five groups and three rooms" : ""}
-                          {event.event_type === "school_visit" ? ", eight parent registrations" : ""}
+                          {event.event_type === "school_visit" ? ", and 400 sample families with one to three children each" : ""}
                           {event.event_type === "fair" ? ", eight booths across four zones" : ""}
                           {sponsorsHere ? ", and nine made-up sponsors with logos at four levels (unless it has sponsors already)" : ""}. Use a practice event: the demo people
                           really are on it. Sample people never get emails, and <strong className="text-foreground">Remove demo people</strong>{" "}
