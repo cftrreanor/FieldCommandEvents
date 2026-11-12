@@ -74,7 +74,7 @@ export function BoothEditor({
           <Field label="What it is" hint="e.g. Dunk Tank, Face Painting, Baked Goods">
             <Input name="title" required maxLength={120} defaultValue={initial?.title} autoFocus={isNew} />
           </Field>
-          <Field label="Hosted by" hint="Optional. The partner, vendor, or group running it, e.g. Verizon">
+          <Field label="Hosted by" hint="Optional. The partner, vendor, or group running it, for example Brightwater Wireless">
             <Input name="hostName" maxLength={120} defaultValue={initial?.host_name ?? ""} />
           </Field>
           <Field label="Zone" hint="Move it to another zone anytime.">

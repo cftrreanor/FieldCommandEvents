@@ -3596,7 +3596,7 @@ set role authenticated;
 set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
 do $$ begin
   insert into public.fair_booths (event_id, title, host_name, zone, contact_email)
-  values ('10000000-0000-0000-0000-0000000000f1', 'Dunk Tank', 'Verizon', 'Activity Stations', 'events@verizon.example');
+  values ('10000000-0000-0000-0000-0000000000f1', 'Dunk Tank', 'Brightwater Wireless', 'Activity Stations', 'events@brightwater.example');
   insert into public.fair_booths (event_id, title, zone, show_publicly)
   values ('10000000-0000-0000-0000-0000000000f1', 'Supply closet', 'Back of house', false);
   begin
@@ -3644,7 +3644,7 @@ update public.events set status = 'published' where id = '10000000-0000-0000-000
 set role anon;
 do $$ begin
   assert (select count(*) from public.public_fair_booths('ren-fair')) = 1, 'the public sees listed booths only';
-  assert (select host_name from public.public_fair_booths('ren-fair')) = 'Verizon', 'with who hosts them';
+  assert (select host_name from public.public_fair_booths('ren-fair')) = 'Brightwater Wireless', 'with who hosts them';
 end $$;
 reset role;
 do $$ begin
@@ -3770,6 +3770,8 @@ begin
   assert (select count(*) from public.parent_registrations where event_id = '10000000-0000-0000-0000-0000000000d3') = 8,
          'a school visit gets parents';
   assert (select count(*) from public.fair_booths where event_id = '10000000-0000-0000-0000-0000000000d4') = 8, 'a fair gets booths';
+  assert (select count(*) from public.fair_booths where event_id = '10000000-0000-0000-0000-0000000000d4' and host_name = 'Brightwater Wireless') = 1,
+         'sample booths name made-up businesses only';
   assert not exists (select 1 from public.bands where event_id = '10000000-0000-0000-0000-0000000000d5'), 'a volunteer event gets no bands';
   assert not exists (
     select email from public.volunteers where email is not null and email not like '%@demo.fieldcommandevents.com'
