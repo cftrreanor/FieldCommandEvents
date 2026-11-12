@@ -150,10 +150,18 @@ export function JobForm({
     return () => {
       form.removeEventListener("form-saved", ok);
       form.removeEventListener("form-failed", failed);
-      if (timer.current) clearTimeout(timer.current);
-      setPending(FORM, null);
     };
   }, [setEdited, submit]);
+
+  // Only when the form goes away: drop a save still waiting. (Never on a re-render, or a single change, like picking a
+  // band check-in stop, would lose its save and sit on "Saving…".)
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+      setPending(FORM, null);
+    },
+    [],
+  );
 
   // Everything not saved on the job's page: this form, its things to bring, and shifts or things typed in but not added.
   const pending = usePendingCounts();
