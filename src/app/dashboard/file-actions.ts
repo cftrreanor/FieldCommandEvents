@@ -43,7 +43,12 @@ export async function prepareUpload(
     };
   }
   if (!(await isHost(eventId))) return { error: "Only hosts can add files." };
-  const safeName = parsed.data.fileName.replace(/[^\w.-]+/g, "-").slice(-80);
+  return signedUpload(eventId, parsed.data.fileName);
+}
+
+/** A one-time upload link for a file in this event's folder (the caller checked who may add it). */
+async function signedUpload(eventId: string, fileName: string): Promise<{ error?: string; path?: string; url?: string }> {
+  const safeName = fileName.replace(/[^\w.-]+/g, "-").slice(-80);
   const path = `${eventId}/${crypto.randomUUID()}-${safeName}`;
   const { data, error } = await createAdminClient().storage.from(FILES_BUCKET).createSignedUploadUrl(path);
   if (error || !data) {
@@ -51,6 +56,53 @@ export async function prepareUpload(
     return { error: "We couldn't start the upload. Please try again." };
   }
   return { path, url: data.signedUrl };
+}
+
+/** Volunteer badges: hosts and Volunteer Leads add a map for the back, seen by volunteers and the team only. */
+export async function prepareBadgeMapUpload(
+  eventId: string,
+  file: { fileName: string; contentType: string; size: number },
+): Promise<{ error?: string; path?: string; url?: string }> {
+  await requireUser();
+  const parsed = uploadSchema.safeParse(file);
+  if (!parsed.success) {
+    return { error: file.size > MAX_FILE_BYTES ? "That file is over 10 MB. Try a smaller PDF or a photo." : "Please choose a PDF, JPG, or PNG file." };
+  }
+  const supabase = await createClient();
+  if (!(await supabase.rpc("can_manage_volunteers", { ev: eventId })).data) return { error: "You don't have permission to do that." };
+  return signedUpload(eventId, parsed.data.fileName);
+}
+
+/** Saves a badge map uploaded with prepareBadgeMapUpload. The database allows it only for volunteers and the team. */
+export async function addBadgeMap(eventId: string, uploaded: UploadedFile, label: string): Promise<{ error?: string; id?: string }> {
+  const user = await requireUser();
+  const name = label.trim();
+  if (!name) return { error: "Please give the map a name, like “Parking and entrances”." };
+  if (name.length > 120) return { error: "Please use a shorter name (up to 120 characters)." };
+  const ok = uploadSchema.safeParse({ fileName: uploaded.fileName, contentType: uploaded.contentType, size: uploaded.size });
+  const ourPath = new RegExp(`^${eventId}/[0-9a-f-]{36}-[\\w.-]{1,80}$`).test(uploaded.path);
+  if (!ok.success || !ourPath) return { error: "Something went wrong with the upload. Please try again." };
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("event_files")
+    .insert({
+      event_id: eventId,
+      created_by: user.id,
+      label: name,
+      audiences: ["volunteers", "team"],
+      path: uploaded.path,
+      file_name: uploaded.fileName,
+      content_type: uploaded.contentType,
+      size_bytes: uploaded.size,
+    })
+    .select("id")
+    .single();
+  if (error || !data) {
+    await createAdminClient().storage.from(FILES_BUCKET).remove([uploaded.path]);
+    return { error: error ? friendlyDbError(error) : "We couldn't save the map. Please try again." };
+  }
+  revalidatePath(`/dashboard/events/${eventId}`, "layout");
+  return { id: data.id };
 }
 
 const detailsSchema = z.object({

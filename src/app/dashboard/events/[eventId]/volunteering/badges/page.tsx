@@ -14,6 +14,8 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { eachDate, formatDate, formatDateRange } from "@/lib/time";
 import { BadgeColorScope, PrintBadgesButton } from "./badge-controls";
 import { MapBack } from "./map-back";
+import { BadgeMapAdd } from "./badge-map-add";
+import { requireUser } from "@/lib/auth";
 import { LineIcon } from "@/components/line-icon";
 import { volunteerAreaName } from "@/lib/event-types";
 
@@ -62,12 +64,16 @@ export default async function BadgesPage({ params, searchParams }: PageProps<"/d
     QRCode.toString(publicUrl, { type: "svg", margin: 0 }),
     supabase.from("stations").select("id, name").eq("event_id", eventId).order("sort_order").order("created_at"),
     // Maps for the back: what the team can see (hosts see every file).
-    admin.from("event_files").select("id, label, path, content_type, audiences").eq("event_id", eventId).order("created_at"),
+    admin.from("event_files").select("id, label, path, content_type, audiences, created_by").eq("event_id", eventId).order("created_at"),
   ]);
-  const maps = ((fileData ?? []) as { id: string; label: string; path: string; content_type: string; audiences: string[] }[]).filter(
+  const maps = ((fileData ?? []) as { id: string; label: string; path: string; content_type: string; audiences: string[]; created_by: string | null }[]).filter(
     (f) => access.isHost || f.audiences.some((a) => a === "team" || a === "volunteers" || a === "public"),
   );
   const back = maps.find((m) => m.id === backId);
+  // A map the person added here themselves (volunteers and the team only) can be removed here too.
+  const me = (await requireUser()).id;
+  const removable =
+    back && back.created_by === me && back.audiences.every((a) => a === "volunteers" || a === "team") ? { id: back.id, label: back.label } : null;
   const backUrl = back ? (await admin.storage.from(FILES_BUCKET).createSignedUrl(back.path, 60 * 30)).data?.signedUrl : undefined;
 
   // Nobody signed up at all (not just none matching the choices): said up front, since there's nothing to print yet.
@@ -148,21 +154,24 @@ export default async function BadgesPage({ params, searchParams }: PageProps<"/d
                 <option value="card">4 × 6 cards</option>
               </Select>
             </label>
-            <label className="text-sm font-semibold sm:col-span-2">
-              Map on the back
-              <Select name="back" defaultValue={back?.id ?? ""} className={field}>
-                <option value="">No back (one-sided)</option>
-                {maps.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                    {m.content_type === "application/pdf" ? " (first page of the PDF)" : ""}
-                  </option>
-                ))}
-              </Select>
-              <span className="mt-1 block text-xs font-normal text-muted">
-                {maps.length ? "From this event's Maps and documents." : "Upload a map in Maps and documents in Event settings to print it on the back."}
-              </span>
-            </label>
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-semibold">
+                Map on the back
+                <Select key={back?.id ?? "none"} name="back" defaultValue={back?.id ?? ""} className={field}>
+                  <option value="">No back (one-sided)</option>
+                  {maps.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                      {m.content_type === "application/pdf" ? " (first page of the PDF)" : ""}
+                    </option>
+                  ))}
+                </Select>
+                <span className="mt-1 block text-xs font-normal text-muted">
+                  {maps.length ? "From this event's maps and documents, or add one." : "Add a map to print it on the back."}
+                </span>
+              </label>
+              <BadgeMapAdd key={back?.id ?? "none"} eventId={eventId} removable={removable} />
+            </div>
             <div className="flex items-end sm:col-span-2">
               <button type="submit" className="inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand">
                 Update preview

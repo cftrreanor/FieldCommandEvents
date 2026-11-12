@@ -1799,6 +1799,65 @@ do $$ begin
   exception when insufficient_privilege then null;
   end;
 end $$;
+-- Volunteer badges: a Volunteer Lead can add a map for volunteers and the team (never directors or the public, never
+-- hidden until a date), sees the team's files, and can remove only what they added.
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
+insert into public.event_files (event_id, label, path, file_name, content_type, size_bytes, audiences, created_by)
+values ('10000000-0000-0000-0000-00000000000a', 'Host team map', '10000000-0000-0000-0000-00000000000a/team.pdf', 'team.pdf',
+        'application/pdf', 1, array['team'], '00000000-0000-0000-0000-000000000001');
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000002","email":"director@example.com"}';
+do $$
+declare ok boolean;
+begin
+  insert into public.event_files (event_id, label, path, file_name, content_type, size_bytes, audiences, created_by)
+  values ('10000000-0000-0000-0000-00000000000a', 'Badge map', '10000000-0000-0000-0000-00000000000a/badge.png', 'badge.png',
+          'image/png', 1, array['volunteers', 'team'], auth.uid());
+  assert (select count(*) from public.event_files) = 2, 'a Volunteer Lead sees the team''s files (theirs and the host''s), not the directors''';
+  ok := false;
+  begin
+    insert into public.event_files (event_id, label, path, file_name, content_type, size_bytes, audiences, created_by)
+    values ('10000000-0000-0000-0000-00000000000a', 'Packet', '10000000-0000-0000-0000-00000000000a/d.pdf', 'd.pdf',
+            'application/pdf', 1, array['volunteers', 'directors'], auth.uid());
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'a Volunteer Lead can''t share a file with directors';
+  ok := false;
+  begin
+    insert into public.event_files (event_id, label, path, file_name, content_type, size_bytes, audiences, created_by, visible_from)
+    values ('10000000-0000-0000-0000-00000000000a', 'Later', '10000000-0000-0000-0000-00000000000a/l.pdf', 'l.pdf',
+            'application/pdf', 1, array['team'], auth.uid(), current_date + 5);
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'or hide one until a date';
+  ok := false;
+  begin
+    insert into public.event_files (event_id, label, path, file_name, content_type, size_bytes, audiences, created_by)
+    values ('10000000-0000-0000-0000-00000000000a', 'Theirs', '10000000-0000-0000-0000-00000000000a/t.pdf', 't.pdf',
+            'application/pdf', 1, array['team'], '00000000-0000-0000-0000-000000000001');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'or add one in someone else''s name';
+  update public.event_files set label = 'hijacked';
+  delete from public.event_files where label = 'Host team map';
+  delete from public.event_files where label = 'Badge map';
+end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
+do $$ begin
+  assert not exists (select 1 from public.event_files where label = 'hijacked'), 'a Volunteer Lead can''t change files';
+  assert exists (select 1 from public.event_files where label = 'Host team map'), 'or remove the host''s';
+  assert not exists (select 1 from public.event_files where label = 'Badge map'), 'but can remove the one they added';
+  delete from public.event_files where label = 'Host team map';
+end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000006","email":"stranger@example.com"}';
+do $$ begin
+  begin
+    insert into public.event_files (event_id, label, path, file_name, content_type, size_bytes, audiences, created_by)
+    values ('10000000-0000-0000-0000-00000000000a', 'Stranger', '10000000-0000-0000-0000-00000000000a/s.pdf', 's.pdf',
+            'application/pdf', 1, array['team'], auth.uid());
+    raise exception 'FAIL: a stranger added a team file';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
 set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000006","email":"stranger@example.com"}';
 do $$ begin
   assert (select count(*) from public.event_files) = 0, 'a stranger can''t read the file list';
