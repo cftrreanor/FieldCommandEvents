@@ -25,3 +25,5 @@
   keeps finding). Run its self-check before every review, and add repeat findings to it afterward.
 - When a page's main data is missing, call `missing()` from src/lib/schema-check.ts, not
   `notFound()`: it shows "a database update is needed" when a migration hasn't been run yet.
+- Keep docs/PROJECT-CONTEXT.md current: any PR that changes what people see or do updates it (the
+  feature's line, and a line under Recent changes). The owner syncs it into their Claude project.
