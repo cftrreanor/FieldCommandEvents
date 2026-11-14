@@ -55,7 +55,13 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
     hasRooms(type) ? roomTwoAtOnce(supabase, eventId) : null,
     // The Sponsors add-on (band contests, festivals, and fairs): the optional step and "When you publish".
     isSponsorKind(type) ? loadEventSponsors(eventId, event.organization_id, type) : null,
-    hasParents(type) ? count(supabase.from("parent_registrations").select("id", head).eq("event_id", eventId)) : 0,
+    hasParents(type)
+      ? // Families now, or kept totals once their details were deleted after the event.
+        Promise.all([
+          count(supabase.from("parent_registrations").select("id", head).eq("event_id", eventId)),
+          supabase.from("parent_event_totals").select("families").eq("event_id", eventId).maybeSingle().then((r) => (r.data as { families: number } | null)?.families ?? 0),
+        ]).then(([now, kept]) => Math.max(now, kept))
+      : 0,
   ]);
   // Why the account's plan won't let this publish (packages: what's included, one at a time), or null.
   // For "one at a time", the event that's already published, to link to.

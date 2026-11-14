@@ -86,3 +86,15 @@ Building those fixes, a few details settled (within the decisions above; noted s
 - The "Send to the front office" confirm button stays red (approved in round 2); "no red" applies to the door note.
 - The report's counts follow its group order (Sent to the front office first).
 - The three report emails come from the app's own name; replies still go to the organizer.
+
+## Follow-up check on the fixes (2026-11-14)
+
+UI Designer and usability consultant on the changed screens (`docs/design-reviews/2026-11-14-visitor-attendance-built-2/`).
+One finding rated 3 (consultant): after deletion, the page showed two deletion dates and zero totals next to the report's
+kept totals. Owner: **all as recommended**: one deletion date and the kept totals everywhere after deletion (and the
+setup step stays done); "Our school has a copy" can be undone until the deletion date; once confirmed, the reminder's
+subject and heading say "is deleted on", not "save"; "Saved: Angela · Da Silva" feedback where the name was; clearer
+name-check wording ("These names were typed in one box. Choose where the last name starts…"); "Let Ben check in" as a
+44 px secondary button; the download warning's safe choice as the main button; "Cancel" in every dialog; one button size
+per row; the report's front-office status as plain text with an icon; "Closed" on the phone tab; standard disabled style.
+The door note stays amber (owner's earlier choice), against the UI Designer's suggestion of danger red.
