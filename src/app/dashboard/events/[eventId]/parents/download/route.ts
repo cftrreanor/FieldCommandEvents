@@ -14,7 +14,8 @@ import {
 
 // Parent Registration's downloads, built here from Host/Co-host-only database
 // functions and noted in the event's download log:
-//   ?list=visitor  the visitor list for the school's visitor system (one row per adult per child)
+//   ?list=visitor  the visitor list for the school's visitor system (one row per adult per child);
+//                  with &only=new, just the adults added or renamed since the last visitor list download
 //   ?list=class    the class list (one row per child)
 //   ?list=report   the visitor check-in report
 const KINDS: Record<string, { kind: ListKind; name: string }> = {
@@ -32,9 +33,13 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/dashboard/ev
   const { data: event } = await supabase.from("events").select("name, timezone").eq("id", eventId).maybeSingle();
   if (!event) return new Response("Not found", { status: 404 });
 
+  const onlyNew = which.kind === "visitor_list" && request.nextUrl.searchParams.get("only") === "new";
   let rows: CsvValue[][];
   try {
-    if (which.kind === "visitor_list") rows = visitorListCsvRows(await visitorList(supabase, eventId));
+    if (which.kind === "visitor_list") {
+      const list = await visitorList(supabase, eventId);
+      rows = visitorListCsvRows(onlyNew ? list.filter((r) => r.is_new || r.name_changed) : list);
+    }
     else if (which.kind === "class_list") rows = await classListCsvRows(supabase, eventId, event.timezone);
     else {
       const [report, summary] = await Promise.all([checkInReport(supabase, eventId), checkInSummary(supabase, eventId)]);
@@ -48,7 +53,7 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/dashboard/ev
     return new Response("Something went wrong. Please try again.", { status: 500 });
   }
 
-  const fileName = csvFileName(`${event.name} ${which.name}`, which.name);
+  const fileName = csvFileName(`${event.name} ${which.name}${onlyNew ? " new" : ""}`, which.name);
   return new Response(toCsv(rows), {
     headers: {
       "Content-Type": CSV_TYPE,

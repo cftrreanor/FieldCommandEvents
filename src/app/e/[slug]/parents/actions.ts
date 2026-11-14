@@ -16,10 +16,13 @@ const EVENT_FIELDS = "slug, name, starts_on, ends_on, window_start, window_end, 
 /** "You're already registered" emails go out at most this often per registration. */
 const LINK_EMAIL_MINUTES = 10;
 
+/** One other adult on the form: First and Last, with their id when they're already on the registration. */
+export type FormAdult = { id?: string; first_name: string; last_name: string };
+
 export type ParentState = ActionState & {
   /** existing: that email was already registered, so nothing changed (we emailed its link). updated: edited from the link. */
   confirmed?: { email: string; emailSent: boolean; children: Child[]; existing?: boolean; updated?: boolean };
-  values?: { parentName: string; email: string; phone: string; otherAdults: string[]; children: Child[] };
+  values?: { parentFirst: string; parentLast: string; email: string; phone: string; otherAdults: FormAdult[]; children: Child[] };
 };
 
 const childSchema = z.object({
@@ -28,21 +31,29 @@ const childSchema = z.object({
   grade: z.enum(GRADES, { message: "Please pick each child's grade." }),
 });
 
+const adultSchema = z.object({
+  // Sent back on an edit, so a renamed adult keeps their record (and anything the school marked on it).
+  id: z.string().regex(/^[0-9a-f-]{36}$/i).optional(),
+  first_name: z.string().trim().min(1, "Please enter each adult's first name.").max(60),
+  last_name: z.string().trim().min(1, "Please enter each adult's last name.").max(60),
+});
+
 const schema = z.object({
-  parentName: z.string().trim().min(2, "Please enter your first and last name.").max(200),
+  parentFirst: z.string().trim().min(1, "Please enter your first name.").max(100),
+  parentLast: z.string().trim().min(1, "Please enter your last name.").max(100),
   email: z.string().trim().toLowerCase().email("Please enter a valid email address."),
   phone: z.string().trim().max(30),
-  otherAdults: z
-    .array(z.string().trim().min(2, "Please enter each adult's first and last name.").max(120))
-    .max(5, "Up to 5 other adults can come on one registration."),
+  otherAdults: z.array(adultSchema).max(5, "Up to 5 other adults can come on one registration."),
   children: z.array(childSchema).min(1, "Add at least one child.").max(8, "You can register up to 8 children."),
   idAgreed: z.literal(true, { message: "Please confirm you'll bring a government-issued photo ID." }),
 });
 
+const fullName = (a: { first_name: string; last_name: string }) => `${a.first_name} ${a.last_name}`.replace(/\s+/g, " ").trim();
+
 /** The form's fields, checked. */
 function readForm(formData: FormData) {
   let children: Child[] = [];
-  let otherAdults: string[] = [];
+  let otherAdults: FormAdult[] = [];
   try {
     children = JSON.parse(String(formData.get("children") ?? "[]"));
     otherAdults = JSON.parse(String(formData.get("otherAdults") ?? "[]"));
@@ -50,7 +61,8 @@ function readForm(formData: FormData) {
     // Reported below.
   }
   const values = {
-    parentName: String(formData.get("parentName") ?? ""),
+    parentFirst: String(formData.get("parentFirst") ?? ""),
+    parentLast: String(formData.get("parentLast") ?? ""),
     email: String(formData.get("email") ?? ""),
     phone: String(formData.get("phone") ?? ""),
     otherAdults,
@@ -60,7 +72,8 @@ function readForm(formData: FormData) {
   if (!parsed.success) return { values, error: parsed.error.issues[0].message };
   const phone = parsed.data.phone ? normalizePhone(parsed.data.phone) : null;
   if (parsed.data.phone && !phone) return { values, error: "Please enter a 10-digit phone number, or leave it blank." };
-  return { values, data: { ...parsed.data, phone } };
+  const parentName = fullName({ first_name: parsed.data.parentFirst, last_name: parsed.data.parentLast });
+  return { values, data: { ...parsed.data, phone, parentName, otherNames: parsed.data.otherAdults.map(fullName) } };
 }
 
 /**
@@ -83,10 +96,12 @@ export async function registerParents(eventId: string, _prev: ParentState, formD
   const { data: token, error } = await admin.rpc("register_parents", {
     p_event: eventId,
     p_name: v.parentName,
+    p_first: v.parentFirst,
+    p_last: v.parentLast,
     p_email: v.email,
     p_phone: v.phone,
     p_children: v.children,
-    p_other_adults: v.otherAdults,
+    p_other_adults: v.otherAdults.map(({ first_name, last_name }) => ({ first_name, last_name })),
   });
   if (error) {
     if (error.code === "P0001") return { error: error.message, values };
@@ -125,7 +140,7 @@ export async function registerParents(eventId: string, _prev: ParentState, formD
   if (event && reg) {
     const message = await parentEmail(
       "confirmation",
-      { ...reg, parent_name: v.parentName, email: v.email, children: v.children, other_adults: v.otherAdults },
+      { ...reg, parent_name: v.parentName, email: v.email, children: v.children, other_adults: v.otherNames },
       event,
       parentLink(origin, event.slug, token as string),
     );
@@ -143,8 +158,11 @@ export async function updateParents(token: string, _prev: ParentState, formData:
   const { data: eventId, error } = await admin.rpc("update_parent_registration", {
     p_token: token,
     p_name: v.parentName,
+    p_first: v.parentFirst,
+    p_last: v.parentLast,
     p_phone: v.phone,
     p_children: v.children,
+    // Each adult's id goes back with them, so a renamed adult stays the same record.
     p_other_adults: v.otherAdults,
   });
   if (error || !eventId) {
@@ -160,7 +178,7 @@ export async function updateParents(token: string, _prev: ParentState, formData:
   if (event && reg) {
     const message = await parentEmail(
       "confirmation",
-      { ...reg, parent_name: v.parentName, children: v.children, other_adults: v.otherAdults },
+      { ...reg, parent_name: v.parentName, children: v.children, other_adults: v.otherNames },
       event,
       parentLink(await getOrigin(), event.slug, token),
     );

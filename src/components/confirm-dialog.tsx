@@ -14,6 +14,8 @@ export type ConfirmOptions = {
   title: string;
   /** What happens, in a sentence or two. */
   message?: string;
+  /** What happens, as a short list (after the message, if there is one). */
+  bullets?: string[];
   /** The action button's words ("Delete banner"). */
   confirmLabel?: string;
   /** The way out ("Keep it"). */
@@ -129,6 +131,13 @@ function DialogBody({ request: r, close }: { request: Request; close: () => void
         {r.title}
       </h2>
       {r.kind === "confirm" && r.message && <p className="mt-3 leading-7 text-muted">{r.message}</p>}
+      {r.kind === "confirm" && r.bullets?.length ? (
+        <ul className="mt-3 list-disc space-y-1 pl-5 leading-7">
+          {r.bullets.map((b) => (
+            <li key={b}>{b}</li>
+          ))}
+        </ul>
+      ) : null}
       {r.kind === "ask" && (
         <div className="mt-4 space-y-3">
           {r.fields.map((f, i) => (

@@ -37,8 +37,10 @@ export default async function ParentRegistrationLinkPage({ params }: PageProps<"
     : { data: null };
   const children = (reg?.children ?? []) as Child[];
   const others = otherAdultNames(reg?.adults);
+  const adults = sortedAdults(reg?.adults);
+  const registering = adults.find((a) => a.position === 0);
   // Anyone on the registration checked in at the door.
-  const checkedIn = sortedAdults(reg?.adults).some((a) => a.checked_in_at);
+  const checkedIn = adults.some((a) => a.checked_in_at);
   const calendar =
     reg && event
       ? googleCalendarUrl(
@@ -126,10 +128,12 @@ export default async function ParentRegistrationLinkPage({ params }: PageProps<"
                       grades={GRADES}
                       idReminder={ID_REMINDER}
                       initial={{
-                        parentName: reg.parent_name,
+                        parentFirst: registering?.first_name ?? "",
+                        parentLast: registering?.last_name ?? "",
                         email: reg.email,
                         phone: reg.phone ?? "",
-                        otherAdults: others,
+                        // With their ids, so a renamed adult keeps their record.
+                        otherAdults: adults.filter((a) => a.position > 0).map((a) => ({ id: a.id, first_name: a.first_name, last_name: a.last_name })),
                         children,
                       }}
                     />
