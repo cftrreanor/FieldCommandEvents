@@ -406,7 +406,7 @@ export const SYSTEM_EMAILS: SystemEmail[] = [
     starting: {
       subject: "You can open the {{event_name}} visitor check-in report through {{access_ends}}",
       heading: "Your access to {{event_name}} lasts through {{access_ends}}",
-      body: "As a Co-host of {{event_name}}, you can open the event and its visitor check-in report through {{access_ends}}. If your school needs a copy, save it before then.\n\nAfter that, {{account_host}}, your Account Host, and Co-hosts of every event can still open it. {{brand}} deletes it on {{deadline}}, along with families' and children's details.",
+      body: "As a Co-host of {{event_name}}, you can open the event and its visitor check-in report through {{access_ends}}. If your school needs a copy, save it before then.\n\nAfter that, your Account Host ({{account_host}}) and Co-hosts of every event can still open it. {{brand}} deletes it on {{deadline}}, along with families' and children's details.",
       button_label: "Open visitor check-in report",
     },
     locked: [REPORT_HOW_TO_SAVE, REPORT_NO_NAMES],
@@ -416,7 +416,7 @@ export const SYSTEM_EMAILS: SystemEmail[] = [
     group: "Hosts: visitor check-in report",
     name: "A week before deletion",
     description:
-      "Goes to the Account Host and Co-hosts of every event a week before a visitor registration event's report and families' details are deleted. Always goes, gentler once a Host or Co-host confirmed the school has a copy.",
+      "Goes to the Account Host and Co-hosts of every event a week before a visitor registration event's report and families' details are deleted. Always goes, gentler once a Host or Co-host confirmed the school has a copy: then the subject and heading say \"Reminder: the [event] visitor check-in report is deleted on [date]\" in place of these.",
     fields: reportFields,
     required: ["event_name", "deadline"],
     starting: {

@@ -66,6 +66,16 @@ export async function confirmParentReportCopy(eventId: string): Promise<ActionSt
   return { ok: true };
 }
 
+/** Hosts and Co-hosts, until the deletion date: undo "Our school has a copy" (the save warning comes back). */
+export async function undoParentReportCopy(eventId: string): Promise<ActionState> {
+  await requireUser();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("undo_parent_report_copy", { p_event: eventId });
+  if (error) return { error: friendlyDbError(error) };
+  revalidatePath(`/dashboard/events/${eventId}/parents`, "layout");
+  return { ok: true };
+}
+
 /** Hosts open or close parent registration. */
 export async function setParentRegistrationOpen(eventId: string, open: boolean): Promise<ActionState> {
   await requireUser();

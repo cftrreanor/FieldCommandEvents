@@ -13,11 +13,25 @@ import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime, zoneName } from "@/lib/time";
 import { checkInSummary, visitorListStatus, type ReportSummary, type VisitorListStatus } from "@/lib/visitor-lists";
-import { copyLine, deletedLine, joinNames, plural, REPORT_NAME, saveBefore, savedLine, SEND_TO_OFFICE, shortDate, WHO_SEES } from "@/lib/visitor-words";
+import {
+  copyLine,
+  deletedLine,
+  deletionDay,
+  familiesDeletedLine,
+  joinNames,
+  keptUntil,
+  plural,
+  REPORT_NAME,
+  saveBefore,
+  savedLine,
+  SEND_TO_OFFICE,
+  shortDate,
+  WHO_SEES,
+} from "@/lib/visitor-words";
 import { ActionButton, CopyLinkButton } from "../forms";
 import { saveParentSettings, setParentRegistrationOpen } from "./actions";
 import { FamiliesList, type ListedFamily } from "./families-list";
-import { CopyConfirmButton, DownloadLink, NamesToCheck, type NameToCheck } from "./visitor-controls";
+import { CopyConfirmButton, CopyUndoButton, DownloadLink, NamesToCheck, type NameToCheck } from "./visitor-controls";
 import { ParentSettingsForm } from "./settings-form";
 import { importParents } from "@/app/dashboard/import-actions";
 import { SpreadsheetImport } from "@/components/spreadsheet-import";
@@ -118,8 +132,16 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
   const tabs = [...(showFamilies ? ["families"] : []), "settings", ...(over ? [] : ["import"])];
   const current = tabs.find((t) => t === tab) ?? tabs[0];
   const base = `/dashboard/events/${eventId}/parents`;
-  const smallButton = "inline-flex min-h-9 items-center rounded-md border border-border bg-surface px-3 text-xs font-medium hover:bg-background";
   const n = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+  // One size for every button in the registration link's row (Copy link's).
+  const rowButton =
+    "inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-3 text-sm font-semibold hover:border-brand hover:bg-background";
+  // After the clean-up: what registered, from the names-free totals kept (past tense; the link's tools are gone).
+  const deleted = summary.deleted;
+  const keptTotals =
+    deleted && summary.families !== null
+      ? `${joinNames([n(summary.families, "family", "families"), n(summary.adults ?? 0, "adult", "adults"), n(summary.children ?? 0, "child", "children")])} registered`
+      : null;
 
   return (
     // data-required-marks: a small asterisk on each box that has to be filled in (globals.css).
@@ -141,6 +163,7 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
         eventId={eventId}
         tz={tz}
         startsOn={event.starts_on}
+        endsOn={event.ends_on}
         isEventDay={isEventDay}
         over={over}
         registration={closed === null ? "open" : closed === "deadline" && closesAt ? `closed ${shortDate(utcToZonedDate(closesAt, tz))}` : "closed"}
@@ -154,7 +177,11 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
           </Badge>
           <span className="text-muted">
             {[
-              showFamilies ? `${n(families.length, "family", "families")} · ${n(adultCount, "adult", "adults")} · ${n(childCount, "child", "children")}` : null,
+              deleted
+                ? keptTotals && `${keptTotals} · ${n(summary.checked_in ?? 0, "adult", "adults")} checked in`
+                : showFamilies
+                  ? `${n(families.length, "family", "families")} · ${n(adultCount, "adult", "adults")} · ${n(childCount, "child", "children")}`
+                  : null,
               closesAt && closed !== "over" ? `${closeWord} ${closesAtLabel(closesAt, tz)}` : null,
               closed === "over" ? "The event is over" : null,
             ]
@@ -162,6 +189,7 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
               .join(" · ")}
           </span>
         </p>
+        {!deleted && (
         <div className="mt-4">
           <p className="text-sm font-medium">Registration link</p>
           <p className="mt-1 text-sm break-words text-muted">
@@ -179,18 +207,22 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <CopyLinkButton url={link} label="Copy link" />
-            <a href={`/e/${event.slug}/parents`} target="_blank" className={smallButton}>
+            <a href={`/e/${event.slug}/parents`} target="_blank" className={rowButton}>
               Preview page
             </a>
-            <Link href={`${base}/check-in`} className={smallButton}>
-              Check-in
-            </Link>
+            {/* On the event day the top card's "Open check-in" is the way in. */}
+            {!isEventDay && (
+              <Link href={`${base}/check-in`} className={rowButton}>
+                Check-in
+              </Link>
+            )}
             {published && closed === null && (
               <ActionButton
                 action={setParentRegistrationOpen.bind(null, eventId, false)}
                 variant="stop"
-                className="px-3! text-xs!"
+                className="px-3!"
                 confirmMessage="Close parent registration? Parents won't be able to register."
+                cancelLabel="Cancel"
               >
                 Close registration
               </ActionButton>
@@ -200,15 +232,16 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
               <ActionButton
                 action={setParentRegistrationOpen.bind(null, eventId, true)}
                 variant="secondary"
-                className="px-3! font-medium!"
+                className="px-3!"
                 confirmMessage={`Reopen parent registration? Families can register from the link again. Anyone new needs to go to your school's visitor system before ${shortDate(event.starts_on)}.`}
                 confirmLabel="Reopen registration"
+                cancelLabel="Cancel"
               >
                 Reopen registration
               </ActionButton>
             )}
             {published && closed === "closed" && !showFamilies && (
-              <ActionButton action={setParentRegistrationOpen.bind(null, eventId, true)} variant="go" className="px-3! text-xs!">
+              <ActionButton action={setParentRegistrationOpen.bind(null, eventId, true)} variant="go" className="px-3!">
                 Open registration
               </ActionButton>
             )}
@@ -229,8 +262,7 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
           )}
           <p className="mt-2 text-sm text-muted">
             {over ? "" : "Parents get a reminder to bring their photo ID the day before. "}
-            Families&apos; and children&apos;s details are deleted 30 days after the event
-            {over ? `, on ${formatDate(addDays(event.ends_on, 31), { year: undefined })}` : ""}.
+            {keptUntil(event.ends_on)}
           </p>
           {/* Tucked away to keep the top of the page short; open it to show or download the code. */}
           <details className="group mt-1">
@@ -253,6 +285,7 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
             </div>
           </details>
         </div>
+        )}
       </Card>
 
       <div className="mt-10">
@@ -265,7 +298,8 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
                     key: "families",
                     label: "Registered families",
                     short: "Families",
-                    status: n(families.length, "family", "families"),
+                    // After the clean-up, the kept total (the families themselves are gone).
+                    status: n(deleted ? (summary.families ?? 0) : families.length, "family", "families"),
                     href: `${base}?tab=families`,
                     active: current === "families",
                   },
@@ -276,6 +310,8 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
               label: "Registration settings",
               short: "Settings",
               status: closesAt ? `${closeWord} ${formatDate(utcToZonedDate(closesAt, tz), { year: undefined, weekday: undefined })}` : "Optional",
+              // A phone's tab is narrow: once closed, the word alone.
+              shortStatus: closesAt && deadlinePassed ? "Closed" : undefined,
               mark: closesAt ? ("done" as const) : undefined,
               href: `${base}?tab=settings`,
               active: current === "settings",
@@ -288,11 +324,15 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
             <Card>
               <h2 className="text-lg font-semibold">Registered families{summary.deleted ? "" : ` (${families.length})`}</h2>
               {summary.deleted ? (
-                <p className="mt-1 text-sm text-muted">
-                  {summary.deleted_at
-                    ? `Families' and children's details were deleted on ${formatDate(utcToZonedDate(summary.deleted_at, tz))}, as promised to families.`
-                    : "Families' and children's details were deleted 30 days after the event, as promised to families."}
-                </p>
+                <div className="mt-1 space-y-2 text-sm leading-6 text-muted">
+                  <p>{familiesDeletedLine(event.ends_on)}</p>
+                  {keptTotals && (
+                    <p>
+                      {keptTotals}. {n(summary.checked_in ?? 0, "adult", "adults")} checked in at the event door
+                      {summary.sent_to_office ? `, and ${summary.sent_to_office} ${summary.sent_to_office === 1 ? "was" : "were"} sent to the front office` : ""}.
+                    </p>
+                  )}
+                </div>
               ) : (
                 <>
                   <p className="mt-1 mb-4 text-sm text-muted">
@@ -368,12 +408,6 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
   );
 }
 
-function addDays(date: string, n: number) {
-  const d = new Date(`${date}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
 const LINK = "font-medium text-brand underline underline-offset-4";
 const PRIMARY_LINK = "inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-center text-sm font-semibold text-brand-foreground hover:bg-brand-hover";
 const OUTLINE_LINK =
@@ -404,6 +438,7 @@ function VisitorCard({
   eventId,
   tz,
   startsOn,
+  endsOn,
   isEventDay,
   over,
   registration,
@@ -414,6 +449,7 @@ function VisitorCard({
   eventId: string;
   tz: string;
   startsOn: string;
+  endsOn: string;
   isEventDay: boolean;
   over: boolean;
   /** "open", "closed", or "closed Mon, Nov 30". */
@@ -427,12 +463,12 @@ function VisitorCard({
     return (
       <Card className="mt-6 space-y-3 p-4 sm:p-5">
         {summary.families === null ? (
-          <p className="text-sm leading-6">Families&apos; and children&apos;s details were deleted 30 days after the event, as promised to families.</p>
+          <p className="text-sm leading-6">{familiesDeletedLine(endsOn)}</p>
         ) : adults === 0 ? (
           <p className="text-sm leading-6">No families registered for this event.</p>
         ) : (
           <>
-            <p className="text-sm leading-6">{deletedLine(utcToZonedDate(summary.deleted_at ?? new Date().toISOString(), tz))}</p>
+            <p className="text-sm leading-6">{deletedLine(endsOn)}</p>
             <Link href={reportLink} className={OUTLINE_LINK}>
               Open visitor check-in report
             </Link>
@@ -459,7 +495,9 @@ function VisitorCard({
     if (summary.copy_confirmed_at) {
       return (
         <Card className="mt-6 space-y-3 p-4 sm:p-5">
-          <p className="text-sm leading-6">{copyLine(summary.copy_confirmed_by_name, utcToZonedDate(summary.copy_confirmed_at, tz), summary.delete_on)}</p>
+          <p className="text-sm leading-6">
+            {copyLine(summary.copy_confirmed_by_name, utcToZonedDate(summary.copy_confirmed_at, tz), endsOn)} <CopyUndoButton eventId={eventId} />
+          </p>
           {result}
           <Link href={reportLink} className={OUTLINE_LINK}>
             Open visitor check-in report
@@ -469,7 +507,7 @@ function VisitorCard({
     }
     return (
       <Card className="mt-6 space-y-3 border-brand p-4 sm:p-5">
-        <Warn title={saveBefore(summary.delete_on)}>
+        <Warn title={saveBefore(endsOn)}>
           <p>
             {summary.saved_at
               ? `${savedLine(summary.saved_by_name, utcToZonedDate(summary.saved_at, tz), summary.saved_kind)} Once the copy is where your school keeps its records, confirm it here.`
@@ -481,7 +519,8 @@ function VisitorCard({
           <Link href={reportLink} className={summary.saved_at ? OUTLINE_LINK : PRIMARY_LINK}>
             Open visitor check-in report
           </Link>
-          <CopyConfirmButton eventId={eventId} deleteOn={formatDate(summary.delete_on)} />
+          {/* Once a print or download is on record, confirming the school kept it is what's left to do. */}
+          <CopyConfirmButton eventId={eventId} deleteOn={deletionDay(endsOn)} primary={Boolean(summary.saved_at)} />
         </div>
       </Card>
     );
@@ -617,7 +656,7 @@ function Downloads({
             ) : (
               <span
                 aria-disabled="true"
-                className="inline-flex min-h-11 items-center rounded-md border border-dashed border-field-border px-4 text-sm font-semibold text-disabled"
+                className="inline-flex min-h-11 cursor-not-allowed items-center rounded-md border border-field-border px-4 text-sm font-semibold text-disabled"
               >
                 Open visitor check-in report
               </span>

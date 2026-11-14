@@ -2,7 +2,7 @@
 
 import { startTransition, useMemo, useOptimistic, useState } from "react";
 import { LineIcon } from "@/components/line-icon";
-import { Input } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import type { ActionState } from "@/lib/action-state";
 import { confirmDialog } from "@/components/confirm-dialog";
 import { letCheckIn, SEND_TO_OFFICE } from "@/lib/visitor-words";
@@ -46,7 +46,7 @@ export function Door({
   const here = everyone.filter((a) => a.checkedIn).length;
 
   async function onToggle(a: DoorAdult) {
-    if (a.checkedIn && !(await confirmDialog({ title: `Undo ${a.name}'s check-in?`, confirmLabel: "Undo check-in" }))) return;
+    if (a.checkedIn && !(await confirmDialog({ title: `Undo ${a.name}'s check-in?`, cancelLabel: "Cancel", confirmLabel: "Undo check-in" }))) return;
     setError(null);
     startTransition(async () => {
       setOptimistic({ adultId: a.id, checkedIn: !a.checkedIn });
@@ -167,13 +167,9 @@ export function Door({
                           </span>
                         </p>
                         {letIn && open && (
-                          <button
-                            type="button"
-                            onClick={() => onLetIn(a)}
-                            className="inline-flex min-h-11 items-center px-1 text-sm font-medium text-brand underline-offset-4 hover:underline"
-                          >
+                          <Button type="button" variant="secondary" onClick={() => onLetIn(a)} className="mt-1">
                             {letCheckIn(a.firstName)}
-                          </button>
+                          </Button>
                         )}
                       </div>
                     ) : !open ? (
@@ -191,12 +187,12 @@ export function Door({
                         {a.checkedIn ? (
                           <>
                             <span>✓ Checked in</span>
-                            <span className="text-[11px] font-normal text-muted">tap to undo</span>
+                            <span className="text-xs font-normal text-muted">tap to undo</span>
                           </>
                         ) : (
                           <>
                             <span>Check in</span>
-                            <span className="text-[11px] font-normal opacity-80">photo ID checked</span>
+                            <span className="text-xs font-normal opacity-80">photo ID checked</span>
                           </>
                         )}
                       </button>

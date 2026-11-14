@@ -98,3 +98,16 @@ name-check wording ("These names were typed in one box. Choose where the last na
 44 px secondary button; the download warning's safe choice as the main button; "Cancel" in every dialog; one button size
 per row; the report's front-office status as plain text with an icon; "Closed" on the phone tab; standard disabled style.
 The door note stays amber (owner's earlier choice), against the UI Designer's suggestion of danger red.
+
+Building those fixes, a few details settled (within the decisions above):
+- The deletion date is the event's last day + 31 everywhere (one helper, `deletionDate` in src/lib/visitor-words.ts,
+  matching the clean-up and `parent_check_in_summary`): "kept for 30 days after the event and deleted on …". After
+  deletion the screens show that date too, not the clean-up's own timestamp.
+- The "0 checked in" after deletion in the built-2 screenshots came from a re-seeded test event with no door activity,
+  not the clean-up: a real event's totals (check-ins on the day, a front-office mark, a practice check-in) are kept
+  correctly (tested). Between the deletion date and the daily clean-up, the report and the setup step now show the totals
+  about to be kept rather than "no totals".
+- Undo of "Our school has a copy" is a small "Undo" link with no confirm window (it only brings the warning back).
+- The download warning's safe choice has the focus when it opens.
+- A saved wording for the week-before email is used only for the "save" version; once a copy is confirmed, the subject
+  and heading are always "… is deleted on [date]".

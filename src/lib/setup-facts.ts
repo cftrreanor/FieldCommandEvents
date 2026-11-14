@@ -56,10 +56,11 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
     // The Sponsors add-on (band contests, festivals, and fairs): the optional step and "When you publish".
     isSponsorKind(type) ? loadEventSponsors(eventId, event.organization_id, type) : null,
     hasParents(type)
-      ? // Families now, or kept totals once their details were deleted after the event.
+      ? // Families now, or, once their details are past the deletion date, the totals kept (parent_check_in_summary
+        // has them before the daily clean-up runs too; Hosts and Co-hosts only, so anyone else counts 0 there).
         Promise.all([
           count(supabase.from("parent_registrations").select("id", head).eq("event_id", eventId)),
-          supabase.from("parent_event_totals").select("families").eq("event_id", eventId).maybeSingle().then((r) => (r.data as { families: number } | null)?.families ?? 0),
+          supabase.rpc("parent_check_in_summary", { p_event: eventId }).then((r) => ((r.data as { families: number | null }[] | null)?.[0]?.families ?? 0)),
         ]).then(([now, kept]) => Math.max(now, kept))
       : 0,
   ]);

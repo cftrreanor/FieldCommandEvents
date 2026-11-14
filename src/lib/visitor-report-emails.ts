@@ -5,7 +5,7 @@ import { isSchemaError } from "@/lib/schema-check";
 import { customWords, loadSystemEmail } from "@/lib/system-email-overrides";
 import { REPORT_HOW_TO_SAVE, REPORT_NO_NAMES } from "@/lib/system-emails";
 import { utcToZonedDate } from "@/lib/time";
-import { REPORT_NAME, shortDate } from "@/lib/visitor-words";
+import { deletionDate, REPORT_NAME, shortDate } from "@/lib/visitor-words";
 import { brand } from "@/lib/brand";
 
 // The visitor check-in report emails (visitor registration events), sent by the daily job after the clean-up.
@@ -58,6 +58,8 @@ export async function reportEmail(
     account_host: v.accountHost || "your Account Host",
   };
   const custom = customWords(KEY[kind], await loadSystemEmail(KEY[kind]), vars);
+  // A saved wording written for a named Account Host reads "your Account Host (your Account Host)" without one.
+  if (custom) custom.paragraphs = custom.paragraphs.map((p) => p.replaceAll("your Account Host (your Account Host)", "your Account Host"));
   const built = {
     morning_after: {
       subject: `Save the ${v.eventName} visitor check-in report before ${vars.deadline}`,
@@ -72,7 +74,7 @@ export async function reportEmail(
       heading: `Your access to ${v.eventName} lasts through ${vars.access_ends}`,
       paragraphs: [
         `As a Co-host of ${v.eventName}, you can open the event and its visitor check-in report through ${vars.access_ends}. If your school needs a copy, save it before then.`,
-        `After that, ${vars.account_host}${v.accountHost ? ", your Account Host," : ""} and Co-hosts of every event can still open it. ${brand.name} deletes it on ${vars.deadline}, along with families' and children's details.`,
+        `After that, ${v.accountHost ? `your Account Host (${v.accountHost})` : "your Account Host"} and Co-hosts of every event can still open it. ${brand.name} deletes it on ${vars.deadline}, along with families' and children's details.`,
       ],
     },
     // Gentler once someone confirmed the school has its copy: the same news, no instruction.
@@ -89,23 +91,27 @@ export async function reportEmail(
   const printed = v.saved
     ? `${v.saved.by ?? "Someone"} ${v.saved.kind === "report_download" ? "downloaded the report spreadsheet" : "printed the report"} on ${shortDate(v.saved.on)}.`
     : "Nobody has printed or downloaded the report yet.";
+  // Dates in order: the print or download first, then the confirmation that came after it.
   const savedLines =
     kind !== "before_deletion"
       ? [REPORT_HOW_TO_SAVE]
       : v.confirmed
         ? [
-            `${v.confirmed.by ?? "Someone"} confirmed your school has a copy on ${shortDate(v.confirmed.on)}, so there's nothing more to do. ${printed}`,
+            `${v.saved ? `${printed} ` : ""}${v.confirmed.by ?? "Someone"} confirmed your school has a copy on ${shortDate(v.confirmed.on)}, so there's nothing more to do.`,
             `If you need another copy: ${REPORT_HOW_TO_SAVE[0].toLowerCase()}${REPORT_HOW_TO_SAVE.slice(1)}`,
           ]
         : [`${printed} Nobody has confirmed your school has a copy.`, REPORT_HOW_TO_SAVE];
+  // Once the school has its copy, the subject and heading give the news ("is deleted on"), never "save", even when
+  // an admin saved other wording for this email (that wording is for the reminder to save).
+  const gentle = kind === "before_deletion" && Boolean(v.confirmed);
   const { html, text } = emailLayout({
-    heading: custom?.heading || built.heading,
+    heading: (!gentle && custom?.heading) || built.heading,
     paragraphs: [...(custom?.paragraphs ?? built.paragraphs), ...savedLines],
     button: { label: custom?.button || `Open ${REPORT_NAME.toLowerCase()}`, url: v.url },
     footer: REPORT_NO_NAMES,
   });
   // The layout's plain-text version leaves the footer out: this line belongs in both.
-  return { subject: custom?.subject || built.subject, html, text: `${text}\n\n${REPORT_NO_NAMES}` };
+  return { subject: (!gentle && custom?.subject) || built.subject, html, text: `${text}\n\n${REPORT_NO_NAMES}` };
 }
 
 /** Email addresses of the Account Host and Co-hosts of every event (the account's members), or of one event's Co-hosts. */
@@ -219,7 +225,8 @@ export async function sendVisitorReportEmails(admin: SupabaseClient, origin: str
 
     const message = await reportEmail(d.kind, {
       eventName: event.name,
-      deleteOn: d.delete_on,
+      // The one deletion date (the same day as d.delete_on).
+      deleteOn: deletionDate(event.ends_on),
       accessEndsOn: d.access_ends_on,
       checkedIn,
       adults,

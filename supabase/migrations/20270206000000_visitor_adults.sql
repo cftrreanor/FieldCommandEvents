@@ -963,6 +963,20 @@ begin
 end;
 $$;
 
+-- Undo "Our school has a copy" (a mistaken tap): the save warning comes back for everyone on the event. Hosts and
+-- Co-hosts, until the deletion date.
+create or replace function public.undo_parent_report_copy(p_event uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  if not (public.is_event_admin(p_event) and public.parent_data_kept(p_event)) then
+    raise exception 'Only the event''s Hosts and Co-hosts can do that.' using errcode = '42501';
+  end if;
+  delete from parent_report_copies where event_id = p_event;
+end;
+$$;
+
 -- The report's numbers and state, live, final, or deleted (from the totals). Hosts and Co-hosts.
 -- deleted: families' details are gone (families is null when they went before totals were kept).
 -- saved_*: the last time someone printed or downloaded the report. copy_*: who confirmed the school has a copy.
@@ -1005,6 +1019,22 @@ begin
                                  and not public.parent_check_in_counts(a.checked_in_at, ev.timezone, ev.starts_on))::int,
            day, day between ev.starts_on and ev.ends_on, day > ev.ends_on, true, false,
            ev.ends_on + 31, null::timestamptz,
+           d.at, coalesce((select nullif(btrim(p.full_name), '') from profiles p where p.id = d.by_user), d.by_name), d.kind,
+           c.confirmed_at, coalesce((select nullif(btrim(p.full_name), '') from profiles p where p.id = c.confirmed_by), c.confirmed_by_name)
+      from (select 1) one
+      left join parent_registration_adults a on a.event_id = p_event;
+  elsif t.event_id is null and exists (select 1 from parent_registrations r where r.event_id = p_event) then
+    -- Past the deletion date, before the daily clean-up has run: the totals it's about to keep, from the rows.
+    return query
+    select (select count(*)::int from parent_registrations r where r.event_id = p_event),
+           count(a.id)::int,
+           (select coalesce(sum(jsonb_array_length(r.children)), 0)::int from parent_registrations r where r.event_id = p_event),
+           count(a.id) filter (where a.sent_to_office_at is null
+                                 and public.parent_check_in_counts(a.checked_in_at, ev.timezone, ev.starts_on))::int,
+           count(a.id) filter (where a.sent_to_office_at is not null)::int,
+           count(a.id) filter (where a.sent_to_office_at is null
+                                 and not public.parent_check_in_counts(a.checked_in_at, ev.timezone, ev.starts_on))::int,
+           day, false, true, false, true, ev.ends_on + 31, null::timestamptz,
            d.at, coalesce((select nullif(btrim(p.full_name), '') from profiles p where p.id = d.by_user), d.by_name), d.kind,
            c.confirmed_at, coalesce((select nullif(btrim(p.full_name), '') from profiles p where p.id = c.confirmed_by), c.confirmed_by_name)
       from (select 1) one
@@ -1344,6 +1374,7 @@ revoke execute on function
   public.cancel_parent_registration(uuid),
   public.record_parent_download(uuid, text, integer), public.parent_visitor_list(uuid), public.parent_visitor_list_status(uuid),
   public.parent_check_in_report(uuid), public.parent_check_in_summary(uuid), public.confirm_parent_report_copy(uuid),
+  public.undo_parent_report_copy(uuid),
   public.clear_all_practice_parent_check_ins(), public.purge_parent_registrations(), public.parent_report_emails_due()
   from public, anon, authenticated;
 
@@ -1354,7 +1385,8 @@ grant execute on function
   public.set_parent_adult_name(uuid, text, text),
   public.import_parent_registration(uuid, text, text, text, jsonb, jsonb, text, text),
   public.record_parent_download(uuid, text, integer), public.parent_visitor_list(uuid), public.parent_visitor_list_status(uuid),
-  public.parent_check_in_report(uuid), public.parent_check_in_summary(uuid), public.confirm_parent_report_copy(uuid)
+  public.parent_check_in_report(uuid), public.parent_check_in_summary(uuid), public.confirm_parent_report_copy(uuid),
+  public.undo_parent_report_copy(uuid)
   to authenticated;
 
 grant execute on function

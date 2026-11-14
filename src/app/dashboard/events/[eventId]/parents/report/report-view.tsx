@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { Button, Field, Input } from "@/components/ui";
-import { REPORT_GROUPS as GROUPS } from "@/lib/visitor-words";
+import { LineIcon } from "@/components/line-icon";
+import { REPORT_GROUPS as GROUPS, SENT_TO_OFFICE } from "@/lib/visitor-words";
 import { noteParentReportPrinted } from "../actions";
-import { FrontOfficeBadge } from "../visitor-controls";
 
 /** One adult on the report, ready to show (times already in the event's time zone). */
 export type ReportLine = {
@@ -119,7 +119,11 @@ export function ReportView({ lines, final }: { lines: ReportLine[]; final: boole
                       </td>
                       <td data-label="Check-in" className={CELL}>
                         {l.status === "front_office" ? (
-                          <FrontOfficeBadge />
+                          // Plain words with an icon, like the other statuses in the column (not a pill).
+                          <span className="font-semibold">
+                            <LineIcon name="building" inline />
+                            {SENT_TO_OFFICE}
+                          </span>
                         ) : l.status === "checked_in" && l.checkedIn ? (
                           <>
                             <span className="tabular-nums">{l.checkedIn.at}</span>

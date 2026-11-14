@@ -22,6 +22,11 @@ export type ConfirmOptions = {
   cancelLabel?: string;
   /** Red action button, for deleting and other things that can't be undone. */
   danger?: boolean;
+  /**
+   * The way out is the safe choice and the main button ("Check names first"), the action a plain one beside it
+   * ("Download anyway"); stacked full width on a phone, the main one on top.
+   */
+  cancelIsMain?: boolean;
 };
 
 type AskField = { name: string; label: string; defaultValue?: string; placeholder?: string; type?: "text" | "url" };
@@ -83,7 +88,11 @@ export function DialogHost() {
   useEffect(() => {
     const el = dialog.current;
     if (!el) return;
-    if (request && !el.open) el.showModal();
+    if (request && !el.open) {
+      el.showModal();
+      // A window whose safe choice is the main button starts there (Enter never takes the risky one).
+      el.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+    }
     if (!request && el.open) el.close();
   }, [request]);
 
@@ -182,8 +191,17 @@ function DialogBody({ request: r, close }: { request: Request; close: () => void
           className="mt-4 w-full rounded-sm border border-field-border bg-background px-3 py-2 text-sm"
         />
       )}
-      <div className="mt-6 flex flex-wrap justify-end gap-2">
-        {r.kind === "share" ? (
+      <div className={r.kind === "confirm" && r.cancelIsMain ? "mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end" : "mt-6 flex flex-wrap justify-end gap-2"}>
+        {r.kind === "confirm" && r.cancelIsMain ? (
+          <>
+            <Button type="submit" variant="secondary" className="max-sm:w-full">
+              {r.confirmLabel || "Continue"}
+            </Button>
+            <Button type="button" data-autofocus onClick={close} className="max-sm:w-full">
+              {r.cancelLabel || "Never mind"}
+            </Button>
+          </>
+        ) : r.kind === "share" ? (
           <>
             <a
               href={r.url}

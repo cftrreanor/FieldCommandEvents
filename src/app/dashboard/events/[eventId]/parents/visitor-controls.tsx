@@ -7,7 +7,7 @@ import { LineIcon } from "@/components/line-icon";
 import { Button, Field, Input } from "@/components/ui";
 import { likelySplits, type NameSplit } from "@/lib/name-split";
 import { joinNames, letCheckIn, plural, SEND_TO_OFFICE, SENT_TO_OFFICE } from "@/lib/visitor-words";
-import { confirmParentReportCopy, saveParentAdultName, setParentFrontOffice } from "./actions";
+import { confirmParentReportCopy, saveParentAdultName, setParentFrontOffice, undoParentReportCopy } from "./actions";
 
 // Parent Registration's visitor tools (docs/design-decisions/2026-11-14-visitor-attendance.md): the downloads,
 // the names to check, the front-office mark, and "Our school has a copy". Each one changes data through a
@@ -56,8 +56,10 @@ export function DownloadLink({
         ...(unchecked ? [`${plural(unchecked, "name isn't", "names aren't")} checked yet. The file marks ${unchecked === 1 ? "it" : "them"} "Check first and last name"`] : []),
         ...(unsaved.size ? [`${plural(unsaved.size, "name you changed isn't", "names you changed aren't")} saved yet, so the file has the old ${unsaved.size === 1 ? "split" : "splits"}`] : []),
       ],
+      // The safe choice is the main button.
       cancelLabel: "Check names first",
       confirmLabel: "Download anyway",
+      cancelIsMain: true,
     });
     if (!ok) {
       document.getElementById("names-to-check")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -83,10 +85,21 @@ export type NameToCheck = { id: string; typed: string; first: string; last: stri
 const same = (a: NameSplit, b: NameSplit) => a.first === b.first && a.last === b.last;
 
 /**
- * One name the app split: the likely splits to choose from (the app's guess first) or Edit, then "Save name". Nothing
- * is chosen to start with, so a wrong guess is never one tap away.
+ * One name the app split: the likely splits to choose from (the app's guess first), then Edit, then "Save name".
+ * Nothing is chosen to start with, so a wrong guess is never one tap away.
  */
-function NameFix({ eventId, name }: { eventId: string; name: NameToCheck }) {
+function NameFix({
+  eventId,
+  name,
+  onSaving,
+  onSaved,
+}: {
+  eventId: string;
+  name: NameToCheck;
+  /** Saving started: keep this name's place while the page refreshes. */
+  onSaving: () => void;
+  onSaved: (saved: NameSplit) => void;
+}) {
   const group = useId();
   const choices = likelySplits(name.typed);
   // An index into choices, "edit", or nothing chosen yet.
@@ -112,11 +125,13 @@ function NameFix({ eventId, name }: { eventId: string; name: NameToCheck }) {
       setError("Fill in both the first and last name.");
       return;
     }
+    onSaving();
     start(async () => {
       setError(null);
       try {
         const r = await saveParentAdultName(eventId, name.id, picked.first, picked.last);
         if (r.error) setError(r.error);
+        else onSaved(picked);
       } catch {
         setError("That didn't save. Check your connection and try again.");
       }
@@ -126,12 +141,13 @@ function NameFix({ eventId, name }: { eventId: string; name: NameToCheck }) {
   const radio = "mt-1 size-4 shrink-0 accent-brand";
   const option = "flex min-h-11 cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 text-sm";
   return (
-    <li className="rounded-md border border-border bg-surface p-3">
+    <div>
       <fieldset>
         <legend className="text-sm">
           Typed as <span className="font-semibold">&ldquo;{name.typed}&rdquo;</span>
         </legend>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {/* One column, Edit always last. */}
+        <div className="mt-2 grid max-w-lg gap-2">
           {choices.map((c, i) => (
             <label key={i} className={`${option} ${choice === i ? "border-brand bg-brand-soft" : "border-field-border"}`}>
               <input type="radio" name={group} className={radio} checked={choice === i} onChange={() => setChoice(i)} />
@@ -170,39 +186,84 @@ function NameFix({ eventId, name }: { eventId: string; name: NameToCheck }) {
           {error}
         </p>
       )}
-    </li>
+    </div>
   );
 }
 
-/** Names the app split from one box, where the split could be wrong. Above the downloads, so they're fixed first. */
+/**
+ * Names the app split from one box, where the split could be wrong. Above the downloads, so they're fixed first. A saved
+ * name stays where it was as "Saved: First name Angela · Last name Da Silva · Change" (announced politely) until the
+ * page is opened again, so the list doesn't jump and a slip can be changed.
+ */
 export function NamesToCheck({ eventId, names }: { eventId: string; names: NameToCheck[] }) {
   const [all, setAll] = useState(false);
-  if (!names.length) return null;
+  // Every name this page has shown, in the order first shown: a saved one leaves `names` once the page refreshes.
+  const [seen, setSeen] = useState(names);
+  const [saved, setSaved] = useState<Record<string, NameSplit>>({});
+  const [changing, setChanging] = useState<Record<string, boolean>>({});
+  const [saving, setSaving] = useState<Record<string, boolean>>({});
+  const fresh = names.filter((n) => !seen.some((s) => s.id === n.id));
+  if (fresh.length) setSeen([...seen, ...fresh]);
+  const still = new Set(names.map((n) => n.id));
+  // Saved here, or still to check (a name fixed somewhere else just goes).
+  const list = seen.filter((n) => saved[n.id] || saving[n.id] || still.has(n.id));
+  if (!list.length) return null;
+  const left = list.filter((n) => !saved[n.id] || changing[n.id]).length;
   // A long list shows three at a time, so the downloads stay in sight.
-  const shown = all ? names : names.slice(0, 3);
+  const shown = all ? list : list.slice(0, 3);
   return (
     <div id="names-to-check" className="scroll-mt-20 rounded-lg border border-warning/40 bg-warning-soft p-3">
       <p className="flex gap-2 text-sm font-semibold">
         <LineIcon name="warning" className="mt-0.5 size-5 shrink-0 text-warning" />
-        {names.length === 1 ? "1 name to check before you download" : `${names.length} names to check before you download`}
+        {left === 0 ? "Names checked" : left === 1 ? "1 name to check before you download" : `${left} names to check before you download`}
       </p>
       <p className="mt-1 text-sm">
-        {names.length === 1
-          ? "We guessed where this first name ends. Choose which part is the last name, then Save name."
-          : "We guessed where each of these first names ends. Choose which part is the last name, then Save name."}
+        {list.length === 1
+          ? "This name was typed in one box. Choose where the last name starts, so the school's system checks the right person."
+          : "These names were typed in one box. Choose where the last name starts, so the school's system checks the right person."}
       </p>
-      <ul className="mt-3 space-y-2">
-        {shown.map((n) => (
-          <NameFix key={n.id} eventId={eventId} name={n} />
-        ))}
+      <ul className="mt-3 divide-y divide-warning/40 border-t border-warning/40">
+        {shown.map((n) => {
+          const done = saved[n.id];
+          return (
+            // A polite live region per name: "Saved: …" is read out when it takes the choices' place.
+            <li key={n.id} aria-live="polite" className="py-3">
+              {done && !changing[n.id] ? (
+                <p className="flex flex-wrap items-center gap-x-1 text-sm">
+                  <span className="font-semibold">Saved:</span> First name <span className="font-semibold">{done.first}</span>
+                  <span className="text-muted">·</span> Last name <span className="font-semibold">{done.last}</span>
+                  <span className="text-muted">·</span>
+                  <button
+                    type="button"
+                    onClick={() => setChanging({ ...changing, [n.id]: true })}
+                    aria-label={`Change ${done.first} ${done.last}`}
+                    className="inline-flex min-h-11 items-center px-1 font-medium text-brand underline underline-offset-4"
+                  >
+                    Change
+                  </button>
+                </p>
+              ) : (
+                <NameFix
+                  eventId={eventId}
+                  name={done ? { ...n, first: done.first, last: done.last } : n}
+                  onSaving={() => setSaving((s) => ({ ...s, [n.id]: true }))}
+                  onSaved={(split) => {
+                    setSaved((s) => ({ ...s, [n.id]: split }));
+                    setChanging((c) => ({ ...c, [n.id]: false }));
+                  }}
+                />
+              )}
+            </li>
+          );
+        })}
       </ul>
-      {shown.length < names.length && (
+      {shown.length < list.length && (
         <button
           type="button"
           className="mt-1 inline-flex min-h-11 items-center px-1 text-sm font-medium text-brand underline underline-offset-4"
           onClick={() => setAll(true)}
         >
-          Show all {names.length} names to check
+          Show all {list.length} names
         </button>
       )}
     </div>
@@ -295,7 +356,7 @@ export function FrontOfficeBadge() {
  * "Our school has a copy": after the event, a Host or Co-host confirms the school saved the report. The save warning
  * stays until then (for everyone on the event), and the week-before-deletion email is gentler after.
  */
-export function CopyConfirmButton({ eventId, deleteOn }: { eventId: string; deleteOn: string }) {
+export function CopyConfirmButton({ eventId, deleteOn, primary = false }: { eventId: string; deleteOn: string; primary?: boolean }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   async function confirm() {
@@ -304,6 +365,7 @@ export function CopyConfirmButton({ eventId, deleteOn }: { eventId: string; dele
       bullets: [
         "A printed copy, a saved PDF, or the downloaded spreadsheet, kept where your school keeps its records",
         "The reminder to save it goes away for everyone on this event, and your name and today's date show in its place",
+        "If it was a mistake, you can undo it until then",
         `The report is still deleted on ${deleteOn}`,
       ],
       cancelLabel: "Cancel",
@@ -322,7 +384,7 @@ export function CopyConfirmButton({ eventId, deleteOn }: { eventId: string; dele
   }
   return (
     <div className="flex flex-col items-start gap-1">
-      <Button type="button" variant="secondary" disabled={pending} onClick={confirm}>
+      <Button type="button" variant={primary ? "primary" : "secondary"} disabled={pending} onClick={confirm}>
         {pending ? "Saving…" : "Our school has a copy"}
       </Button>
       {error && (
@@ -331,5 +393,40 @@ export function CopyConfirmButton({ eventId, deleteOn }: { eventId: string; dele
         </p>
       )}
     </div>
+  );
+}
+
+/** A small "Undo" on the "confirmed your school has a copy" line, until the deletion date (Hosts and Co-hosts). */
+export function CopyUndoButton({ eventId }: { eventId: string }) {
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <>
+      <button
+        type="button"
+        disabled={pending}
+        aria-label="Undo: our school has a copy"
+        onClick={() =>
+          start(async () => {
+            setError(null);
+            try {
+              const r = await undoParentReportCopy(eventId);
+              if (r.error) setError(r.error);
+            } catch {
+              setError("That didn't go through. Check your connection and try again.");
+            }
+          })
+        }
+        // A 44 px tap area that doesn't push the sentence's lines apart.
+        className="relative font-medium text-brand underline underline-offset-4 before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] disabled:cursor-not-allowed disabled:text-disabled"
+      >
+        {pending ? "Undoing…" : "Undo"}
+      </button>
+      {error && (
+        <span role="alert" className="block font-semibold text-danger">
+          {error}
+        </span>
+      )}
+    </>
   );
 }

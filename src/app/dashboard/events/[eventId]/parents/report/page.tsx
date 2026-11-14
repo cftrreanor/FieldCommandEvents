@@ -15,6 +15,8 @@ import { checkInReport, checkInSummary, type ReportRow } from "@/lib/visitor-lis
 import {
   copyLine,
   deletedLine,
+  deletionDay,
+  familiesDeletedLine,
   plural,
   REPORT_GROUPS as GROUPS,
   REPORT_NAME,
@@ -25,7 +27,7 @@ import {
   shortDate,
 } from "@/lib/visitor-words";
 import { CopyLinkButton } from "../../forms";
-import { CopyConfirmButton, DownloadLink } from "../visitor-controls";
+import { CopyConfirmButton, CopyUndoButton, DownloadLink } from "../visitor-controls";
 import { PrintReportButton, ReportView, type ReportLine } from "./report-view";
 
 export const metadata: Metadata = { title: REPORT_NAME };
@@ -101,14 +103,12 @@ export default async function VisitorReportPage({ params }: PageProps<"/dashboar
         {heading}
         <Card className="mt-6 space-y-4">
           {summary.families === null ? (
-            <p className="leading-7">
-              Families&apos; and children&apos;s details were deleted 30 days after the event, as promised to families. No totals were kept for this event.
-            </p>
+            <p className="leading-7">{familiesDeletedLine(event.ends_on)} No totals were kept for this event.</p>
           ) : adults === 0 ? (
             <p className="leading-7">No families registered for this event, so there was no one to report.</p>
           ) : (
             <>
-              <p className="leading-7">{deletedLine(utcToZonedDate(summary.deleted_at ?? new Date().toISOString(), tz))}</p>
+              <p className="leading-7">{deletedLine(event.ends_on)}</p>
               <Stats
                 items={[
                   [summary.sent_to_office ?? 0, "sent to the front office"],
@@ -192,7 +192,8 @@ export default async function VisitorReportPage({ params }: PageProps<"/dashboar
         <div className="flex flex-wrap gap-2 print:hidden">
           {/* During check-in neither is the main action: a copy made now isn't the record yet (design lessons L28). */}
           <DownloadLink href={`${base}/download?list=report`}>Download report spreadsheet</DownloadLink>
-          <PrintReportButton eventId={eventId} rows={rows.length} primary={final && !summary.copy_confirmed_at} />
+          {/* After the event: printing is the main step until a copy is on record; then it's "Our school has a copy". */}
+          <PrintReportButton eventId={eventId} rows={rows.length} primary={final && !summary.copy_confirmed_at && !summary.saved_at} />
         </div>
       </div>
 
@@ -213,20 +214,20 @@ export default async function VisitorReportPage({ params }: PageProps<"/dashboar
           </p>
         ) : summary.copy_confirmed_at ? (
           <p className="rounded-md border border-border bg-background px-3 py-2 text-sm leading-6">
-            {copyLine(summary.copy_confirmed_by_name, utcToZonedDate(summary.copy_confirmed_at, tz), summary.delete_on)}
+            {copyLine(summary.copy_confirmed_by_name, utcToZonedDate(summary.copy_confirmed_at, tz), event.ends_on)} <CopyUndoButton eventId={eventId} />
           </p>
         ) : (
           // Stays until a Host or Co-host confirms the school has its copy: printing isn't proof it was kept.
           <div role="note" className="flex gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm leading-6">
             <LineIcon name="warning" className="mt-0.5 size-5 shrink-0 text-warning" />
             <div className="space-y-2">
-              <p className="font-semibold">{saveBefore(summary.delete_on)}</p>
+              <p className="font-semibold">{saveBefore(event.ends_on)}</p>
               <p>
                 {summary.saved_at
                   ? `${savedLine(summary.saved_by_name, utcToZonedDate(summary.saved_at, tz), summary.saved_kind, "report")} Once the copy is where your school keeps its records, confirm it here.`
                   : "Nobody has printed or downloaded it yet."}
               </p>
-              <CopyConfirmButton eventId={eventId} deleteOn={formatDate(summary.delete_on)} />
+              <CopyConfirmButton eventId={eventId} deleteOn={deletionDay(event.ends_on)} primary={Boolean(summary.saved_at)} />
             </div>
           </div>
         )}
@@ -260,7 +261,7 @@ function Stats({ items, className = "" }: { items: [number, string, string?][]; 
           <dt className="text-xs leading-5 text-muted sm:text-sm">{label}</dt>
           <dd className="text-2xl font-semibold tabular-nums sm:text-3xl print:text-xl">
             {href ? (
-              <a href={href} className="underline decoration-field-border decoration-2 underline-offset-4 hover:decoration-brand print:no-underline">
+              <a href={href} className="underline decoration-muted/50 decoration-1 underline-offset-[6px] hover:decoration-brand print:no-underline">
                 {n}
               </a>
             ) : (

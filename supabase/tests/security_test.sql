@@ -2816,6 +2816,13 @@ do $$ begin
   assert (select copy_confirmed_at is not null and copy_confirmed_by_name = 'Hana Host'
             from public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1')),
          'a Host confirms the school has a copy';
+  -- A mistaken tap can be undone until the deletion date: the warning comes back, and a new confirmation counts.
+  perform public.undo_parent_report_copy('10000000-0000-0000-0000-0000000000c1');
+  assert (select copy_confirmed_at is null from public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1')),
+         'a Host undoes "Our school has a copy"';
+  perform public.confirm_parent_report_copy('10000000-0000-0000-0000-0000000000c1');
+  assert (select copy_confirmed_at is not null from public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1')),
+         'and confirms it again';
   begin
     perform 1 from public.parent_report_copies;
     raise exception 'FAIL: a browser read the copy confirmations table';
@@ -2829,9 +2836,26 @@ do $$ begin
     raise exception 'FAIL: a stranger confirmed the school has a copy';
   exception when insufficient_privilege then null;
   end;
+  begin
+    perform public.undo_parent_report_copy('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a stranger undid the school''s copy';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000004","email":"vol1@example.com"}';
+do $$ begin
+  perform public.undo_parent_report_copy('10000000-0000-0000-0000-0000000000c1');
+  perform public.confirm_parent_report_copy('10000000-0000-0000-0000-0000000000c1');
+  assert (select copy_confirmed_at is not null from public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1')),
+         'a Co-host can undo and confirm the school''s copy too';
 end $$;
 set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000007","email":"newlead@example.com"}';
 do $$ begin
+  begin
+    perform public.undo_parent_report_copy('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a Volunteer Lead undid the school''s copy';
+  exception when insufficient_privilege then null;
+  end;
   assert (select count(*) from public.parent_registration_adults) = 0, 'a Volunteer Lead sees no families after the event day';
   assert (select count(*) from public.parent_registrations) = 0, 'or registrations';
 end $$;
@@ -2966,6 +2990,9 @@ reset role;
 update public.events set starts_on = (now() at time zone timezone)::date - 31, ends_on = (now() at time zone timezone)::date - 31,
        window_start = now() - interval '31 days', window_end = now() - interval '31 days' + interval '3 hours'
  where id = '10000000-0000-0000-0000-0000000000c1';
+-- A practice check-in from the day before the event (left behind): never counted in the kept totals.
+update public.parent_registration_adults set checked_in_at = now() - interval '32 days'
+ where event_id = '10000000-0000-0000-0000-0000000000c1' and first_name = 'Pieter';
 set role authenticated;
 set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
 do $$ begin
@@ -2974,6 +3001,15 @@ do $$ begin
   begin
     perform public.parent_check_in_report('10000000-0000-0000-0000-0000000000c1');
     raise exception 'FAIL: the report showed names after 30 days';
+  exception when insufficient_privilege then null;
+  end;
+  -- Before the daily clean-up runs, the deleted report already shows the totals it's about to keep (not "none kept").
+  assert (select deleted and families = 3 and adults = 9 and checked_in = 2 and sent_to_office = 1 and not_checked_in = 6
+            from public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1')),
+         'past the deletion date, before the clean-up: the totals from the rows';
+  begin
+    perform public.undo_parent_report_copy('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: undid the school''s copy after the deletion date';
   exception when insufficient_privilege then null;
   end;
 end $$;

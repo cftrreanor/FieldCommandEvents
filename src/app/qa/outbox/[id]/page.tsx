@@ -5,6 +5,7 @@ import { HeaderBar } from "@/components/logo";
 import { isQa } from "@/lib/qa";
 import { missing } from "@/lib/schema-check";
 import { createAdminClient } from "@/lib/supabase/server";
+import { EmailFrame } from "./email-frame";
 
 export const metadata: Metadata = { title: "QA outbox" };
 
@@ -39,13 +40,8 @@ export default async function QaEmailPage({ params }: PageProps<"/qa/outbox/[id]
             </div>
           ))}
         </dl>
-        {/* The email as sent, walled off from this page (no scripts, no forms). */}
-        <iframe
-          title={`Email: ${email.subject}`}
-          srcDoc={email.html}
-          sandbox="allow-popups allow-popups-to-escape-sandbox"
-          className="mt-6 h-[75vh] w-full rounded-lg border border-border bg-white"
-        />
+        {/* The email as sent, walled off from this page (no scripts, no forms), as tall as the email. */}
+        <EmailFrame title={`Email: ${email.subject}`} html={email.html} />
         {email.text_body && (
           <details className="mt-6">
             <summary className="cursor-pointer font-semibold">Plain-text version</summary>
