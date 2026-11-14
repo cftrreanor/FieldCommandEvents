@@ -35,7 +35,7 @@ parent-teacher conferences.
 | Band contests and choir, orchestra, and group festivals | **None.** Headcounts only (students, chaperones, vehicles). | Directors' names, school email addresses, and phone numbers; school name and address |
 | Volunteer events and fair volunteer stations | Under-18 helpers: **first name and last initial only** (for example "Emma R."), signed up by a parent or guardian | Volunteers' names, email addresses, and phone numbers; shift check-in times |
 | School fairs | None | Booth partners' contact name, email address, and phone number |
-| Family visitor days (lunches, open houses, class parties) | Each child's **name, teacher, and grade** | Parent's name, email address, and phone number; other adults' names; door check-in times |
+| Family visitor days (lunches, open houses, class parties) | Each child's **name, teacher, and grade** | Each adult's first and last name; the registering parent's email address and phone number; door check-in times and who checked each adult in; whether a Host asked the door to send an adult to the front office (yes or no, no reason stored) |
 | Parent-teacher conferences | The child's **name** and the parent's optional note to the teacher | Up to four parents' names, email addresses, and phone numbers; for phone calls, the number the teacher calls; whether the meeting happened |
 | Organizer and team accounts | None | Name, email address, phone number (optional), and sign-in history |
 
@@ -47,8 +47,21 @@ health, discipline, or special education information, and students never have ac
 Access is enforced by the database itself, not just by the app's screens, and every rule has an
 automated test.
 
-- **Families' and children's details (visitor days):** the event's Hosts, Co-hosts, and
-  Volunteer Leads (who run the door desk), and Coordinators on event day only.
+- **Families' and children's details (visitor days)** (20270206000000_visitor_adults.sql): the
+  event's Hosts and Co-hosts while the details are kept. The door team sees families' names,
+  children, phone numbers, and check-ins only from the day before the event through the event day
+  (Volunteer Leads), or on the event day (Coordinators), in the event's time zone, and never email
+  addresses (the email column isn't readable by signed-in people; Hosts and Co-hosts get addresses
+  from a Host/Co-host-only function).
+- **Visitor lists and the visitor check-in report (visitor days):** only the event's Hosts and
+  Co-hosts can download the visitor list (one row per adult per child, for the school's own visitor
+  system), the class list, or the report spreadsheet, or open the report. All are built on the
+  server by Host/Co-host-only database functions. A names-free log records who downloaded or
+  printed what, when, and how many rows; only Hosts and Co-hosts see it.
+- **"Send to the front office" (visitor days):** a yes or no on one adult, with no reason stored.
+  Only Hosts and Co-hosts set or clear it, through a database function. Hosts, Co-hosts, and the
+  door team at the door (in the window above) see it: the door shows a note to send that adult to
+  the front office instead of the Check in button, and the database refuses to check them in.
 - **Conference bookings, parents' notes, and the number to call for phone calls:** only the teacher who set up the conference and the hosts and co-hosts on their account (20261228000000_reschedule_meetings.sql), who can reschedule or cancel a meeting. Hosts can also send booking emails to up to five other addresses they choose (20261230000000_notification_recipients.sql, Event settings → Notifications); when they do, the family's privacy note and booking emails say their details go to the people the teacher chose to notify. The same setting can send a daily summary of volunteer sign-ups and cancellations (names and shifts) to the hosts, Volunteer Leads, or addresses they pick. A cancelled sign-up is kept for that summary (the volunteer's name, the shift, and when) in volunteer_dropped_shifts, which only the server can read, and deleted after 7 days. Cancelled items to bring are noted there the same way. A switched shift is noted the same way in volunteer_changes (20270102000000_group_signup.sql), also deleted after 7 days. Each person picks what their summary includes (new bookings, changes, cancellations) in volunteer_digest_prefs; they see only their own choices, and hosts see everyone's on their events.
 - **Feedback** (feedback, 20270103000000_feedback.sql): what someone sends from the Feedback button, the page path (private links replaced by ":link"), their browser type, an optional screenshot (private storage), and, for signed-in people, their name, email, and account; others may give an email for a reply. Only platform admins can read it. The GitHub issue made from it holds the message, page, and role only, never a name, email, or screenshot.
 - **Guardian confirmations for under-18 volunteers** (minor_consents, 20270102000000_group_signup.sql): when someone signs up a minor, the booker's name and email, the minor's first name and last initial, the time with its time zone, and the exact words they confirmed are kept permanently, so organizers can show who gave permission. No one can edit or delete them; only the event's hosts and Volunteer Leads can read them. A minor's age is kept on their volunteer record to check shifts with a minimum age.
@@ -99,7 +112,7 @@ Deletion runs automatically every day.
 
 | Information | Deleted |
 |---|---|
-| Children's details from visitor days | 30 days after the event |
+| Families' and children's details from visitor days, including check-in times and front-office marks, and the visitor check-in report | 30 days after the event (names-free totals are kept with the event: families, adults, and children registered, adults checked in, and adults sent to the front office) |
 | Conference bookings (child's name, parents, notes, number to call) | 30 days after the conference; for weekly hours, 30 days after each meeting (`20261211000000_conference_weekly_hours.sql`) |
 | Volunteers, including under-18 helpers | 10 days after the event (shift totals are kept, without names) |
 | Files shared with an event | 30 days after the event |
@@ -112,8 +125,13 @@ An organizer can also delete an event at any time, which removes everything atta
 right away. Emails and calendar invites already sent (to families, volunteers, directors, and
 conference teachers, whose invite names the child by first name and last initial and, for phone
 calls, gives the number to call) stay in each
-recipient's inbox and calendar. Copies an organizer prints, downloads, or copies out of the app are the school's own
-records, kept under the school's policies.
+recipient's inbox and calendar. Copies an organizer prints, downloads, or copies out of the app, including visitor lists and the
+visitor check-in report, are the school's own records, kept under the school's policies. Before a
+visitor day's details are deleted, the daily job emails the Account Host and Co-hosts of every
+event the morning after the event and a week before deletion, and Co-hosts of just that event
+about a week after it (their access ends 10 days after), so the school can save the report. These
+emails carry no family names, and they always go: they're records-safety emails, not one of the
+notification choices in Email settings.
 
 ## Ownership and how we use it
 
@@ -163,7 +181,7 @@ Check marks show data the service can collect when a district uses the matching 
 | | Browser, device, cookies | ✓ | Sign-in cookie for account users only; no tracking cookies |
 | Application use statistics | Meta data on user interaction | | Not collected (no analytics) |
 | Assessment | Any | | Not collected |
-| Attendance | Student school attendance | | Not collected. Event check-in times are recorded for adults. |
+| Attendance | Student school attendance | | Not collected. Event door check-in times are recorded for adults, and deleted 30 days after the event. |
 | Communications | Online communications | ✓ | Emails the service sends (confirmations, reminders, organizer announcements); a parent's optional note to a teacher |
 | Conduct | Any | | Not collected |
 | Demographics | Date of birth, gender, ethnicity, language, and the like | | Not collected |

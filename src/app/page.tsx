@@ -122,7 +122,7 @@ const faqs = [
   },
   {
     q: "Can I use this instead of an online form for parent check-in?",
-    a: "Yes. For a school visitor event, parents register ahead with each child's name, teacher, and grade, and they get a reminder to bring a photo ID. Your front office checks every adult in at the door on any phone. Only your event team sees children's details, and they're deleted 30 days after the event.",
+    a: "Yes. For a school visitor event, parents register ahead with each child's name, teacher, and grade, and they get a reminder to bring a photo ID. Your front office checks every adult in at the door on any phone, and Hosts can download a visitor list for the school's visitor system. Only your event team sees children's details. Children's details in the app are deleted 30 days after the event. Lists you download are your school's records.",
   },
   {
     q: "How do band and choir directors register for our contest or festival?",
@@ -146,7 +146,7 @@ const faqs = [
   },
   {
     q: "How is student and family information handled?",
-    a: `Band contests collect headcounts, not student names. Children's names at school visitor events and conferences are deleted 30 days after the event, and volunteers' phone numbers 10 days after. Conference bookings are seen only by the teacher, and Coordinators see volunteers' phone numbers only on event day. No ads, no spam, and emails used only for your event. ${SPONSOR_PROMISE} Our Student data privacy page has the full details.`,
+    a: `Band contests collect headcounts, not student names. Children's names at school visitor events and conferences are deleted from the app 30 days after the event (lists you download are your school's records), and volunteers' phone numbers 10 days after. Conference bookings are seen only by the teacher, and Coordinators see volunteers' phone numbers only on event day. No ads, no spam, and emails used only for your event. ${SPONSOR_PROMISE} Our Student data privacy page has the full details.`,
   },
 ];
 

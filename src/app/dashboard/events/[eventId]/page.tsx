@@ -748,7 +748,9 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
                 ? access.canManage
                   ? `Families' details open for the door team the day before the event (${formatDate(dayBefore.toISOString().slice(0, 10), { year: undefined })}), for door check-in.`
                   : `Children's details open for ${words2.many} on event day (${formatDate(event.starts_on, { year: undefined })}), for door check-in.`
-                : `Children's details are seen only by your team (${words2.many} on event day) and deleted 30 days after the event.`}
+                : access.isHost
+                  ? `Hosts and Co-hosts see families' details until they're deleted, 30 days after the event. The door team sees them only from ${formatDate(dayBefore.toISOString().slice(0, 10), { year: undefined })} through ${formatDate(event.ends_on, { year: undefined })} (${words2.many} on event day only), never email addresses.`
+                  : `Families' details are open for door check-in through ${formatDate(event.ends_on, { year: undefined })}, without email addresses. They're deleted 30 days after the event.`}
             </p>
           </div>
           {!doorLocked && (
