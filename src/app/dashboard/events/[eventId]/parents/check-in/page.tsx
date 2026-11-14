@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { hasParents } from "@/lib/event-types";
 import { formatPhone } from "@/lib/phone";
-import type { Child, OtherAdult } from "@/lib/parents";
+import { ADULTS, sortedAdults, type Child } from "@/lib/parents";
 import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, utcToZonedDate } from "@/lib/time";
@@ -28,22 +28,31 @@ export default async function ParentCheckInPage({ params }: PageProps<"/dashboar
   if (!event) missing();
   if (!hasParents(event.event_type) || !allowed) redirect(`/dashboard/events/${eventId}`);
 
+  // Practice check-ins from the day before don't count once the event starts; families show to the door team
+  // from the day before (Hosts and Co-hosts any time).
+  const [, { data: visible }] = await Promise.all([
+    supabase.rpc("clear_practice_parent_check_ins", { p_event: eventId }),
+    supabase.rpc("parent_families_visible", { ev: eventId }),
+  ]);
   const { data } = await supabase
     .from("parent_registrations")
-    .select("id, parent_name, email, phone, children, other_adults, checked_in_at")
+    .select(`id, parent_name, phone, children, ${ADULTS}`)
     .eq("event_id", eventId)
     .order("parent_name");
   const parents: DoorParent[] = (data ?? []).map((r) => ({
     id: r.id,
-    email: r.email,
     phone: r.phone,
     phoneDisplay: r.phone ? formatPhone(r.phone) : null,
     children: (r.children ?? []) as Child[],
     // The registering parent first, then everyone they named, each checked in on their own.
-    adults: [
-      { index: 0, name: r.parent_name, checkedIn: Boolean(r.checked_in_at) },
-      ...((r.other_adults ?? []) as OtherAdult[]).map((a, i) => ({ index: i + 1, name: a.name, checkedIn: Boolean(a.checked_in_at) })),
-    ],
+    adults: sortedAdults(r.adults).map((a) => ({
+      id: a.id,
+      position: a.position,
+      name: a.full_name,
+      firstName: a.first_name,
+      checkedIn: Boolean(a.checked_in_at),
+      sentToOffice: Boolean(a.sent_to_office_at),
+    })),
   }));
   const childCount = parents.reduce((n, p) => n + p.children.length, 0);
   const adultCount = parents.reduce((n, p) => n + p.adults.length, 0);
@@ -72,7 +81,13 @@ export default async function ParentCheckInPage({ params }: PageProps<"/dashboar
           ? "Not on the list? Walk-ins are allowed: send them through the school's visitor process."
           : "Not on the list? Send them through the school's visitor process."}
       </p>
-      <Door parents={parents} open={checkInOpen} opensOn={formatDate(addDays(event.starts_on, -1))} toggle={setParentCheckedIn.bind(null, eventId)} />
+      {visible ? (
+        <Door parents={parents} open={checkInOpen} opensOn={formatDate(addDays(event.starts_on, -1))} toggle={setParentCheckedIn.bind(null, eventId)} />
+      ) : (
+        <p className="rounded-md border border-border bg-surface px-3 py-2 text-sm">
+          Families show here from {formatDate(addDays(event.starts_on, -1))} through the end of the event.
+        </p>
+      )}
     </div>
   );
 }

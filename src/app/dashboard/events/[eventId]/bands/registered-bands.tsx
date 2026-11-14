@@ -4,6 +4,7 @@ import { useState } from "react";
 import { mealOptionsOrDefault, mealPrice, mealSummary, mealTotal, type MealOrder } from "@/lib/meal-price";
 import { Badge, Button, Card } from "@/components/ui";
 import type { BandRow } from "@/lib/bands";
+import { downloadCsv } from "@/lib/csv";
 import { formatPhone } from "@/lib/phone";
 
 type Words = { one: string; many: string; One: string; Many: string };
@@ -19,13 +20,6 @@ function vehicles(b: Pick<BandRow, "bus_count" | "box_truck_count" | "truck_trai
     buses ? null : b.semi_truck_count ? n(b.semi_truck_count, "semi") : null,
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : "None";
-}
-
-/** A spreadsheet cell: quoted, and text that starts like a formula is kept as plain text. */
-function cell(v: string | number) {
-  const s = String(v);
-  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
-  return `"${safe.replace(/"/g, '""')}"`;
 }
 
 type Meals = { orders: Record<string, MealOrder>; options: string[]; priceCents: number | null };
@@ -44,13 +38,7 @@ function download(bands: BandRow[], words: Words, groups: boolean, fileName: str
     b.head_director_name, b.head_director_email, formatPhone(b.head_director_phone), b.assistant_directors.join(", "),
     b.contact_email, b.school_address ?? "", b.contest_day_conflicts ?? "", b.special_needs ?? "", ...mealOptions.map((o) => meals?.orders[b.id]?.counts[o] ?? 0), ...(meals ? [meals.orders[b.id]?.note ?? ""] : []), b.created_at.slice(0, 10), b.scratched_at ? "Yes" : "",
   ]);
-  const csv = [head, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");
-  const url = URL.createObjectURL(new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fileName;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadCsv(fileName, [head, ...rows]);
 }
 
 /**

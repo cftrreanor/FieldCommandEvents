@@ -5,12 +5,11 @@ import { Input } from "@/components/ui";
 import type { ActionState } from "@/lib/action-state";
 import { confirmDialog } from "@/components/confirm-dialog";
 
-/** One adult on a registration. index 0 is the parent who registered. */
-export type DoorAdult = { index: number; name: string; checkedIn: boolean };
+/** One adult on a registration (their own record). position 0 is the parent who registered. */
+export type DoorAdult = { id: string; position: number; name: string; firstName: string; checkedIn: boolean; sentToOffice: boolean };
 
 export type DoorParent = {
   id: string;
-  email: string;
   phone: string | null;
   phoneDisplay: string | null;
   children: { name: string; teacher: string; grade: string }[];
@@ -29,29 +28,25 @@ export function Door({
   open: boolean;
   /** When the check-in buttons turn on, for the note shown before then. */
   opensOn: string;
-  toggle: (id: string, adult: number, checkedIn: boolean) => Promise<ActionState>;
+  toggle: (adultId: string, checkedIn: boolean) => Promise<ActionState>;
 }) {
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [optimistic, setOptimistic] = useOptimistic(
     parents,
-    (state, change: { id: string; adult: number; checkedIn: boolean }) =>
-      state.map((p) =>
-        p.id === change.id
-          ? { ...p, adults: p.adults.map((a) => (a.index === change.adult ? { ...a, checkedIn: change.checkedIn } : a)) }
-          : p,
-      ),
+    (state, change: { adultId: string; checkedIn: boolean }) =>
+      state.map((p) => ({ ...p, adults: p.adults.map((a) => (a.id === change.adultId ? { ...a, checkedIn: change.checkedIn } : a)) })),
   );
   const everyone = optimistic.flatMap((p) => p.adults);
   const here = everyone.filter((a) => a.checkedIn).length;
 
-  async function onToggle(p: DoorParent, a: DoorAdult) {
+  async function onToggle(a: DoorAdult) {
     if (a.checkedIn && !(await confirmDialog({ title: `Undo ${a.name}'s check-in?`, confirmLabel: "Undo check-in" }))) return;
     setError(null);
     startTransition(async () => {
-      setOptimistic({ id: p.id, adult: a.index, checkedIn: !a.checkedIn });
+      setOptimistic({ adultId: a.id, checkedIn: !a.checkedIn });
       try {
-        const result = await toggle(p.id, a.index, !a.checkedIn);
+        const result = await toggle(a.id, !a.checkedIn);
         if (result.error) setError(result.error);
       } catch {
         setError("That didn't go through. Check your signal and tap again.");
@@ -59,13 +54,13 @@ export function Door({
     });
   }
 
-  // Any adult's name, the children's names and teachers, email and phone.
+  // Any adult's name, the children's names and teachers, and the phone (the door never gets email addresses).
   const q = query.trim().toLowerCase();
   const shown = useMemo(
     () =>
       q
         ? optimistic.filter((p) =>
-            [...p.adults.map((a) => a.name), p.email, p.phone ?? "", p.phoneDisplay ?? "", ...p.children.flatMap((c) => [c.name, c.teacher])].some(
+            [...p.adults.map((a) => a.name), p.phone ?? "", p.phoneDisplay ?? "", ...p.children.flatMap((c) => [c.name, c.teacher])].some(
               (x) => x.toLowerCase().includes(q),
             ),
           )
@@ -122,21 +117,26 @@ export function Door({
               </div>
               <ul className="mt-2 divide-y divide-border border-t border-border">
                 {p.adults.map((a) => (
-                  <li key={a.index} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                  <li key={a.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
                     <div className="min-w-0">
                       <p className="font-semibold">{a.name}</p>
-                      {a.index === 0 && p.phone && (
+                      {a.position === 0 && p.phone && (
                         <a href={`tel:${p.phone}`} aria-label={`Call ${a.name}, ${p.phoneDisplay}`} className="inline-flex min-h-11 items-center text-sm font-medium text-brand hover:underline">
                           {p.phoneDisplay}
                         </a>
                       )}
                     </div>
-                    {!open ? (
+                    {a.sentToOffice ? (
+                      // A Host stopped this adult at the door: a plain note takes the button's place, so it can't be tapped through.
+                      <p className="flex min-h-12 w-36 shrink-0 items-center rounded-md border-2 border-foreground bg-surface px-3 py-1.5 text-sm font-semibold leading-snug sm:w-48">
+                        Please ask {a.firstName} to go to the front office.
+                      </p>
+                    ) : !open ? (
                       a.checkedIn && <span className="shrink-0 text-sm font-semibold text-success">✓ Checked in</span>
                     ) : (
                       <button
                         type="button"
-                        onClick={() => onToggle(p, a)}
+                        onClick={() => onToggle(a)}
                         aria-pressed={a.checkedIn}
                         aria-label={a.checkedIn ? `${a.name} is checked in. Tap to undo.` : `ID checked: check in ${a.name}`}
                         className={`flex min-h-12 min-w-36 shrink-0 flex-col items-center justify-center rounded-md px-3 text-sm font-semibold transition ${

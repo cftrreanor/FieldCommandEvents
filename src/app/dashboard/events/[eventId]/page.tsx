@@ -284,11 +284,19 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   // School visitor events: parents registered and checked in at the door.
   const parentsHere = hasParents(event.event_type);
   const parentRows = parentsHere
-    ? ((await supabase.from("parent_registrations").select("created_at, checked_in_at, adult_count, other_adults, children").eq("event_id", eventId)).data ?? [])
+    ? ((
+        await supabase
+          .from("parent_registrations")
+          .select("created_at, adult_count, children, adults:parent_registration_adults(checked_in_at, sent_to_office_at)")
+          .eq("event_id", eventId)
+      ).data ?? [])
     : [];
-  const parentNumbers = parentStats(parentRows);
-  // Coordinators see children's details (and work the door) on event day only.
-  const doorLocked = parentsHere && !access.canManage && !isEventDay;
+  const parentNumbers = parentStats(parentRows, event);
+  // The door team sees families from the day before (Volunteer Leads; a practice run) or on event day (Section Leads).
+  const dayBefore = new Date(`${event.starts_on}T12:00:00Z`);
+  dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
+  const inDoorWindow = today >= dayBefore.toISOString().slice(0, 10) && today <= event.ends_on;
+  const doorLocked = parentsHere && !access.isHost && !(access.canManage ? inDoorWindow : isEventDay);
   const checkedIn = { done: (checkins ?? []).filter((c) => c.checked_in_at).length, of: (checkins ?? []).length };
   // Spots saved for adults each shift still needs (after the 20270110000000 update).
   const adultNeeds = new Map(
@@ -720,7 +728,9 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           <div className="space-y-1 text-sm leading-6">
             <p className="font-medium">
               {doorLocked
-                ? "Door check-in opens on event day."
+                ? access.canManage
+                  ? "Door check-in opens the day before the event."
+                  : "Door check-in opens on event day."
                 : isEventDay
                   ? `${parentNumbers.adultsArrived} of ${parentNumbers.adults} adults checked in.`
                   : `${parentNumbers.families} ${parentNumbers.families === 1 ? "family" : "families"} registered.`}
@@ -735,7 +745,9 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
             <p className="text-muted">
               <LineIcon name="lock" inline />
               {doorLocked
-                ? `Children's details open for ${words2.many} on event day (${formatDate(event.starts_on, { year: undefined })}), for door check-in.`
+                ? access.canManage
+                  ? `Families' details open for the door team the day before the event (${formatDate(dayBefore.toISOString().slice(0, 10), { year: undefined })}), for door check-in.`
+                  : `Children's details open for ${words2.many} on event day (${formatDate(event.starts_on, { year: undefined })}), for door check-in.`
                 : `Children's details are seen only by your team (${words2.many} on event day) and deleted 30 days after the event.`}
             </p>
           </div>

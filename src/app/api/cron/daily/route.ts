@@ -5,7 +5,7 @@ import { getOrigin } from "@/lib/data";
 import { pause, sendEmail } from "@/lib/email";
 import { bookingEmail, bookingLink, withCallPhone, type Booking } from "@/lib/conference-bookings";
 import { loadConferenceSettings } from "@/lib/conference-settings";
-import { adultNames, parentEmail, parentLink, type Child } from "@/lib/parents";
+import { ADULTS, otherAdultNames, parentEmail, parentLink, type Child } from "@/lib/parents";
 import { runRetention } from "@/lib/retention";
 import { createAdminClient } from "@/lib/supabase/server";
 import { isSchemaError } from "@/lib/schema-check";
@@ -46,8 +46,12 @@ async function runDailyJob() {
   const admin = createAdminClient();
   const started = Date.now();
 
+  // Families' details 30 days after the event (names-free totals are kept first).
   const { data: purged, error: purgeError } = await admin.rpc("purge_parent_registrations");
   if (purgeError) console.error("purge_parent_registrations failed", purgeError);
+  // Practice check-ins (the day before) don't count once an event's first day starts.
+  const { error: practiceError } = await admin.rpc("clear_all_practice_parent_check_ins");
+  if (practiceError && !isSchemaError(practiceError)) console.error("clear_all_practice_parent_check_ins failed", practiceError);
   // Conference bookings (children's names, parents' notes) 30 days after the conference.
   const { data: bookingsPurged, error: bookingPurgeError } = await admin.rpc("purge_conference_bookings");
   if (bookingPurgeError && !isSchemaError(bookingPurgeError)) console.error("purge_conference_bookings failed", bookingPurgeError);
@@ -88,7 +92,7 @@ async function runDailyJob() {
   for (const event of tomorrow) {
     const { data: regs } = await admin
       .from("parent_registrations")
-      .select("id, parent_name, email, children, other_adults, access_token, calendar_sequence")
+      .select(`id, parent_name, email, children, access_token, calendar_sequence, ${ADULTS}`)
       .eq("event_id", event.id)
       .is("reminded_at", null);
     for (const r of regs ?? []) {
@@ -99,7 +103,7 @@ async function runDailyJob() {
       }
       const { subject, html, text } = await parentEmail(
         "reminder",
-        { ...r, children: r.children as Child[], other_adults: adultNames(r.other_adults) },
+        { ...r, children: r.children as Child[], other_adults: otherAdultNames(r.adults) },
         event,
         parentLink(origin, event.slug, r.access_token),
       );

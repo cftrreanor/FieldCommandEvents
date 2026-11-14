@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button, Input } from "@/components/ui";
+import { Input } from "@/components/ui";
 import type { Child } from "@/lib/parents";
 import { formatDate } from "@/lib/time";
 
@@ -15,10 +15,8 @@ export type ListedFamily = {
   registeredOn: string;
 };
 
-const csvCell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-
 /** Parent Registration → Registered families: everyone on the list, searchable, with a download. Check-in is on its own page. */
-export function FamiliesList({ families, fileName }: { families: ListedFamily[]; fileName: string }) {
+export function FamiliesList({ families, downloadHref }: { families: ListedFamily[]; downloadHref: string }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const shown = useMemo(
@@ -28,27 +26,20 @@ export function FamiliesList({ families, fileName }: { families: ListedFamily[];
         : families,
     [families, q],
   );
-  const download = () => {
-    const rows = [
-      ["Adults", "Child", "Grade", "Teacher", "Email", "Phone", "Registered"],
-      ...families.flatMap((f) => f.children.map((c) => [f.adults.join("; "), c.name, c.grade, c.teacher, f.email, f.phone ?? "", f.registeredOn])),
-    ];
-    const blob = new Blob([rows.map((r) => r.map(csvCell).join(",")).join("\n")], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = fileName;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
 
   if (!families.length) return <p className="text-muted">No families have registered yet.</p>;
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
         <Input type="search" placeholder="Adult, child, or teacher" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Find a family" className="sm:max-w-xs" />
-        <Button type="button" variant="secondary" className="ml-auto" onClick={download}>
+        {/* Built on the server (only Hosts and Co-hosts get it) and noted in the download log. */}
+        <a
+          href={downloadHref}
+          download
+          className="ml-auto inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-field-border bg-surface px-4 text-sm font-semibold transition hover:border-brand hover:bg-background active:translate-y-px"
+        >
           Download list
-        </Button>
+        </a>
       </div>
       {shown.length === 0 ? (
         <p className="text-muted">No one matches that.</p>

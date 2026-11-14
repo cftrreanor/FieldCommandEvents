@@ -7,7 +7,7 @@ import { Card } from "@/components/ui";
 import { GRADES } from "@/lib/grades";
 import { createAdminClient } from "@/lib/supabase/server";
 import { googleCalendarUrl } from "@/lib/ics";
-import { adultNames, ID_REMINDER, parentLink, parentRegistrationClosed, toIcsEvent, type Child } from "@/lib/parents";
+import { ADULTS, ID_REMINDER, otherAdultNames, sortedAdults, parentLink, parentRegistrationClosed, toIcsEvent, type Child } from "@/lib/parents";
 import { formatDateRange, formatTimeRange } from "@/lib/time";
 import { getOrigin } from "@/lib/data";
 import { cancelParents, updateParents } from "../../actions";
@@ -24,7 +24,7 @@ export default async function ParentRegistrationLinkPage({ params }: PageProps<"
   const { data: reg } = valid
     ? await admin
         .from("parent_registrations")
-        .select("id, event_id, parent_name, email, phone, children, other_adults, checked_in_at, calendar_sequence")
+        .select(`id, event_id, parent_name, email, phone, children, calendar_sequence, ${ADULTS}`)
         .eq("access_token", token)
         .maybeSingle()
     : { data: null };
@@ -36,10 +36,13 @@ export default async function ParentRegistrationLinkPage({ params }: PageProps<"
         .maybeSingle()
     : { data: null };
   const children = (reg?.children ?? []) as Child[];
+  const others = otherAdultNames(reg?.adults);
+  // Anyone on the registration checked in at the door.
+  const checkedIn = sortedAdults(reg?.adults).some((a) => a.checked_in_at);
   const calendar =
     reg && event
       ? googleCalendarUrl(
-          toIcsEvent({ ...reg, children, other_adults: adultNames(reg.other_adults) }, event, parentLink(await getOrigin(), slug, token)),
+          toIcsEvent({ ...reg, children, other_adults: others }, event, parentLink(await getOrigin(), slug, token)),
         )
       : null;
   const linkClass = "inline-flex min-h-11 items-center font-medium text-brand underline-offset-4 hover:underline";
@@ -74,10 +77,10 @@ export default async function ParentRegistrationLinkPage({ params }: PageProps<"
                   <dt className="inline text-muted">Parent: </dt>
                   <dd className="inline font-medium">{reg.parent_name}</dd>
                 </div>
-                {adultNames(reg.other_adults).length > 0 && (
+                {others.length > 0 && (
                   <div>
                     <dt className="inline text-muted">Also coming: </dt>
-                    <dd className="inline">{adultNames(reg.other_adults).join(", ")}</dd>
+                    <dd className="inline">{others.join(", ")}</dd>
                   </div>
                 )}
                 <div>
@@ -95,8 +98,8 @@ export default async function ParentRegistrationLinkPage({ params }: PageProps<"
                   </li>
                 ))}
               </ul>
-              {reg.checked_in_at && <p className="mt-3 text-sm font-medium text-success">✓ Checked in</p>}
-              {calendar && !reg.checked_in_at && (
+              {checkedIn && <p className="mt-3 text-sm font-medium text-success">✓ Checked in</p>}
+              {calendar && !checkedIn && (
                 <p className="mt-3 flex flex-wrap items-center gap-x-4 text-sm">
                   <span className="text-muted">Add to calendar:</span>
                   <a href={calendar} target="_blank" rel="noreferrer" className={linkClass}>
@@ -126,7 +129,7 @@ export default async function ParentRegistrationLinkPage({ params }: PageProps<"
                         parentName: reg.parent_name,
                         email: reg.email,
                         phone: reg.phone ?? "",
-                        otherAdults: adultNames(reg.other_adults),
+                        otherAdults: others,
                         children,
                       }}
                     />
@@ -135,7 +138,7 @@ export default async function ParentRegistrationLinkPage({ params }: PageProps<"
               ) : (
                 <p className="text-sm leading-6 text-muted">Registration is closed, so changes can&apos;t be made online. Contact the school.</p>
               )}
-              {!reg.checked_in_at && (
+              {!checkedIn && (
                 <ActionForm
                   action={cancelParents.bind(null, token)}
                   confirmMessage="Cancel this registration?"

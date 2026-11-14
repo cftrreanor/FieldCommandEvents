@@ -2240,13 +2240,17 @@ end $$;
 reset role;
 
 -- ---------------------------------------------------------------------------
--- School visitor events: parent registration, the door, 30-day erasing
+-- School visitor events: parent registration, each adult's record, the door,
+-- the stop mark, the report and downloads, 30-day erasing with totals kept
+-- (20261030000000_school_visits.sql, 20270206000000_visitor_adults.sql)
 -- ---------------------------------------------------------------------------
 insert into public.events (id, organization_id, name, slug, status, event_type, starts_on, ends_on, window_start, window_end, venue_address)
 values ('10000000-0000-0000-0000-0000000000c1',
         (select organization_id from public.events where id = '10000000-0000-0000-0000-00000000000a'),
         'Open House', 'open-house', 'published', 'school_visit', current_date + 3, current_date + 3,
         now() + interval '3 days', now() + interval '3 days 3 hours', '1 School Rd');
+update public.events set starts_on = (now() at time zone timezone)::date + 3, ends_on = (now() at time zone timezone)::date + 3
+ where id = '10000000-0000-0000-0000-0000000000c1';
 -- Registration starts closed, even once the event is published: nobody can register until the host opens it.
 set role service_role;
 do $$ begin
@@ -2262,11 +2266,14 @@ do $$ begin
 end $$;
 reset role;
 update public.events set parent_registration_open = true where id = '10000000-0000-0000-0000-0000000000c1';
+-- The door team: a Section Lead (Lee), a Volunteer Lead (Nia), and a Co-host of just this event (Val).
 insert into public.event_staff (event_id, user_id, role)
-values ('10000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-000000000003', 'section_lead');
+values ('10000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-000000000003', 'section_lead'),
+       ('10000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-000000000007', 'volunteer_director'),
+       ('10000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-000000000004', 'co_host');
 set role service_role;
 do $$
-declare t1 uuid; t2 uuid;
+declare t1 uuid; t2 uuid; ad record;
 begin
   t1 := public.register_parents('10000000-0000-0000-0000-0000000000c1', 'Rita Parent', 'Rita@example.com', '+15125550170',
           '[{"name":"Ava Lopez","teacher":"Smith","grade":"3rd"},{"name":"Leo Lopez","teacher":"Jones","grade":"K"}]');
@@ -2280,6 +2287,11 @@ begin
          'registering again with a known email changes nothing';
   assert (select adult_count from public.parent_registrations where email = 'rita@example.com') = 1,
          'one adult when not given';
+  -- Each adult is a record. A name typed in one box is split at the last space, not marked when the split is safe.
+  select a.* into ad from public.parent_registration_adults a join public.parent_registrations r on r.id = a.registration_id
+   where r.email = 'rita@example.com';
+  assert ad.position = 0 and ad.first_name = 'Rita' and ad.last_name = 'Parent' and ad.name_split_by_app and not ad.name_needs_check
+         and ad.event_id = '10000000-0000-0000-0000-0000000000c1', 'the registering adult''s record, split safely';
   -- The parent edits from their own link: same link, calendar invite version bumped.
   assert public.update_parent_registration(t1, 'Rita Parent', null,
            '[{"name":"Ava Lopez","teacher":"Smith","grade":"3rd"}]', '[" Marco Lopez ", "Rosa Diaz"]')
@@ -2287,11 +2299,14 @@ begin
   assert (select jsonb_array_length(children) = 1 and calendar_sequence = 1 and phone is null
             from public.parent_registrations where access_token = t1),
          'editing replaces the children and bumps the calendar invite version';
-  assert (select adult_count = 3
-                 and other_adults = '[{"name": "Marco Lopez", "checked_in_at": null, "checked_in_by": null},
-                                      {"name": "Rosa Diaz", "checked_in_at": null, "checked_in_by": null}]'::jsonb
-            from public.parent_registrations where email = 'rita@example.com'),
-         'other adults are named, and counted with the parent';
+  assert (select adult_count = 3 from public.parent_registrations where email = 'rita@example.com')
+         and (select string_agg(a.full_name, ',' order by a.position) from public.parent_registration_adults a
+                join public.parent_registrations r on r.id = a.registration_id where r.email = 'rita@example.com')
+             = 'Rita Parent,Marco Lopez,Rosa Diaz',
+         'other adults are their own records, counted with the parent';
+  assert (select a.id = (select x.id from public.parent_registration_adults x join public.parent_registrations r on r.id = x.registration_id
+                          where r.email = 'rita@example.com' and x.position = 0)
+            from public.parent_registration_adults a where a.first_name = 'Rita'), 'the registering adult keeps their record';
   begin
     perform public.update_parent_registration(gen_random_uuid(), 'Rita Parent', null, '[{"name":"A B","teacher":"X","grade":"1st"}]');
     raise exception 'FAIL: edited a registration without its link';
@@ -2326,65 +2341,332 @@ begin
     raise exception 'FAIL: parent registration on a band contest';
   exception when sqlstate 'P0001' then null;
   end;
+
+  -- First and Last in their own boxes: kept as typed, never marked.
+  perform public.register_parents('10000000-0000-0000-0000-0000000000c1', null, 'vandyke@example.com', null,
+            '[{"name":"Zoe Van Dyke","teacher":"Lee","grade":"2nd"}]',
+            '[{"first_name":"Ana","last_name":"García López"}]', 'Pieter', 'Van Dyke');
+  assert (select parent_name = 'Pieter Van Dyke' and adult_count = 2 from public.parent_registrations where email = 'vandyke@example.com'),
+         'the registration''s name comes from First and Last';
+  assert (select bool_and(not a.name_split_by_app and not a.name_needs_check)
+                 and string_agg(a.first_name || '|' || a.last_name, ',' order by a.position) = 'Pieter|Van Dyke,Ana|García López'
+            from public.parent_registration_adults a join public.parent_registrations r on r.id = a.registration_id
+           where r.email = 'vandyke@example.com'), 'First and Last are kept as typed';
+  begin
+    perform public.register_parents('10000000-0000-0000-0000-0000000000c1', null, 'nolast@example.com', null,
+              '[{"name":"Mia","teacher":"Lee","grade":"2nd"}]', '[]', 'Solo', ' ');
+    raise exception 'FAIL: registered with First but no Last';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
+    perform public.register_parents('10000000-0000-0000-0000-0000000000c1', 'Pat Lin', 'nolast2@example.com', null,
+              '[{"name":"Mia","teacher":"Lee","grade":"2nd"}]', '[{"first_name":"Kim","last_name":""}]');
+    raise exception 'FAIL: registered another adult with First but no Last';
+  exception when sqlstate 'P0001' then null;
+  end;
+  -- One box, a risky split: marked for a Host to check, with the name as typed.
+  perform public.register_parents('10000000-0000-0000-0000-0000000000c1', 'Maria de la Cruz', 'cruz@example.com', null,
+            '[{"name":"Lia Cruz","teacher":"Lee","grade":"2nd"}]', '["Jan van Berg", "Cher"]');
+  assert (select string_agg(a.first_name || '|' || a.last_name || '|' || a.name_needs_check || '|' || coalesce(a.typed_name, ''), ','
+                            order by a.position)
+            from public.parent_registration_adults a join public.parent_registrations r on r.id = a.registration_id
+           where r.email = 'cruz@example.com')
+         = 'Maria de la|Cruz|true|Maria de la Cruz,Jan van|Berg|true|Jan van Berg,Cher||true|Cher',
+         'risky splits (3+ words, a particle, one word) are marked to check';
+  assert not (public.split_person_name('Ben Okafor')).unsure and (public.split_person_name('Mary Ann Smith')).unsure
+         and (public.split_person_name('Luis da Silva')).unsure and (public.split_person_name('  Ben   Okafor ')).last_name = 'Okafor',
+         'only splits that could be wrong are marked';
+
   perform public.register_parents('10000000-0000-0000-0000-0000000000c1', 'Sam Second', 'sam@example.com', null,
             '[{"name":"Noah Kim","teacher":"Lee","grade":"5th"}]');
   assert public.cancel_parent_registration((select access_token from public.parent_registrations where email = 'sam@example.com'))
          = '10000000-0000-0000-0000-0000000000c1', 'a parent cancels with their link';
+  assert not exists (select 1 from public.parent_registration_adults a where a.first_name = 'Sam'), 'cancelling removes the adults';
 end $$;
 reset role;
+
+-- Who sees families: Hosts and Co-hosts any time while kept; the door team from the day before through the event day.
 set role authenticated;
--- Children's details: a Section Lead sees nothing before event day; a Volunteer Lead does.
 set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000003","email":"lead@example.com"}';
 do $$ begin
   assert not public.can_check_in_parents('10000000-0000-0000-0000-0000000000c1'), 'a Section Lead can''t work the door before event day';
   assert (select count(*) from public.parent_registrations) = 0, 'a Section Lead sees no children''s details before event day';
+  assert (select count(*) from public.parent_registration_adults) = 0, 'or adults';
+end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000007","email":"newlead@example.com"}';
+do $$ begin
+  assert public.can_check_in_parents('10000000-0000-0000-0000-0000000000c1'), 'a Volunteer Lead is on the door team';
+  assert (select count(*) from public.parent_registrations) = 0, 'a Volunteer Lead sees no families three days ahead';
+  assert (select count(*) from public.parent_registration_adults) = 0, 'or adults';
+end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000004","email":"vol1@example.com"}';
+do $$ begin
+  assert (select count(*) from public.parent_registrations) = 3, 'a Co-host sees every family three days ahead';
+  assert (select count(*) from public.parent_registration_adults) = 8, 'and every adult';
+  assert (select count(*) from public.parent_registration_emails('10000000-0000-0000-0000-0000000000c1')) = 3,
+         'Hosts and Co-hosts get email addresses from the server';
   begin
-    perform public.set_parent_checked_in((select id from public.parent_registrations limit 1), true);
+    perform email from public.parent_registrations;
+    raise exception 'FAIL: a browser read families'' email addresses';
   exception when insufficient_privilege then null;
   end;
 end $$;
+-- The day before: a practice run at the door.
 reset role;
-insert into public.event_staff (event_id, user_id, role)
-values ('10000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-000000000007', 'volunteer_director');
-set role authenticated;
-set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000007","email":"newlead@example.com"}';
-do $$ begin
-  assert (select count(*) from public.parent_registrations) = 1, 'a Volunteer Lead sees registrations before event day';
-end $$;
--- On event day the Section Lead works the door: sees registrations (never the links) and checks parents in.
-reset role;
-delete from public.event_staff where event_id = '10000000-0000-0000-0000-0000000000c1' and user_id = '00000000-0000-0000-0000-000000000007';
-update public.events set starts_on = (now() at time zone timezone)::date, ends_on = (now() at time zone timezone)::date
+update public.events set starts_on = (now() at time zone timezone)::date + 1, ends_on = (now() at time zone timezone)::date + 1
  where id = '10000000-0000-0000-0000-0000000000c1';
 set role authenticated;
 set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000003","email":"lead@example.com"}';
 do $$ begin
-  assert public.can_check_in_parents('10000000-0000-0000-0000-0000000000c1'), 'a Section Lead works the door on event day';
-  assert (select count(*) from public.parent_registrations) = 1, 'the team sees registrations';
-  assert (select adult_count = 3 and jsonb_array_length(other_adults) = 2 from public.parent_registrations),
-         'the team sees the other adults coming';
+  assert (select count(*) from public.parent_registration_adults) = 0, 'a Section Lead still sees nothing the day before';
+end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000007","email":"newlead@example.com"}';
+do $$
+declare marco uuid;
+begin
+  assert (select count(*) from public.parent_registrations) = 3, 'a Volunteer Lead sees families the day before';
+  assert (select count(*) from public.parent_registration_adults) = 8, 'and their adults';
+  begin
+    perform email from public.parent_registrations;
+    raise exception 'FAIL: a Volunteer Lead read families'' email addresses';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.parent_registration_emails('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a Volunteer Lead got email addresses';
+  exception when insufficient_privilege then null;
+  end;
   begin
     perform access_token from public.parent_registrations;
     raise exception 'FAIL: a browser read a parent''s private link';
   exception when insufficient_privilege then null;
   end;
-  perform public.set_parent_checked_in((select id from public.parent_registrations), true);
-  assert (select checked_in_at is not null and checked_in_by = auth.uid() from public.parent_registrations), 'checked in, and by whom';
-  -- Each adult is checked in on their own.
-  assert (select other_adults -> 0 ->> 'checked_in_at' is null from public.parent_registrations),
-         'checking in the parent leaves the other adults waiting';
-  perform public.set_parent_checked_in((select id from public.parent_registrations), true, 2);
-  assert (select other_adults -> 1 ->> 'checked_in_at' is not null
-             and other_adults -> 1 ->> 'checked_in_by' = auth.uid()::text
-             and other_adults -> 0 ->> 'checked_in_at' is null from public.parent_registrations),
-         'a grandparent checks in separately';
-  perform public.set_parent_checked_in((select id from public.parent_registrations), false, 2);
-  assert (select other_adults -> 1 ->> 'checked_in_at' is null from public.parent_registrations), 'one adult''s check-in can be undone';
-  perform public.set_parent_checked_in((select id from public.parent_registrations), true, 1);
+  select id into marco from public.parent_registration_adults where first_name = 'Marco';
+  perform public.set_parent_adult_checked_in(marco, true);
+  assert (select checked_in_at is not null and checked_in_by = auth.uid() and checked_in_by_name = 'Nia Newlead'
+            from public.parent_registration_adults where id = marco), 'a practice check-in, by whom, with their name kept';
+  assert public.parent_check_in_counts((select checked_in_at from public.parent_registration_adults where id = marco),
+                                       (select timezone from public.events where id = '10000000-0000-0000-0000-0000000000c1'), (select starts_on from public.events where id = '10000000-0000-0000-0000-0000000000c1')),
+         'the day before, a practice check-in shows as checked in';
+  -- The Volunteer Lead can't set the stop mark, fix names, or open the report or downloads.
   begin
-    perform public.set_parent_checked_in((select id from public.parent_registrations), true, 3);
-    raise exception 'FAIL: checked in an adult who isn''t on the registration';
+    perform public.set_parent_adult_front_office(marco, true);
+    raise exception 'FAIL: a Volunteer Lead set the stop mark';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.set_parent_adult_name(marco, 'Marcos', 'Lopez');
+    raise exception 'FAIL: a Volunteer Lead changed a name';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.parent_visitor_list('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a Volunteer Lead downloaded the visitor list';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.parent_visitor_list_status('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a Volunteer Lead saw the download status';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.parent_check_in_report('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a Volunteer Lead opened the report';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a Volunteer Lead saw the report''s numbers';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.record_parent_download('10000000-0000-0000-0000-0000000000c1', 'visitor_list', 3);
+    raise exception 'FAIL: a Volunteer Lead wrote the download log';
+  exception when insufficient_privilege then null;
+  end;
+  assert (select count(*) from public.parent_list_downloads) = 0, 'a Volunteer Lead can''t read the download log';
+  begin
+    update public.parent_registration_adults set sent_to_office_at = now();
+    raise exception 'FAIL: a browser wrote an adult''s record';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+
+-- Hosts and Co-hosts: the stop mark ("Send to the front office"), names, the visitor list and its download log.
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000004","email":"vol1@example.com"}';
+do $$
+declare
+  marco uuid; rosa uuid; maria uuid;
+  n int;
+  s record;
+begin
+  select id into marco from public.parent_registration_adults where first_name = 'Marco';
+  select id into rosa from public.parent_registration_adults where first_name = 'Rosa';
+  select id into maria from public.parent_registration_adults where last_name = 'Cruz';
+
+  -- Marking someone already checked in clears their check-in.
+  perform public.set_parent_adult_front_office(marco, true);
+  assert (select sent_to_office_at is not null and sent_to_office_by = auth.uid() and checked_in_at is null and checked_in_by_name is null
+            from public.parent_registration_adults where id = marco), 'the stop mark is set, and clears a check-in';
+  perform public.set_parent_adult_front_office(marco, true);  -- twice is the same
+  begin
+    perform public.set_parent_adult_checked_in(marco, true);
+    raise exception 'FAIL: checked in an adult sent to the front office';
+  exception when sqlstate 'P0001' then
+    if sqlerrm not like '%front office%' then raise; end if;
+  end;
+  assert (select checked_in_at is null from public.parent_registration_adults where id = marco), 'check-in refused a marked adult';
+  perform public.set_parent_adult_front_office(rosa, true);
+  perform public.set_parent_adult_front_office(rosa, false);
+  assert (select sent_to_office_at is null and sent_to_office_by is null from public.parent_registration_adults where id = rosa),
+         'a Co-host clears the mark ("Let Rosa check in")';
+
+  -- Names to check: "Save name" (a fix) or "It's right" (the same name).
+  perform public.set_parent_adult_name(maria, 'Maria', 'de la Cruz');
+  assert (select first_name = 'Maria' and last_name = 'de la Cruz' and not name_needs_check and name_confirmed_at is not null
+                 and name_changed_at is not null and full_name = 'Maria de la Cruz'
+            from public.parent_registration_adults where id = maria), 'a Co-host fixes a name';
+  assert (select parent_name from public.parent_registrations where id = (select registration_id from public.parent_registration_adults where id = maria)) = 'Maria de la Cruz',
+         'the registration''s name follows';
+  perform public.set_parent_adult_name((select id from public.parent_registration_adults where first_name = 'Cher'), 'Cher', 'Okoro');
+  begin
+    perform public.set_parent_adult_name(rosa, 'Rosa', ' ');
+    raise exception 'FAIL: saved a name without a last name';
   exception when sqlstate 'P0001' then null;
+  end;
+
+  -- The visitor list: one row per adult per child; email and phone only on the registering adult's rows.
+  select count(*) into n from public.parent_visitor_list('10000000-0000-0000-0000-0000000000c1');
+  assert n = 8, 'one row per adult per child';
+  assert (select count(*) from public.parent_visitor_list('10000000-0000-0000-0000-0000000000c1') where email is not null) = 3
+         and not exists (select 1 from public.parent_visitor_list('10000000-0000-0000-0000-0000000000c1')
+                          where adult_position > 0 and (email is not null or phone is not null)),
+         'email and phone only on the registering adult''s rows';
+  assert (select bool_and(not is_new and not name_changed) from public.parent_visitor_list('10000000-0000-0000-0000-0000000000c1')),
+         'nothing is "new" before the first download';
+  perform public.record_parent_download('10000000-0000-0000-0000-0000000000c1', 'visitor_list', n);
+  assert (select by_user = auth.uid() and by_name = 'Val One' and row_count = 8 from public.parent_list_downloads),
+         'the download log: who, when, which list, how many rows';
+  begin
+    perform public.record_parent_download('10000000-0000-0000-0000-0000000000c1', 'everything', 1);
+    raise exception 'FAIL: logged an unknown kind of download';
+  exception when check_violation then null;
+  end;
+end $$;
+reset role;
+-- After the download: a family adds an adult, and a Host corrects a name.
+update public.parent_registration_adults set added_at = now() - interval '1 hour',
+       name_changed_at = case when name_changed_at is not null then now() - interval '1 hour' end;
+update public.parent_list_downloads set at = now() - interval '1 minute';
+set role service_role;
+do $$ begin
+  perform public.update_parent_registration((select access_token from public.parent_registrations where email = 'vandyke@example.com'),
+            null, null, '[{"name":"Zoe Van Dyke","teacher":"Lee","grade":"2nd"}]',
+            jsonb_build_array(jsonb_build_object('id', (select id from public.parent_registration_adults where first_name = 'Ana'),
+                                                 'first_name', 'Ana', 'last_name', 'García López'),
+                              jsonb_build_object('first_name', 'Joost', 'last_name', 'Van Dyke')),
+            'Pieter', 'Van Dyke');
+end $$;
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
+do $$
+declare s record;
+begin
+  perform public.set_parent_adult_name((select id from public.parent_registration_adults where first_name = 'Rosa'), 'Rosa', 'Díaz');
+  assert (select string_agg(first_name, ',' order by first_name) from public.parent_visitor_list('10000000-0000-0000-0000-0000000000c1') where is_new) = 'Joost',
+         'an adult added since the last download is new';
+  assert (select string_agg(first_name, ',' order by first_name) from public.parent_visitor_list('10000000-0000-0000-0000-0000000000c1') where name_changed) = 'Rosa',
+         'a name corrected since the last download is labeled';
+  select * into s from public.parent_visitor_list_status('10000000-0000-0000-0000-0000000000c1');
+  assert s.last_by_name = 'Val One' and s.last_rows = 8 and s.adults = 9 and s.new_adults = 1 and s.changed_adults = 1
+         and s.names_to_check = 1, format('the top card: last download, 1 new, 1 corrected, 1 name to check (%s)', s);
+  -- The parent can't rename or remove a marked adult, or cancel.
+end $$;
+reset role;
+set role service_role;
+do $$
+declare tok uuid := (select access_token from public.parent_registrations where email = 'rita@example.com');
+begin
+  begin
+    perform public.update_parent_registration(tok, 'Rita Parent', null, '[{"name":"Ava Lopez","teacher":"Smith","grade":"3rd"}]', '["Rosa Díaz"]');
+    raise exception 'FAIL: a parent removed an adult sent to the front office';
+  exception when sqlstate 'P0001' then
+    if sqlerrm not like '%contact the school%' then raise; end if;
+  end;
+  begin
+    perform public.update_parent_registration(tok, 'Rita Parent', null, '[{"name":"Ava Lopez","teacher":"Smith","grade":"3rd"}]',
+              jsonb_build_array(jsonb_build_object('id', (select id from public.parent_registration_adults where first_name = 'Marco'),
+                                                   'first_name', 'Marc', 'last_name', 'Lopez'), 'Rosa Díaz'));
+    raise exception 'FAIL: a parent renamed an adult sent to the front office';
+  exception when sqlstate 'P0001' then
+    if sqlerrm not like '%contact the school%' then raise; end if;
+  end;
+  begin
+    perform public.cancel_parent_registration(tok);
+    raise exception 'FAIL: a parent cancelled a registration with an adult sent to the front office';
+  exception when sqlstate 'P0001' then
+    if sqlerrm not like '%contact the school%' then raise; end if;
+  end;
+  assert (select adult_count = 3 from public.parent_registrations where access_token = tok), 'the registration is unchanged';
+  -- Keeping the marked adult (matched by name) while changing others is fine; the mark stays with Marco.
+  perform public.update_parent_registration(tok, 'Rita Parent', null, '[{"name":"Ava Lopez","teacher":"Smith","grade":"3rd"}]',
+            '["Rosa Díaz", "marco lopez"]');
+  assert (select position = 2 and sent_to_office_at is not null from public.parent_registration_adults where first_name = 'Marco'),
+         'a marked adult keeps the mark when the list is reordered';
+end $$;
+reset role;
+
+-- The event day: the Section Lead works the door; practice check-ins from the day before don't count.
+update public.events set starts_on = (now() at time zone timezone)::date, ends_on = (now() at time zone timezone)::date
+ where id = '10000000-0000-0000-0000-0000000000c1';
+update public.parent_registration_adults set checked_in_at = now() - interval '1 day', checked_in_by_name = 'Nia Newlead'
+ where first_name = 'Pieter';
+set role authenticated;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000003","email":"lead@example.com"}';
+do $$
+declare rita uuid; rosa uuid;
+begin
+  assert public.can_check_in_parents('10000000-0000-0000-0000-0000000000c1'), 'a Section Lead works the door on event day';
+  assert (select count(*) from public.parent_registrations) = 3, 'the team sees registrations';
+  assert (select count(*) from public.parent_registration_adults) = 9, 'and adults';
+  assert not public.parent_check_in_counts((select checked_in_at from public.parent_registration_adults where first_name = 'Pieter'),
+                                           (select timezone from public.events where id = '10000000-0000-0000-0000-0000000000c1'), (select starts_on from public.events where id = '10000000-0000-0000-0000-0000000000c1')),
+         'a practice check-in from the day before doesn''t count on the event day';
+  assert public.clear_practice_parent_check_ins('10000000-0000-0000-0000-0000000000c1') = 1, 'and is cleared';
+  assert (select checked_in_at is null and checked_in_by_name is null from public.parent_registration_adults where first_name = 'Pieter'),
+         'Pieter is waiting again';
+  select id into rita from public.parent_registration_adults where first_name = 'Rita';
+  select id into rosa from public.parent_registration_adults where first_name = 'Rosa';
+  perform public.set_parent_adult_checked_in(rita, true);
+  assert (select checked_in_at is not null and checked_in_by = auth.uid() and checked_in_by_name = 'Lee Lead'
+            from public.parent_registration_adults where id = rita), 'checked in, and by whom';
+  assert (select checked_in_at is null from public.parent_registration_adults where id = rosa),
+         'checking in the parent leaves the other adults waiting';
+  perform public.set_parent_adult_checked_in(rosa, true);
+  perform public.set_parent_adult_checked_in(rosa, false);
+  assert (select checked_in_at is null and checked_in_by is null from public.parent_registration_adults where id = rosa),
+         'one adult''s check-in can be undone';
+  perform public.set_parent_adult_checked_in(rosa, true);
+  begin
+    perform public.set_parent_adult_checked_in((select id from public.parent_registration_adults where first_name = 'Marco'), true);
+    raise exception 'FAIL: the door checked in an adult sent to the front office';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
+    perform public.set_parent_adult_front_office(rosa, true);
+    raise exception 'FAIL: a Section Lead set the stop mark';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.set_parent_adult_front_office((select id from public.parent_registration_adults where first_name = 'Marco'), false);
+    raise exception 'FAIL: a Section Lead cleared the stop mark';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.parent_check_in_report('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a Section Lead opened the report';
+  exception when insufficient_privilege then null;
   end;
   begin
     update public.parent_registrations set parent_name = 'Changed';
@@ -2392,6 +2674,7 @@ do $$ begin
   exception when insufficient_privilege then null;
   end;
 end $$;
+-- A stranger sees nothing and changes nothing.
 set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000006","email":"stranger@example.com"}';
 do $$ begin
   begin
@@ -2400,22 +2683,100 @@ do $$ begin
   exception when insufficient_privilege then null;
   end;
   assert (select count(*) from public.parent_registrations) = 0, 'a stranger sees no registrations';
+  assert (select count(*) from public.parent_registration_adults) = 0, 'or adults';
+  assert (select count(*) from public.parent_list_downloads) = 0, 'or the download log';
   begin
-    perform public.set_parent_checked_in((select id from public.parent_registrations limit 1), false);
+    perform public.set_parent_adult_checked_in(gen_random_uuid(), false);
+    raise exception 'FAIL: a stranger checked someone in';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.clear_practice_parent_check_ins('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a stranger cleared check-ins';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.parent_visitor_list('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a stranger downloaded the visitor list';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+-- The report on the day (the Account Host): every adult, grouped; counts.
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
+do $$
+declare s record;
+begin
+  assert (select string_agg(first_name || ':' || status, ',' order by first_name) from public.parent_check_in_report('10000000-0000-0000-0000-0000000000c1'))
+         = 'Ana:not_yet,Cher:not_yet,Jan van:not_yet,Joost:not_yet,Marco:front_office,Maria:not_yet,Pieter:not_yet,Rita:checked_in,Rosa:checked_in',
+         'the report: each adult''s status';
+  assert (select checked_in_by_name = 'Lee Lead' from public.parent_check_in_report('10000000-0000-0000-0000-0000000000c1') where first_name = 'Rita'),
+         'with who checked them in';
+  assert (select typed_name = 'Jan van Berg' and name_needs_check from public.parent_check_in_report('10000000-0000-0000-0000-0000000000c1')
+           where first_name = 'Jan van'), 'a name still to check shows as typed';
+  select * into s from public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1');
+  assert s.families = 3 and s.adults = 9 and s.children = 3 and s.checked_in = 2 and s.sent_to_office = 1 and s.not_checked_in = 6
+         and s.is_event_day and not s.is_final and s.kept and not s.deleted and s.saved_at is null,
+         format('the report''s numbers on the day (%s)', s);
+  perform public.record_parent_download('10000000-0000-0000-0000-0000000000c1', 'report_print', 9);
+  assert (select saved_kind = 'report_print' and saved_by_name = 'Hana Host' from public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1')),
+         '"printed or downloaded by" is recorded';
+end $$;
+reset role;
+
+-- After the event's last day: check-ins and stop marks lock, and the report is final.
+update public.events set starts_on = (now() at time zone timezone)::date - 2, ends_on = (now() at time zone timezone)::date - 1,
+       window_start = now() - interval '2 days', window_end = now() - interval '2 days' + interval '3 hours'
+ where id = '10000000-0000-0000-0000-0000000000c1';
+set role authenticated;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
+do $$ begin
+  begin
+    perform public.set_parent_adult_checked_in((select id from public.parent_registration_adults where first_name = 'Pieter'), true);
+    raise exception 'FAIL: checked someone in after the event';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
+    perform public.set_parent_adult_checked_in((select id from public.parent_registration_adults where first_name = 'Rita'), false);
+    raise exception 'FAIL: undid a check-in after the event';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
+    perform public.set_parent_adult_front_office((select id from public.parent_registration_adults where first_name = 'Marco'), false);
+    raise exception 'FAIL: changed a stop mark after the event';
+  exception when sqlstate 'P0001' then null;
+  end;
+  assert (select is_final and checked_in = 2 and sent_to_office = 1 from public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1')),
+         'the report is final';
+end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000007","email":"newlead@example.com"}';
+do $$ begin
+  assert (select count(*) from public.parent_registration_adults) = 0, 'a Volunteer Lead sees no families after the event day';
+  assert (select count(*) from public.parent_registrations) = 0, 'or registrations';
+end $$;
+reset role;
+-- The emails the daily job sends: the morning after (and the markers stop repeats).
+set role service_role;
+do $$ begin
+  assert exists (select 1 from public.parent_report_emails_due() where event_id = '10000000-0000-0000-0000-0000000000c1'
+                   and kind = 'morning_after' and saved), 'the morning-after email is due';
+  insert into public.parent_report_emails (event_id, kind) values ('10000000-0000-0000-0000-0000000000c1', 'morning_after');
+  assert not exists (select 1 from public.parent_report_emails_due() where event_id = '10000000-0000-0000-0000-0000000000c1'),
+         'and goes once';
+end $$;
+reset role;
+set role authenticated;
+do $$ begin
+  begin
+    perform public.parent_report_emails_due();
+    raise exception 'FAIL: a browser listed the report emails';
   exception when insufficient_privilege then null;
   end;
 end $$;
 reset role;
-update public.events set starts_on = current_date + 3, ends_on = current_date + 3
+delete from public.event_staff where event_id = '10000000-0000-0000-0000-0000000000c1';
+update public.events set starts_on = (now() at time zone timezone)::date + 3, ends_on = (now() at time zone timezone)::date + 3,
+       window_start = now() + interval '3 days', window_end = now() + interval '3 days 3 hours'
  where id = '10000000-0000-0000-0000-0000000000c1';
--- Editing a registration keeps anyone already checked in as checked in.
-do $$ begin
-  perform public.update_parent_registration((select access_token from public.parent_registrations where email = 'rita@example.com'),
-          'Rita Parent', null, '[{"name":"Ava Lopez","teacher":"Smith","grade":"3rd"}]', '["marco lopez", "New Uncle"]');
-  assert (select other_adults -> 0 ->> 'checked_in_at' is not null and other_adults -> 1 ->> 'checked_in_at' is null
-            from public.parent_registrations where email = 'rita@example.com'),
-         'editing keeps check-ins of adults still on the list';
-end $$;
 -- Registration closes on its own at the time the host picked.
 do $$ begin
   update public.events set parent_registration_closes_at = now() - interval '1 minute' where id = '10000000-0000-0000-0000-0000000000c1';
@@ -2432,7 +2793,7 @@ do $$ begin
   update public.events set parent_registration_closes_at = null where id = '10000000-0000-0000-0000-0000000000c1';
 end $$;
 do $$ begin
-  assert (select checked_in_at is not null from public.parent_registrations where email = 'rita@example.com'),
+  assert (select checked_in_at is not null from public.parent_registration_adults where first_name = 'Rita'),
          'a stranger couldn''t undo a check-in';
 end $$;
 set role anon;
@@ -2443,9 +2804,49 @@ do $$ begin
   exception when insufficient_privilege then null;
   end;
   begin
+    perform 1 from public.parent_registration_adults;
+    raise exception 'FAIL: a visitor read adults';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform 1 from public.parent_list_downloads;
+    raise exception 'FAIL: a visitor read the download log';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform 1 from public.parent_event_totals;
+    raise exception 'FAIL: a visitor read the totals';
+  exception when insufficient_privilege then null;
+  end;
+  begin
     perform public.register_parents('10000000-0000-0000-0000-0000000000c1', 'Direct', 'direct@example.com', null,
               '[{"name":"X","teacher":"Y","grade":"1st"}]');
     raise exception 'FAIL: a browser registered without going through the server';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.parent_visitor_list('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a visitor downloaded the visitor list';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.parent_check_in_report('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a visitor opened the report';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a visitor saw the report''s numbers';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.record_parent_download('10000000-0000-0000-0000-0000000000c1', 'report_print', 1);
+    raise exception 'FAIL: a visitor wrote the download log';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.set_parent_adult_front_office(gen_random_uuid(), true);
+    raise exception 'FAIL: a visitor set the stop mark';
   exception when insufficient_privilege then null;
   end;
 end $$;
@@ -2469,7 +2870,7 @@ do $$ begin
 end $$;
 reset role;
 
--- 30 days after the event: hidden, then erased.
+-- 30 days after the event: hidden, then erased, keeping names-free totals.
 update public.events set starts_on = (now() at time zone timezone)::date - 31, ends_on = (now() at time zone timezone)::date - 31,
        window_start = now() - interval '31 days', window_end = now() - interval '31 days' + interval '3 hours'
  where id = '10000000-0000-0000-0000-0000000000c1';
@@ -2477,12 +2878,49 @@ set role authenticated;
 set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
 do $$ begin
   assert (select count(*) from public.parent_registrations) = 0, 'registrations are hidden 30 days after the event';
+  assert (select count(*) from public.parent_registration_adults) = 0, 'and adults';
+  begin
+    perform public.parent_check_in_report('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: the report showed names after 30 days';
+  exception when insufficient_privilege then null;
+  end;
 end $$;
 reset role;
 set role service_role;
 do $$ begin
-  assert public.purge_parent_registrations() = 1, 'and erased by the clean-up';
+  assert public.purge_parent_registrations() = 3, 'and erased by the clean-up';
   assert not exists (select 1 from public.parent_registrations), 'nothing left';
+  assert not exists (select 1 from public.parent_registration_adults), 'no adults left';
+  assert (select families = 3 and adults = 9 and children = 3 and checked_in = 2 and sent_to_office = 1
+            from public.parent_event_totals where event_id = '10000000-0000-0000-0000-0000000000c1'),
+         'the clean-up keeps totals first';
+  assert public.purge_parent_registrations() = 0, 'a second clean-up changes nothing';
+  -- Totals and the download log hold no family names.
+  assert not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'parent_event_totals'
+                        and data_type in ('text', 'jsonb', 'character varying', 'USER-DEFINED')),
+         'the totals have no names';
+  assert not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'parent_list_downloads'
+                        and data_type in ('text', 'jsonb', 'character varying', 'USER-DEFINED') and column_name not in ('kind', 'by_name')),
+         'the download log has no family names (only who downloaded)';
+end $$;
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
+do $$ declare s record; begin
+  select * into s from public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1');
+  assert s.deleted and not s.kept and s.families = 3 and s.checked_in = 2 and s.sent_to_office = 1 and s.not_checked_in = 6
+         and s.deleted_at is not null and s.saved_kind = 'report_print',
+         format('the report''s deleted state shows the totals (%s)', s);
+  assert (select count(*) from public.parent_event_totals) = 1, 'the Account Host reads the totals';
+end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000006","email":"stranger@example.com"}';
+do $$ begin
+  assert (select count(*) from public.parent_event_totals) = 0, 'a stranger doesn''t';
+  begin
+    perform public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a stranger saw the totals';
+  exception when insufficient_privilege then null;
+  end;
 end $$;
 reset role;
 delete from public.events where id = '10000000-0000-0000-0000-0000000000c1';
@@ -3835,7 +4273,15 @@ begin
   assert (select count(*) from public.parent_registrations where event_id = '10000000-0000-0000-0000-0000000000d3'
             and jsonb_array_length(children) > 1) between 100 and 200, 'some with more than one child';
   assert (select count(*) from public.parent_registrations where event_id = '10000000-0000-0000-0000-0000000000d3'
-            and jsonb_array_length(other_adults) > 0) between 60 and 120, 'some bringing another adult';
+            and adult_count > 1) between 60 and 120, 'some bringing another adult';
+  assert (select count(*) from public.parent_registration_adults where event_id = '10000000-0000-0000-0000-0000000000d3')
+         = (select sum(adult_count) from public.parent_registrations where event_id = '10000000-0000-0000-0000-0000000000d3'),
+         'each adult is a record';
+  assert exists (select 1 from public.parent_registration_adults where event_id = '10000000-0000-0000-0000-0000000000d3'
+                   and position = 0 and first_name = 'Cleave' and last_name = 'Treanor' and not name_needs_check),
+         'Cleave Treanor is family 1, first and last name';
+  assert (select count(*) from public.parent_registration_adults where event_id = '10000000-0000-0000-0000-0000000000d3'
+            and name_needs_check) between 5 and 10, 'a few names to check';
   assert (select count(*) from public.fair_booths where event_id = '10000000-0000-0000-0000-0000000000d4') = 8, 'a fair gets booths';
   assert (select count(*) from public.fair_booths where event_id = '10000000-0000-0000-0000-0000000000d4' and host_name = 'Brightwater Wireless') = 1,
          'sample booths name made-up businesses only';
@@ -4404,8 +4850,28 @@ do $$ begin
   exception when insufficient_privilege then null;
   end;
 end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
+-- Imports take First name and Last name columns, or a full name (split, and marked when the split could be wrong).
+do $$ begin
+  perform public.import_parent_registration('10000000-0000-0000-0000-0000000000f2', null, 'vd@example.com', null,
+          '[{"name": "Zoe Van Dyke", "teacher": "Lee", "grade": "2nd"}]', '[{"first_name": "Ana", "last_name": "García López"}]',
+          'Pieter', 'Van Dyke');
+  perform public.import_parent_registration('10000000-0000-0000-0000-0000000000f2', 'Luis da Silva', 'ds@example.com', null,
+          '[{"name": "Eva da Silva", "teacher": "Lee", "grade": "2nd"}]', '["Rosa Lima"]');
+  begin
+    perform public.import_parent_registration('10000000-0000-0000-0000-0000000000f2', null, 'nolast@example.com', null,
+            '[{"name": "Kid", "teacher": "Lee", "grade": "2nd"}]', '[]', 'Solo', null);
+    raise exception 'FAIL: imported a First name with no Last name';
+  exception when sqlstate 'P0001' then null;
+  end;
+end $$;
 reset role;
 do $$ begin
+  assert (select string_agg(a.first_name || '|' || a.last_name || '|' || a.name_split_by_app || '|' || a.name_needs_check, ',' order by r.email, a.position)
+            from public.parent_registration_adults a join public.parent_registrations r on r.id = a.registration_id
+           where r.email in ('vd@example.com', 'ds@example.com'))
+         = 'Luis da|Silva|true|true,Rosa|Lima|true|false,Pieter|Van Dyke|false|false,Ana|García López|false|false',
+         'imported names: First/Last kept, full names split and marked only when unsure';
   assert (select parent_name = 'Pam Parent' and children -> 0 ->> 'name' = 'Pia Parent'
             from public.parent_registrations where email = 'pam@example.com'), 'the imported family is registered once';
   assert not exists (select 1 from public.parent_registrations where email = 'leadp@example.com'), 'the lead''s import was refused';
@@ -5032,7 +5498,8 @@ declare
   t text;
   ok boolean;
 begin
-  foreach t in array array['volunteers', 'parent_registrations', 'conference_bookings', 'events', 'organizations',
+  foreach t in array array['volunteers', 'parent_registrations', 'parent_registration_adults', 'parent_list_downloads',
+                           'parent_event_totals', 'parent_report_emails', 'conference_bookings', 'events', 'organizations',
                            'organization_members', 'profiles', 'bands', 'invitations'] loop
     ok := false;
     begin

@@ -1,6 +1,6 @@
 import { type NextRequest } from "next/server";
 import { buildIcs } from "@/lib/ics";
-import { adultNames, parentLink, toIcsEvent, type Child } from "@/lib/parents";
+import { ADULTS, otherAdultNames, parentLink, toIcsEvent, type Child } from "@/lib/parents";
 import { createAdminClient } from "@/lib/supabase/server";
 
 // "Apple / Outlook" on a parent's registration link. The private link is the
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const admin = createAdminClient();
   const { data: reg } = await admin
     .from("parent_registrations")
-    .select("id, event_id, parent_name, email, children, other_adults, calendar_sequence")
+    .select(`id, event_id, parent_name, email, children, calendar_sequence, ${ADULTS}`)
     .eq("access_token", token)
     .maybeSingle();
   const { data: event } = reg
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!reg || !event || event.slug !== slug) return new Response("Not found", { status: 404 });
 
   const ics = toIcsEvent(
-    { ...reg, children: (reg.children ?? []) as Child[], other_adults: adultNames(reg.other_adults) },
+    { ...reg, children: (reg.children ?? []) as Child[], other_adults: otherAdultNames(reg.adults) },
     event,
     parentLink(request.nextUrl.origin, slug, token),
   );

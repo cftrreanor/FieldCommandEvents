@@ -9,7 +9,7 @@ import { getOrigin } from "@/lib/data";
 import { sendEmail } from "@/lib/email";
 import { GRADES } from "@/lib/grades";
 import { normalizePhone } from "@/lib/phone";
-import { adultNames, parentEmail, parentLink, type Child } from "@/lib/parents";
+import { ADULTS, otherAdultNames, parentEmail, parentLink, type Child } from "@/lib/parents";
 import { createAdminClient } from "@/lib/supabase/server";
 
 const EVENT_FIELDS = "slug, name, starts_on, ends_on, window_start, window_end, timezone, venue_name, venue_address";
@@ -105,13 +105,13 @@ export async function registerParents(eventId: string, _prev: ParentState, formD
       .eq("event_id", eventId)
       .eq("email", v.email)
       .or(`link_emailed_at.is.null,link_emailed_at.lt.${since}`)
-      .select("id, parent_name, email, children, other_adults, calendar_sequence, access_token")
+      .select(`id, parent_name, email, children, calendar_sequence, access_token, ${ADULTS}`)
       .maybeSingle();
     let emailSent = false;
     if (event && reg) {
       const message = await parentEmail(
         "already",
-        { ...reg, children: reg.children as Child[], other_adults: adultNames(reg.other_adults) },
+        { ...reg, children: reg.children as Child[], other_adults: otherAdultNames(reg.adults) },
         event,
         parentLink(origin, event.slug, reg.access_token),
       );
@@ -176,17 +176,19 @@ export async function cancelParents(token: string): Promise<ActionState> {
   const admin = createAdminClient();
   const { data: reg } = await admin
     .from("parent_registrations")
-    .select("id, event_id, parent_name, email, children, other_adults, calendar_sequence")
+    .select(`id, event_id, parent_name, email, children, calendar_sequence, ${ADULTS}`)
     .eq("access_token", token)
     .maybeSingle();
   const { error } = await admin.rpc("cancel_parent_registration", { p_token: token });
   if (error) {
+    // Someone on it was sent to the front office: "Please contact the school to cancel this registration."
+    if (error.code === "P0001") return { error: error.message };
     console.error("cancel_parent_registration failed", error);
     return { error: "Something went wrong. Please try again." };
   }
   const { data: event } = reg ? await admin.from("events").select(EVENT_FIELDS).eq("id", reg.event_id).single() : { data: null };
   if (reg && event) {
-    const message = await parentEmail("canceled", { ...reg, children: reg.children as Child[], other_adults: adultNames(reg.other_adults) }, event, `${await getOrigin()}/e/${event.slug}/parents`);
+    const message = await parentEmail("canceled", { ...reg, children: reg.children as Child[], other_adults: otherAdultNames(reg.adults) }, event, `${await getOrigin()}/e/${event.slug}/parents`);
     await sendEmail({ to: reg.email, ...message, eventId: reg.event_id });
   }
   redirect(event ? `/e/${event.slug}/parents?canceled=1` : "/");

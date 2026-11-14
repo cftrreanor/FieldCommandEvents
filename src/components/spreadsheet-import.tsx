@@ -1,5 +1,6 @@
 "use client";
 
+import { CSV_TYPE } from "@/lib/csv";
 import { useId, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Select } from "@/components/ui";
 import {
@@ -109,7 +110,7 @@ export function SpreadsheetImport({ kind, fields, choices = {}, chaperoneLimit =
   }
 
   function downloadTemplate() {
-    const url = URL.createObjectURL(new Blob([templateCsv(fields)], { type: "text/csv" }));
+    const url = URL.createObjectURL(new Blob([templateCsv(fields)], { type: CSV_TYPE }));
     const a = document.createElement("a");
     a.href = url;
     a.download = templateName;

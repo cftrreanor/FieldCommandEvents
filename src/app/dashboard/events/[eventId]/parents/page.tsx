@@ -6,7 +6,7 @@ import { Badge, Card } from "@/components/ui";
 import { getEventAccess, getOrigin } from "@/lib/data";
 import { hasParents } from "@/lib/event-types";
 import { formatPhone } from "@/lib/phone";
-import { closesAtLabel, parentRegistrationClosed, type Child, type OtherAdult } from "@/lib/parents";
+import { ADULTS, closesAtLabel, parentRegistrationClosed, sortedAdults, type Child } from "@/lib/parents";
 import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime, zoneName } from "@/lib/time";
@@ -45,17 +45,20 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
   if (!event) missing();
   if (!hasParents(event.event_type)) redirect(`/dashboard/events/${eventId}`);
 
-  const { data } = await supabase
-    .from("parent_registrations")
-    .select("id, parent_name, email, phone, children, other_adults, created_at")
-    .eq("event_id", eventId)
-    .order("parent_name");
+  // Practice check-ins from the day before don't count once the event starts.
+  await supabase.rpc("clear_practice_parent_check_ins", { p_event: eventId });
+  const [{ data }, { data: emailRows }] = await Promise.all([
+    supabase.from("parent_registrations").select(`id, parent_name, phone, children, created_at, ${ADULTS}`).eq("event_id", eventId).order("parent_name"),
+    // Email addresses come only from this Host/Co-host function (never readable from the table).
+    supabase.rpc("parent_registration_emails", { p_event: eventId }),
+  ]);
+  const emails = new Map(((emailRows ?? []) as { registration_id: string; email: string }[]).map((e) => [e.registration_id, e.email]));
   const tz = event.timezone;
   const families: ListedFamily[] = (data ?? []).map((r) => ({
     id: r.id,
-    adults: [r.parent_name, ...((r.other_adults ?? []) as OtherAdult[]).map((a) => a.name)],
+    adults: sortedAdults(r.adults).map((a) => a.full_name),
     children: (r.children ?? []) as Child[],
-    email: r.email,
+    email: emails.get(r.id) ?? "",
     phone: r.phone ? formatPhone(r.phone) : null,
     registeredOn: utcToZonedDate(r.created_at, tz),
   }));
@@ -217,7 +220,7 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
                 </Link>{" "}
                 on the day.
               </p>
-              <FamiliesList families={families} fileName={`${event.name.replace(/[^\w -]+/g, "").trim() || "families"} families.csv`} />
+              <FamiliesList families={families} downloadHref={`${base}/download?list=class`} />
             </Card>
           )}
           {current === "settings" && (

@@ -146,6 +146,8 @@ export async function importParents(eventId: string, records: unknown, sendEmail
       p_phone: item.phone,
       p_children: item.children,
       p_other_adults: item.otherAdults,
+      p_first: item.firstName,
+      p_last: item.lastName,
     });
     if (importError?.code === "42501") return { error: "Only the event's hosts can import parent registrations." };
     if (importError) skipped.push({ rows: item.rows, message: friendlyDbError(importError) });
