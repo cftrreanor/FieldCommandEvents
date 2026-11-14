@@ -16,20 +16,26 @@ export type ListKind = "visitor_list" | "class_list" | "report_download" | "repo
 
 /** One row of the visitor list: one per adult per child. */
 export type VisitorListRow = {
-  adult_id: string;
-  registration_id: string;
-  adult_position: number;
+  /** Null on a removed adult's row. */
+  adult_id: string | null;
+  registration_id: string | null;
+  adult_position: number | null;
   first_name: string;
   last_name: string;
   phone: string | null;
   email: string | null;
-  registered_by: string;
-  child_name: string;
-  grade: string;
-  teacher: string;
+  registered_by: string | null;
+  child_name: string | null;
+  grade: string | null;
+  teacher: string | null;
   name_needs_check: boolean;
   is_new: boolean;
   name_changed: boolean;
+  /** The name in the last visitor list download, when it's changed since. */
+  was_first_name: string | null;
+  was_last_name: string | null;
+  /** An adult taken off since the last visitor list download (only their name). */
+  removed: boolean;
 };
 
 /** The top card: the last visitor list download, and what's new or corrected since. */
@@ -38,8 +44,11 @@ export type VisitorListStatus = {
   last_by_name: string | null;
   last_rows: number | null;
   adults: number;
+  /** Rows in a whole visitor list (one per adult per child). */
+  rows: number;
   new_adults: number;
   changed_adults: number;
+  removed_adults: number;
   names_to_check: number;
 };
 
@@ -84,6 +93,9 @@ export type ReportSummary = {
   saved_at: string | null;
   saved_by_name: string | null;
   saved_kind: "report_download" | "report_print" | null;
+  /** "Our school has a copy": when, and who confirmed it. */
+  copy_confirmed_at: string | null;
+  copy_confirmed_by_name: string | null;
 };
 
 async function rpc<T>(supabase: Db, fn: string, args: Record<string, unknown>): Promise<T> {
@@ -112,21 +124,25 @@ export async function familyEmails(supabase: Db, eventId: string) {
   return new Map(rows.map((r) => [r.registration_id, r.email]));
 }
 
-/** The visitor list file, for the school's visitor system: one row per adult per child. */
+/**
+ * The visitor list file, for the school's visitor system: one row per adult per child. "Was" has the name in the last
+ * download on a corrected row; adults removed since that download come last, with their name only.
+ */
 export function visitorListCsvRows(rows: VisitorListRow[]): CsvValue[][] {
   return [
-    ["First name", "Last name", "Phone", "Email", "Registered by", "Child name", "Grade", "Teacher", "Name needs checking", "Changed since last download"],
+    ["First name", "Last name", "Phone", "Email", "Registered by", "Child name", "Grade", "Teacher", "Name needs checking", "Changed since last download", "Was"],
     ...rows.map((r) => [
       r.first_name,
       r.last_name,
       formatPhone(r.phone),
       r.email ?? "",
-      r.registered_by,
-      r.child_name,
-      r.grade,
-      r.teacher,
+      r.registered_by ?? "",
+      r.child_name ?? "",
+      r.grade ?? "",
+      r.teacher ?? "",
       r.name_needs_check ? "Check first and last name" : "",
-      r.is_new ? "New" : r.name_changed ? "Name corrected" : "",
+      r.removed ? "Removed" : r.is_new ? "New" : r.name_changed ? "Name corrected" : "",
+      r.name_changed ? `First name ${r.was_first_name ?? ""}, last name ${r.was_last_name ?? ""}` : "",
     ]),
   ];
 }

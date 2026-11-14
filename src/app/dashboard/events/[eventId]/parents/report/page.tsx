@@ -8,24 +8,42 @@ import { Card } from "@/components/ui";
 import { getEventAccess, getOrigin } from "@/lib/data";
 import { hasParents } from "@/lib/event-types";
 import { parentRegistrationClosed } from "@/lib/parents";
-import { RECORDS_NOTE } from "@/lib/records";
 import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatDateRange, formatTime, formatTimeRange, utcToZonedDate, zoneName } from "@/lib/time";
 import { checkInReport, checkInSummary, type ReportRow } from "@/lib/visitor-lists";
-import { deletedLine, plural, REPORT_NAME, REPORT_SCOPE, saveBefore, savedLine, shortDate } from "@/lib/visitor-words";
+import {
+  copyLine,
+  deletedLine,
+  plural,
+  REPORT_GROUPS as GROUPS,
+  REPORT_NAME,
+  REPORT_RECORDS_NOTE,
+  REPORT_SCOPE,
+  saveBefore,
+  savedLine,
+  shortDate,
+} from "@/lib/visitor-words";
 import { CopyLinkButton } from "../../forms";
-import { DownloadLink } from "../visitor-controls";
+import { CopyConfirmButton, DownloadLink } from "../visitor-controls";
 import { PrintReportButton, ReportView, type ReportLine } from "./report-view";
 
 export const metadata: Metadata = { title: REPORT_NAME };
 
+/** Text for a CSS string: quotes and backslashes escaped, and nothing that could end the style tag. */
+const cssString = (text: string) => `"${text.replace(/[\\"]/g, "\\$&").replace(/[\n\r]/g, " ").replace(/</g, "\\3c ")}"`;
+
 /*
  * Paper is black on white whatever the screen's theme (a dark-mode print came out blank in the mock-ups), letter
- * size with real margins. Only this page carries it.
+ * size with real margins, the event's name at the top of every page and "Page 2 of 7" at the bottom (where the browser
+ * supports page margin boxes: Chrome and Edge do; others print without them). Only this page carries it.
  */
-const PRINT_STYLES = `@media print {
-  @page { size: letter; margin: 0.5in; }
+const printStyles = (eventName: string) => `@media print {
+  @page {
+    size: letter; margin: 0.6in 0.5in;
+    @top-left { content: ${cssString(`${eventName} · ${REPORT_NAME}`)}; font: 9pt sans-serif; color: #000; }
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 9pt sans-serif; color: #000; }
+  }
   html:root {
     color-scheme: light;
     --background: #ffffff; --surface: #ffffff; --raised: #ffffff; --foreground: #000000; --muted: #000000;
@@ -93,9 +111,9 @@ export default async function VisitorReportPage({ params }: PageProps<"/dashboar
               <p className="leading-7">{deletedLine(utcToZonedDate(summary.deleted_at ?? new Date().toISOString(), tz))}</p>
               <Stats
                 items={[
+                  [summary.sent_to_office ?? 0, "sent to the front office"],
                   [summary.checked_in ?? 0, "checked in"],
                   [summary.not_checked_in ?? 0, "not checked in"],
-                  [summary.sent_to_office ?? 0, "sent to the front office"],
                 ]}
               />
               <p className="text-sm text-muted">
@@ -143,37 +161,45 @@ export default async function VisitorReportPage({ params }: PageProps<"/dashboar
   const lastDay = shortDate(event.ends_on);
   const lines: ReportLine[] = rows.map((r) => toLine(r, tz, multiDay));
 
+  const counts: Record<ReportLine["status"], number> = {
+    front_office: summary.sent_to_office ?? 0,
+    checked_in: summary.checked_in ?? 0,
+    not_yet: summary.not_checked_in ?? 0,
+  };
+
   return (
-    <Shell>
+    <Shell back={back}>
       {/* Paper is black on white, letter size, whatever the screen's theme. */}
-      <style>{PRINT_STYLES}</style>
+      <style>{printStyles(event.name)}</style>
       {!final && <AutoRefresh seconds={30} />}
-      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        {back}
-        <div className="flex flex-wrap gap-2">
+      {/* The title first (on a phone too), then the two ways to keep a copy. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div>
+          {heading}
+          {final ? (
+            <p className="mt-1 text-sm font-semibold">Final: check-in closed at the end of {lastDay}</p>
+          ) : (
+            <>
+              <p className="mt-1 text-sm text-muted print:hidden">
+                Updated <span className="tabular-nums">{asOf}</span> · updates on its own
+              </p>
+              <p className="mt-1 hidden text-sm font-semibold print:block">
+                In progress, as of {asOf}, {shortDate(utcToZonedDate(now, tz))}
+              </p>
+            </>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2 print:hidden">
           {/* During check-in neither is the main action: a copy made now isn't the record yet (design lessons L28). */}
           <DownloadLink href={`${base}/download?list=report`}>Download report spreadsheet</DownloadLink>
-          <PrintReportButton eventId={eventId} rows={rows.length} primary={final} />
+          <PrintReportButton eventId={eventId} rows={rows.length} primary={final && !summary.copy_confirmed_at} />
         </div>
       </div>
 
-      {heading}
-      {final ? (
-        <p className="mt-1 text-sm font-semibold">Final: check-in closed at the end of {lastDay}</p>
-      ) : (
-        <>
-          <p className="mt-1 text-sm text-muted print:hidden">Updated {asOf} · updates on its own</p>
-          <p className="mt-1 hidden text-sm font-semibold print:block">In progress, as of {asOf}, {shortDate(utcToZonedDate(now, tz))}</p>
-        </>
-      )}
-
+      {/* The counts, in the groups' order; each jumps to its group. */}
       <Stats
         className="mt-5"
-        items={[
-          [summary.checked_in ?? 0, "checked in"],
-          [summary.not_checked_in ?? 0, final ? "not checked in" : "not checked in yet"],
-          [summary.sent_to_office ?? 0, "sent to the front office"],
-        ]}
+        items={GROUPS.map((g) => [counts[g.key], g.key === "not_yet" ? (final ? "not checked in" : "not checked in yet") : g.title.toLowerCase(), `#${g.key}`])}
       />
       <p className="mt-2 text-sm text-muted">
         Of {plural(adults, "registered adult", "registered adults")} in {plural(summary.families ?? 0, "family", "families")}. {REPORT_SCOPE}
@@ -185,15 +211,24 @@ export default async function VisitorReportPage({ params }: PageProps<"/dashboar
             Check-in is still going. The report is final when check-in closes at the end of {lastDay}. A copy printed now says &ldquo;In progress,
             as of {asOf}&rdquo;.
           </p>
-        ) : summary.saved_at ? (
+        ) : summary.copy_confirmed_at ? (
           <p className="rounded-md border border-border bg-background px-3 py-2 text-sm leading-6">
-            {savedLine(summary.saved_by_name, utcToZonedDate(summary.saved_at, tz), summary.delete_on)}
+            {copyLine(summary.copy_confirmed_by_name, utcToZonedDate(summary.copy_confirmed_at, tz), summary.delete_on)}
           </p>
         ) : (
-          <p role="note" className="flex gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm leading-6">
+          // Stays until a Host or Co-host confirms the school has its copy: printing isn't proof it was kept.
+          <div role="note" className="flex gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm leading-6">
             <LineIcon name="warning" className="mt-0.5 size-5 shrink-0 text-warning" />
-            <span className="font-semibold">{saveBefore(summary.delete_on)}</span>
-          </p>
+            <div className="space-y-2">
+              <p className="font-semibold">{saveBefore(summary.delete_on)}</p>
+              <p>
+                {summary.saved_at
+                  ? `${savedLine(summary.saved_by_name, utcToZonedDate(summary.saved_at, tz), summary.saved_kind, "report")} Once the copy is where your school keeps its records, confirm it here.`
+                  : "Nobody has printed or downloaded it yet."}
+              </p>
+              <CopyConfirmButton eventId={eventId} deleteOn={formatDate(summary.delete_on)} />
+            </div>
+          </div>
         )}
       </div>
 
@@ -201,7 +236,7 @@ export default async function VisitorReportPage({ params }: PageProps<"/dashboar
         <ReportView lines={lines} final={final} />
       </div>
       {/* On paper the dashboard's printed-records note follows (PrintRecordNote); on screen, this one. */}
-      <p className="mt-8 text-sm text-muted print:hidden">{RECORDS_NOTE}</p>
+      <p className="mt-8 text-sm text-muted print:hidden">{REPORT_RECORDS_NOTE}</p>
     </Shell>
   );
 }
@@ -216,14 +251,22 @@ function Shell({ back, children }: { back?: ReactNode; children: ReactNode }) {
   );
 }
 
-/** Counts as figures, each with its noun. */
-function Stats({ items, className = "" }: { items: [number, string][]; className?: string }) {
+/** Counts as figures, each with its noun, in one row (a phone too). With a link, the count jumps to its group. */
+function Stats({ items, className = "" }: { items: [number, string, string?][]; className?: string }) {
   return (
-    <dl className={`flex flex-wrap gap-x-8 gap-y-3 ${className}`}>
-      {items.map(([n, label]) => (
-        <div key={label} className="min-w-28">
-          <dd className="text-3xl font-semibold tabular-nums print:text-xl">{n}</dd>
-          <dt className="text-sm text-muted">{label}</dt>
+    <dl className={`grid max-w-2xl grid-cols-3 gap-x-4 gap-y-3 ${className}`}>
+      {items.map(([n, label, href]) => (
+        <div key={label} className="flex flex-col-reverse justify-end">
+          <dt className="text-xs leading-5 text-muted sm:text-sm">{label}</dt>
+          <dd className="text-2xl font-semibold tabular-nums sm:text-3xl print:text-xl">
+            {href ? (
+              <a href={href} className="underline decoration-field-border decoration-2 underline-offset-4 hover:decoration-brand print:no-underline">
+                {n}
+              </a>
+            ) : (
+              n
+            )}
+          </dd>
         </div>
       ))}
     </dl>
@@ -234,11 +277,10 @@ function Stats({ items, className = "" }: { items: [number, string][]; className
 function toLine(r: ReportRow, tz: string, multiDay: boolean): ReportLine {
   const name = r.name_needs_check && r.typed_name ? r.typed_name : r.last_name ? `${r.last_name}, ${r.first_name}` : r.first_name;
   const visiting = r.children.map((c) => `${c.name} (${c.grade}, ${c.teacher})`).join("; ");
-  let checkedIn: string | null = null;
+  let checkedIn: ReportLine["checkedIn"] = null;
   if (r.status === "checked_in" && r.checked_in_at) {
     const time = formatTime(r.checked_in_at, tz);
-    const at = multiDay ? `${formatDate(utcToZonedDate(r.checked_in_at, tz), { year: undefined })}, ${time}` : time;
-    checkedIn = r.checked_in_by_name ? `${at} by ${r.checked_in_by_name}` : at;
+    checkedIn = { at: multiDay ? `${formatDate(utcToZonedDate(r.checked_in_at, tz), { year: undefined })}, ${time}` : time, by: r.checked_in_by_name };
   }
   return {
     id: r.adult_id,

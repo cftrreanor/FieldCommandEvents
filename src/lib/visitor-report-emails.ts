@@ -14,14 +14,15 @@ import { brand } from "@/lib/brand";
 //   morning_after:   the morning after the event, to the Account Host and Co-hosts of every event
 //   cohost_access:   about a week after, to Co-hosts of just this event (they can open it until 10 days after)
 //   before_deletion: a week before deletion, to the Account Host and Co-hosts of every event, always; gentler when
-//                    someone already printed or downloaded the report
+//                    someone confirmed the school has a copy ("Our school has a copy"), and says who printed or downloaded
+// They come from the app itself, not the organizer (they're about the app deleting the report).
 // These are records-safety emails: they don't follow Email settings' notification choices (those cover bookings,
 // band registrations and withdrawals, and volunteer sign-ups), so the school always hears before its report goes.
 // No family names, ever: event, deadline, and counts only.
 
 export type ReportEmailKind = "morning_after" | "cohost_access" | "before_deletion";
 
-type Due = { event_id: string; kind: ReportEmailKind; families: number; saved: boolean; access_ends_on: string; delete_on: string };
+type Due = { event_id: string; kind: ReportEmailKind; families: number; saved: boolean; confirmed: boolean; access_ends_on: string; delete_on: string };
 type Event = { id: string; name: string; organization_id: string; timezone: string; starts_on: string; ends_on: string };
 
 const KEY: Record<ReportEmailKind, string> = {
@@ -40,7 +41,11 @@ export async function reportEmail(
     checkedIn: number;
     adults: number;
     /** before_deletion: the last time someone printed or downloaded the report. */
-    saved: { by: string | null; on: string } | null;
+    saved: { by: string | null; on: string; kind: "report_print" | "report_download" } | null;
+    /** before_deletion: who confirmed the school has a copy, and when. */
+    confirmed: { by: string | null; on: string } | null;
+    /** cohost_access: the Account Host's name, who can still open it after the Co-host's access ends. */
+    accountHost: string | null;
     url: string;
   },
 ) {
@@ -50,6 +55,7 @@ export async function reportEmail(
     access_ends: shortDate(v.accessEndsOn),
     checked_in: String(v.checkedIn),
     adults: String(v.adults),
+    account_host: v.accountHost || "your Account Host",
   };
   const custom = customWords(KEY[kind], await loadSystemEmail(KEY[kind]), vars);
   const built = {
@@ -62,30 +68,36 @@ export async function reportEmail(
       ],
     },
     cohost_access: {
-      subject: `Save the ${v.eventName} visitor check-in report by ${vars.access_ends}`,
-      heading: `Your access to ${v.eventName} ends after ${vars.access_ends}`,
+      subject: `You can open the ${v.eventName} visitor check-in report through ${vars.access_ends}`,
+      heading: `Your access to ${v.eventName} lasts through ${vars.access_ends}`,
       paragraphs: [
         `As a Co-host of ${v.eventName}, you can open the event and its visitor check-in report through ${vars.access_ends}. If your school needs a copy, save it before then.`,
-        `After that, the Account Host and Co-hosts of every event can still open it. ${brand.name} deletes it on ${vars.deadline}, along with families' and children's details.`,
+        `After that, ${vars.account_host}${v.accountHost ? ", your Account Host," : ""} and Co-hosts of every event can still open it. ${brand.name} deletes it on ${vars.deadline}, along with families' and children's details.`,
       ],
     },
+    // Gentler once someone confirmed the school has its copy: the same news, no instruction.
     before_deletion: {
-      subject: `Reminder: save the ${v.eventName} visitor check-in report before ${vars.deadline}`,
-      heading: `Save the visitor check-in report before ${vars.deadline}`,
+      subject: v.confirmed
+        ? `Reminder: the ${v.eventName} visitor check-in report is deleted on ${vars.deadline}`
+        : `Reminder: save the ${v.eventName} visitor check-in report before ${vars.deadline}`,
+      heading: v.confirmed ? `The visitor check-in report is deleted on ${vars.deadline}` : `Save the visitor check-in report before ${vars.deadline}`,
       paragraphs: [
         `On ${vars.deadline}, ${brand.name} deletes the visitor check-in report for ${v.eventName}, along with families' and children's details, as promised to families. Copies you print or download before then are your school's records.`,
       ],
     },
   }[kind];
+  const printed = v.saved
+    ? `${v.saved.by ?? "Someone"} ${v.saved.kind === "report_download" ? "downloaded the report spreadsheet" : "printed the report"} on ${shortDate(v.saved.on)}.`
+    : "Nobody has printed or downloaded the report yet.";
   const savedLines =
     kind !== "before_deletion"
       ? [REPORT_HOW_TO_SAVE]
-      : v.saved
+      : v.confirmed
         ? [
-            `${v.saved.by ?? "Someone"} printed or downloaded the report on ${shortDate(v.saved.on)}. If your front office has the copy, you're all set.`,
-            `If not, ${REPORT_HOW_TO_SAVE[0].toLowerCase()}${REPORT_HOW_TO_SAVE.slice(1)}`,
+            `${v.confirmed.by ?? "Someone"} confirmed your school has a copy on ${shortDate(v.confirmed.on)}, so there's nothing more to do. ${printed}`,
+            `If you need another copy: ${REPORT_HOW_TO_SAVE[0].toLowerCase()}${REPORT_HOW_TO_SAVE.slice(1)}`,
           ]
-        : ["Nobody has printed or downloaded the report yet.", REPORT_HOW_TO_SAVE];
+        : [`${printed} Nobody has confirmed your school has a copy.`, REPORT_HOW_TO_SAVE];
   const { html, text } = emailLayout({
     heading: custom?.heading || built.heading,
     paragraphs: [...(custom?.paragraphs ?? built.paragraphs), ...savedLines],
@@ -170,18 +182,39 @@ export async function sendVisitorReportEmails(admin: SupabaseClient, origin: str
         if (!a.sent_to_office_at && a.checked_in_at && utcToZonedDate(a.checked_in_at, event.timezone) >= event.starts_on) checkedIn++;
       }
     }
-    let saved: { by: string | null; on: string } | null = null;
+    let saved: Parameters<typeof reportEmail>[1]["saved"] = null;
     if (d.kind === "before_deletion" && d.saved) {
       const { data: last } = await admin
         .from("parent_list_downloads")
-        .select("at, by_name, profiles(full_name)")
+        .select("at, kind, by_name, profiles(full_name)")
         .eq("event_id", event.id)
         .in("kind", ["report_download", "report_print"])
         .order("at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      const row = last as unknown as { at: string; by_name: string | null; profiles: { full_name: string | null } | null } | null;
-      if (row) saved = { by: row.profiles?.full_name?.trim() || row.by_name || null, on: utcToZonedDate(row.at, event.timezone) };
+      const row = last as unknown as { at: string; kind: "report_print" | "report_download"; by_name: string | null; profiles: { full_name: string | null } | null } | null;
+      if (row) saved = { by: row.profiles?.full_name?.trim() || row.by_name || null, on: utcToZonedDate(row.at, event.timezone), kind: row.kind };
+    }
+    let confirmed: Parameters<typeof reportEmail>[1]["confirmed"] = null;
+    if (d.kind === "before_deletion" && d.confirmed) {
+      const { data: copy } = await admin
+        .from("parent_report_copies")
+        .select("confirmed_at, confirmed_by_name, profiles(full_name)")
+        .eq("event_id", event.id)
+        .maybeSingle();
+      const row = copy as unknown as { confirmed_at: string; confirmed_by_name: string | null; profiles: { full_name: string | null } | null } | null;
+      if (row) confirmed = { by: row.profiles?.full_name?.trim() || row.confirmed_by_name || null, on: utcToZonedDate(row.confirmed_at, event.timezone) };
+    }
+    let accountHost: string | null = null;
+    if (d.kind === "cohost_access") {
+      const { data: owner } = await admin
+        .from("organization_members")
+        .select("profiles(full_name)")
+        .eq("organization_id", event.organization_id)
+        .eq("role", "owner")
+        .limit(1)
+        .maybeSingle();
+      accountHost = (owner as unknown as { profiles: { full_name: string | null } | null } | null)?.profiles?.full_name?.trim() || null;
     }
 
     const message = await reportEmail(d.kind, {
@@ -191,11 +224,13 @@ export async function sendVisitorReportEmails(admin: SupabaseClient, origin: str
       checkedIn,
       adults,
       saved,
+      confirmed,
+      accountHost,
       url: `${origin}/dashboard/events/${event.id}/parents/report`,
     });
     let delivered = 0;
     for (const address of to) {
-      if (await sendEmail({ to: address, ...message, eventId: event.id })) delivered++;
+      if (await sendEmail({ to: address, ...message, eventId: event.id, fromApp: true })) delivered++;
       else unsent++;
       await pause();
     }

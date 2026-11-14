@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button, Field, Input } from "@/components/ui";
+import { REPORT_GROUPS as GROUPS } from "@/lib/visitor-words";
 import { noteParentReportPrinted } from "../actions";
 import { FrontOfficeBadge } from "../visitor-controls";
 
@@ -14,8 +15,8 @@ export type ReportLine = {
   search: string;
   visiting: string;
   status: "not_yet" | "front_office" | "checked_in";
-  /** "11:02 AM by Jordan Park" (or the time alone); a date first on multi-day events. */
-  checkedIn: string | null;
+  /** When ("11:02 AM", with the date first on multi-day events) and by whom. */
+  checkedIn: { at: string; by: string | null } | null;
 };
 
 const CELL =
@@ -41,24 +42,20 @@ export function PrintReportButton({ eventId, rows, primary }: { eventId: string;
 }
 
 /**
- * Every adult, grouped the same way during the event and after (Not yet or Not checked in, Sent to the front office,
- * Checked in), with a find box. The find box narrows the screen only: a printed copy always has every row.
+ * Every adult, grouped the same way during the event and after (Sent to the front office, Checked in, Not checked in
+ * or Not yet), with a find box. The find box narrows the screen only: a printed copy always has every row.
  */
 export function ReportView({ lines, final }: { lines: ReportLine[]; final: boolean }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const matches = (l: ReportLine) => !q || l.search.includes(q);
-  const groups: { key: ReportLine["status"]; title: string }[] = [
-    { key: "not_yet", title: final ? "Not checked in" : "Not yet" },
-    { key: "front_office", title: "Sent to the front office" },
-    { key: "checked_in", title: "Checked in" },
-  ];
+  const groups = GROUPS.map((g) => (g.key === "not_yet" && !final ? { ...g, title: "Not yet" } : g));
   const matched = q ? lines.filter(matches).length : null;
 
   return (
     <div>
       <div className="print:hidden">
-        <Field label="Find an adult or child" hint="A name or a teacher" className="sm:max-w-sm">
+        <Field label="Find an adult or child" hint="An adult, child, or teacher" className="sm:max-w-sm">
           <Input type="search" value={query} onChange={(e) => setQuery(e.target.value)} autoComplete="off" />
         </Field>
         {matched !== null && (
@@ -72,15 +69,29 @@ export function ReportView({ lines, final }: { lines: ReportLine[]; final: boole
         const shown = rows.filter(matches).length;
         return (
           // A group with no matches leaves the screen while someone's searching; on paper every group shows.
-          <section key={g.key} className={`mt-8 ${q && shown === 0 ? "hidden print:block" : ""} print:mt-5`}>
+          <section key={g.key} id={g.key} className={`mt-8 scroll-mt-4 ${q && shown === 0 ? "hidden print:block" : ""} print:mt-5`}>
             <h2 className="text-lg font-semibold break-after-avoid">
-              {g.title} <span className="tabular-nums">({rows.length})</span>
+              {g.title}{" "}
+              <span className="tabular-nums">
+                {/* While searching: "(6 of 298)" on screen; paper always has every row. */}
+                {q ? (
+                  <>
+                    <span className="print:hidden">
+                      ({shown} of {rows.length})
+                    </span>
+                    <span className="hidden print:inline">({rows.length})</span>
+                  </>
+                ) : (
+                  `(${rows.length})`
+                )}
+              </span>
             </h2>
             {rows.length === 0 ? (
               <p className="mt-2 text-sm text-muted">No one</p>
             ) : (
               // On phones each adult stacks, with labels; the table is for wider screens and paper (like the Meeting summary).
-              <table className="mt-2 w-full border-collapse text-left text-sm max-sm:block print:table">
+              // Proportional figures in the table (tabular ones widen hyphens: "Pre - K"); times opt back in.
+              <table className="mt-2 w-full border-collapse text-left text-sm [font-variant-numeric:normal] max-sm:block print:table">
                 <thead className="max-sm:hidden print:table-header-group">
                   <tr className="border-b-2 border-foreground">
                     <th scope="col" className="w-[30%] py-2 pr-3 font-semibold">
@@ -109,8 +120,11 @@ export function ReportView({ lines, final }: { lines: ReportLine[]; final: boole
                       <td data-label="Check-in" className={CELL}>
                         {l.status === "front_office" ? (
                           <FrontOfficeBadge />
-                        ) : l.status === "checked_in" ? (
-                          l.checkedIn
+                        ) : l.status === "checked_in" && l.checkedIn ? (
+                          <>
+                            <span className="tabular-nums">{l.checkedIn.at}</span>
+                            {l.checkedIn.by && ` by ${l.checkedIn.by}`}
+                          </>
                         ) : final ? (
                           "Not checked in"
                         ) : (

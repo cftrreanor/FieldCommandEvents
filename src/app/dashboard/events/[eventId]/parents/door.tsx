@@ -1,9 +1,11 @@
 "use client";
 
 import { startTransition, useMemo, useOptimistic, useState } from "react";
+import { LineIcon } from "@/components/line-icon";
 import { Input } from "@/components/ui";
 import type { ActionState } from "@/lib/action-state";
 import { confirmDialog } from "@/components/confirm-dialog";
+import { letCheckIn, SEND_TO_OFFICE } from "@/lib/visitor-words";
 
 /** One adult on a registration (their own record). position 0 is the parent who registered. */
 export type DoorAdult = { id: string; position: number; name: string; firstName: string; checkedIn: boolean; sentToOffice: boolean };
@@ -22,6 +24,7 @@ export function Door({
   open,
   opensOn,
   toggle,
+  letIn,
 }: {
   parents: DoorParent[];
   /** Check-in is on (the day before through the event). Otherwise the list is read-only. */
@@ -29,13 +32,15 @@ export function Door({
   /** When the check-in buttons turn on, for the note shown before then. */
   opensOn: string;
   toggle: (adultId: string, checkedIn: boolean) => Promise<ActionState>;
+  /** Hosts and Co-hosts only: clear the front-office mark ("Let Ben check in"). The door team sees just the note. */
+  letIn?: (adultId: string) => Promise<ActionState>;
 }) {
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [optimistic, setOptimistic] = useOptimistic(
     parents,
-    (state, change: { adultId: string; checkedIn: boolean }) =>
-      state.map((p) => ({ ...p, adults: p.adults.map((a) => (a.id === change.adultId ? { ...a, checkedIn: change.checkedIn } : a)) })),
+    (state, change: { adultId: string } & Partial<Pick<DoorAdult, "checkedIn" | "sentToOffice">>) =>
+      state.map((p) => ({ ...p, adults: p.adults.map((a) => (a.id === change.adultId ? { ...a, ...change, id: a.id } : a)) })),
   );
   const everyone = optimistic.flatMap((p) => p.adults);
   const here = everyone.filter((a) => a.checkedIn).length;
@@ -47,6 +52,30 @@ export function Door({
       setOptimistic({ adultId: a.id, checkedIn: !a.checkedIn });
       try {
         const result = await toggle(a.id, !a.checkedIn);
+        if (result.error) setError(result.error);
+      } catch {
+        setError("That didn't go through. Check your signal and tap again.");
+      }
+    });
+  }
+
+  async function onLetIn(a: DoorAdult) {
+    if (!letIn) return;
+    const ok = await confirmDialog({
+      title: `Let ${a.name} check in?`,
+      bullets: [
+        `The note goes away and ${a.firstName}'s Check in button comes back, here and on every check-in phone`,
+        `Do this once the front office has cleared ${a.firstName}`,
+      ],
+      cancelLabel: "Cancel",
+      confirmLabel: letCheckIn(a.firstName),
+    });
+    if (!ok) return;
+    setError(null);
+    startTransition(async () => {
+      setOptimistic({ adultId: a.id, sentToOffice: false });
+      try {
+        const result = await letIn(a.id);
         if (result.error) setError(result.error);
       } catch {
         setError("That didn't go through. Check your signal and tap again.");
@@ -82,7 +111,7 @@ export function Door({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="sm:max-w-xs"
-            aria-label="Find a parent"
+            aria-label="Find a family: an adult, child, or teacher"
           />
         </div>
         {error && (
@@ -117,7 +146,7 @@ export function Door({
               </div>
               <ul className="mt-2 divide-y divide-border border-t border-border">
                 {p.adults.map((a) => (
-                  <li key={a.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                  <li key={a.id} className={`flex gap-x-3 gap-y-2 px-3 py-2.5 ${a.sentToOffice ? "flex-col" : "items-center justify-between"}`}>
                     <div className="min-w-0">
                       <p className="font-semibold">{a.name}</p>
                       {a.position === 0 && p.phone && (
@@ -127,10 +156,26 @@ export function Door({
                       )}
                     </div>
                     {a.sentToOffice ? (
-                      // A Host stopped this adult at the door: a plain note takes the button's place, so it can't be tapped through.
-                      <p className="flex min-h-12 w-36 shrink-0 items-center rounded-md border-2 border-foreground bg-surface px-3 py-1.5 text-sm font-semibold leading-snug sm:w-48">
-                        Please ask {a.firstName} to go to the front office.
-                      </p>
+                      // A Host sent this adult to the front office: a note across the row takes the Check in button's
+                      // place (soft amber, not button-shaped, nothing to tap through). Hosts and Co-hosts can undo it.
+                      <div className="flex w-full flex-col items-start gap-1">
+                        <p role="note" className="flex w-full gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2.5 text-sm leading-6">
+                          <LineIcon name="warning" className="mt-0.5 size-5 shrink-0 text-warning" />
+                          <span>
+                            <span className="block font-semibold">{SEND_TO_OFFICE}</span>
+                            Please ask {a.firstName} to go there.
+                          </span>
+                        </p>
+                        {letIn && open && (
+                          <button
+                            type="button"
+                            onClick={() => onLetIn(a)}
+                            className="inline-flex min-h-11 items-center px-1 text-sm font-medium text-brand underline-offset-4 hover:underline"
+                          >
+                            {letCheckIn(a.firstName)}
+                          </button>
+                        )}
+                      </div>
                     ) : !open ? (
                       a.checkedIn && <span className="shrink-0 text-sm font-semibold text-success">✓ Checked in</span>
                     ) : (

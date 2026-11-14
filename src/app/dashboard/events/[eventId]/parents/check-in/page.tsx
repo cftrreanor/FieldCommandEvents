@@ -8,7 +8,7 @@ import { ADULTS, sortedAdults, type Child } from "@/lib/parents";
 import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, utcToZonedDate } from "@/lib/time";
-import { setParentCheckedIn } from "../actions";
+import { letParentCheckIn, setParentCheckedIn } from "../actions";
 import { Door, type DoorParent } from "../door";
 
 export const metadata: Metadata = { title: "Parent check-in" };
@@ -30,9 +30,11 @@ export default async function ParentCheckInPage({ params }: PageProps<"/dashboar
 
   // Practice check-ins from the day before don't count once the event starts; families show to the door team
   // from the day before (Hosts and Co-hosts any time).
-  const [, { data: visible }] = await Promise.all([
+  // Hosts and Co-hosts can also undo "Send to the front office" here ("Let Ben check in"); the door team can't.
+  const [, { data: visible }, { data: isAdmin }] = await Promise.all([
     supabase.rpc("clear_practice_parent_check_ins", { p_event: eventId }),
     supabase.rpc("parent_families_visible", { ev: eventId }),
+    supabase.rpc("is_event_admin", { ev: eventId }),
   ]);
   const { data } = await supabase
     .from("parent_registrations")
@@ -82,7 +84,13 @@ export default async function ParentCheckInPage({ params }: PageProps<"/dashboar
           : "Not on the list? Send them through the school's visitor process."}
       </p>
       {visible ? (
-        <Door parents={parents} open={checkInOpen} opensOn={formatDate(addDays(event.starts_on, -1))} toggle={setParentCheckedIn.bind(null, eventId)} />
+        <Door
+          parents={parents}
+          open={checkInOpen}
+          opensOn={formatDate(addDays(event.starts_on, -1))}
+          toggle={setParentCheckedIn.bind(null, eventId)}
+          letIn={isAdmin ? letParentCheckIn.bind(null, eventId) : undefined}
+        />
       ) : (
         <p className="rounded-md border border-border bg-surface px-3 py-2 text-sm">
           Families show here from {formatDate(addDays(event.starts_on, -1))} through the end of the event.

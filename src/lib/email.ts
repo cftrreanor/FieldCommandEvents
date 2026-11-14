@@ -205,6 +205,7 @@ export async function sendEmail({
   invite,
   author,
   eventId,
+  fromApp = false,
 }: {
   to: string;
   subject: string;
@@ -216,6 +217,8 @@ export async function sendEmail({
   author?: EmailAuthor;
   /** An event's email: from its organizer's name, replies per its Replies setting. */
   eventId?: string;
+  /** The app's own notice to the organizer about their event (the report emails): from the app's name, not theirs. */
+  fromApp?: boolean;
 }): Promise<boolean> {
   // Demo people (src/lib/demo.ts) have made-up addresses: never email them
   // (on the QA site everything goes to the outbox, theirs included).
@@ -226,6 +229,7 @@ export async function sendEmail({
     return false;
   }
   const sender = await senderFor(eventId, replyTo);
+  if (fromApp) sender.from = FROM;
   if (isQa()) {
     const saved = await toOutbox({ ...sender, to: [to], subject, html, text, invite: invite?.method });
     await logEmail(to, subject, saved ? "sent" : "failed", saved ? undefined : "QA outbox", author);

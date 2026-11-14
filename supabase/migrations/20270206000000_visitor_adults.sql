@@ -30,9 +30,12 @@
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
--- Names: "Maria de la Cruz" -> first "Maria de la", last "Cruz", unsure.
--- Split at the last space; unsure only when the split could be wrong: three or
--- more words, one word, or a particle (van, de, la...) before the last word.
+-- Names: "Maria de la Cruz" -> first "Maria", last "de la Cruz", unsure.
+-- A particle (van, von, de, de la, del, St., Saint...) after the first word
+-- starts the last name ("Luis Von Berg" -> "Luis" / "Von Berg"); otherwise
+-- the last name is the last word. Unsure only when the split could be wrong:
+-- three or more words, one word, or a particle. src/lib/name-split.ts offers a
+-- Host the likely splits, with this one first.
 -- ---------------------------------------------------------------------------
 create or replace function public.split_person_name(p_name text, out first_name text, out last_name text, out unsure boolean)
 language plpgsql immutable set search_path = public
@@ -40,8 +43,10 @@ as $$
 declare
   w text[];
   n int;
-  particles constant text[] := array['van', 'von', 'de', 'del', 'della', 'der', 'den', 'di', 'da', 'das', 'dos', 'du',
-                                     'la', 'le', 'ter', 'ten'];
+  i int;
+  cut int;
+  particles constant text[] := array['van', 'von', 'der', 'den', 'de', 'del', 'della', 'le', 'la', 'du', 'da', 'di', 'dos', 'das',
+                                     'ter', 'ten', 'st.', 'st', 'saint'];
   cleaned text := btrim(regexp_replace(coalesce(p_name, ''), '\s+', ' ', 'g'));
 begin
   if cleaned = '' then
@@ -54,8 +59,15 @@ begin
     first_name := w[1]; last_name := ''; unsure := true;
     return;
   end if;
-  first_name := array_to_string(w[1:n - 1], ' ');
-  last_name := w[n];
+  cut := n;
+  for i in 2 .. n - 1 loop
+    if lower(w[i]) = any (particles) then
+      cut := i;
+      exit;
+    end if;
+  end loop;
+  first_name := array_to_string(w[1:cut - 1], ' ');
+  last_name := array_to_string(w[cut:n], ' ');
   unsure := n >= 3 or exists (select 1 from unnest(w[1:n - 1]) x where lower(x) = any (particles));
 end;
 $$;
@@ -190,8 +202,15 @@ create table if not exists public.parent_registration_adults (
   sent_to_office_by  uuid references public.profiles (id) on delete set null,
   added_at           timestamptz not null default now(),
   name_changed_at    timestamptz,
+  -- The name as it was in the last visitor list download (the "Was" column when it's changed since).
+  listed_first_name  text,
+  listed_last_name   text,
+  listed_at          timestamptz,
   foreign key (registration_id, event_id) references public.parent_registrations (id, event_id) on delete cascade
 );
+alter table public.parent_registration_adults add column if not exists listed_first_name text;
+alter table public.parent_registration_adults add column if not exists listed_last_name text;
+alter table public.parent_registration_adults add column if not exists listed_at timestamptz;
 create index if not exists parent_registration_adults_event_idx on public.parent_registration_adults (event_id);
 create index if not exists parent_registration_adults_registration_idx on public.parent_registration_adults (registration_id, position);
 
@@ -231,7 +250,40 @@ create trigger parent_registration_adults_sync
 -- "Saved by": adults count as Parent Registration edits; check-ins at the door don't.
 drop trigger if exists parent_registration_adults_note_save on public.parent_registration_adults;
 create trigger parent_registration_adults_note_save after insert or update or delete on public.parent_registration_adults
-  for each row execute function public.note_event_save('parents', 'checked_in_at,checked_in_by,checked_in_by_name');
+  for each row execute function public.note_event_save('parents',
+    'checked_in_at,checked_in_by,checked_in_by_name,listed_first_name,listed_last_name,listed_at');
+
+-- Adults removed since the last visitor list download (a family took them off, or cancelled), so the next download
+-- can list them for the school's visitor system. Only adults that were in a download; cleared by the next download,
+-- and with everything else 30 days after the event. Read only through parent_visitor_list (Hosts and Co-hosts).
+create table if not exists public.parent_removed_adults (
+  id          uuid primary key default gen_random_uuid(),
+  event_id    uuid not null references public.events (id) on delete cascade,
+  first_name  text not null,
+  last_name   text not null default '',
+  removed_at  timestamptz not null default now()
+);
+create index if not exists parent_removed_adults_event_idx on public.parent_removed_adults (event_id);
+alter table public.parent_removed_adults enable row level security;
+revoke all on public.parent_removed_adults from anon, authenticated;
+grant select, insert, update, delete on public.parent_removed_adults to service_role;
+
+create or replace function public.parent_adult_removed()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+begin
+  if old.listed_at is not null and public.parent_data_kept(old.event_id) then
+    insert into parent_removed_adults (event_id, first_name, last_name)
+    values (old.event_id, coalesce(old.listed_first_name, old.first_name), coalesce(old.listed_last_name, old.last_name));
+  end if;
+  return null;
+end;
+$$;
+revoke all on function public.parent_adult_removed() from public, anon, authenticated;
+drop trigger if exists parent_registration_adults_removed on public.parent_registration_adults;
+create trigger parent_registration_adults_removed after delete on public.parent_registration_adults
+  for each row execute function public.parent_adult_removed();
 
 -- Adds one adult (an entry from parent_adult_entry) to a registration.
 create or replace function public.parent_adult_add(p_reg uuid, p_event uuid, e jsonb, p_position int)
@@ -291,6 +343,14 @@ begin
     $sql$;
   end if;
 end $$;
+
+-- Names the app split that nobody has checked yet follow the split rules above (where an earlier run of this file
+-- split them at the last space).
+update public.parent_registration_adults a
+   set first_name = s.first_name, last_name = s.last_name
+  from (select x.id, (public.split_person_name(x.typed_name)).* from public.parent_registration_adults x
+         where x.name_split_by_app and x.name_needs_check and x.name_confirmed_at is null and x.typed_name is not null) s
+ where s.id = a.id and s.first_name <> '' and (a.first_name, a.last_name) is distinct from (s.first_name, s.last_name);
 
 -- The adults' records now hold who's coming and their check-ins.
 alter table public.parent_registrations drop column if exists other_adults;
@@ -731,15 +791,27 @@ begin
   insert into parent_list_downloads (event_id, kind, by_user, by_name, row_count)
   values (p_event, p_kind, auth.uid(), (select nullif(btrim(full_name), '') from profiles where id = auth.uid()),
           greatest(coalesce(p_rows, 0), 0));
+  -- A visitor list download: each adult's name as the school now has it (for "Was" next time), and the adults
+  -- removed before it have been passed on.
+  if p_kind = 'visitor_list' then
+    update parent_registration_adults
+       set listed_first_name = first_name, listed_last_name = last_name, listed_at = now()
+     where event_id = p_event;
+    delete from parent_removed_adults where event_id = p_event;
+  end if;
 end;
 $$;
 
 -- The visitor list for the school's visitor system: one row per adult per child. Email and phone only on the
--- registering adult's rows. is_new / name_changed: since the last visitor list download (false before the first).
+-- registering adult's rows. Since the last visitor list download (all false before the first): is_new (added),
+-- name_changed (with was_first_name / was_last_name, the name in that download), and removed (one row for each adult
+-- taken off since, with only their name).
+drop function if exists public.parent_visitor_list(uuid);
 create or replace function public.parent_visitor_list(p_event uuid)
 returns table (adult_id uuid, registration_id uuid, adult_position integer, first_name text, last_name text,
                phone text, email text, registered_by text, child_name text, grade text, teacher text,
-               name_needs_check boolean, is_new boolean, name_changed boolean)
+               name_needs_check boolean, is_new boolean, name_changed boolean, was_first_name text, was_last_name text,
+               removed boolean)
 language plpgsql stable security definer set search_path = public
 as $$
 #variable_conflict use_column
@@ -751,24 +823,40 @@ begin
   end if;
   select max(d.at) into since from parent_list_downloads d where d.event_id = p_event and d.kind = 'visitor_list';
   return query
-  select a.id, a.registration_id, a.position::int, a.first_name, a.last_name,
-         case when a.position = 0 then r.phone end, case when a.position = 0 then r.email::text end,
-         r.parent_name, k ->> 'name', k ->> 'grade', k ->> 'teacher',
-         a.name_needs_check,
-         since is not null and a.added_at > since,
-         since is not null and a.added_at <= since and coalesce(a.name_changed_at, '-infinity') > since
-    from parent_registration_adults a
-    join parent_registrations r on r.id = a.registration_id
-    cross join lateral jsonb_array_elements(r.children) k
-   where a.event_id = p_event
-   order by lower(a.last_name), lower(a.first_name), a.registration_id, a.position, k ->> 'name';
+  select * from (
+    select a.id as adult_id, a.registration_id as registration_id, a.position::int as adult_position,
+           a.first_name as first_name, a.last_name as last_name,
+           case when a.position = 0 then r.phone end as phone, case when a.position = 0 then r.email::text end as email,
+           r.parent_name as registered_by, k ->> 'name' as child_name, k ->> 'grade' as grade, k ->> 'teacher' as teacher,
+           a.name_needs_check as name_needs_check,
+           since is not null and a.listed_at is null as is_new,
+           a.listed_at is not null and (a.listed_first_name, a.listed_last_name) is distinct from (a.first_name, a.last_name)
+             as name_changed,
+           case when a.listed_at is not null and (a.listed_first_name, a.listed_last_name) is distinct from (a.first_name, a.last_name)
+                then a.listed_first_name end as was_first_name,
+           case when a.listed_at is not null and (a.listed_first_name, a.listed_last_name) is distinct from (a.first_name, a.last_name)
+                then a.listed_last_name end as was_last_name,
+           false as removed
+      from parent_registration_adults a
+      join parent_registrations r on r.id = a.registration_id
+      cross join lateral jsonb_array_elements(r.children) k
+     where a.event_id = p_event
+    union all
+    select null::uuid, null::uuid, null::int, x.first_name, x.last_name, null, null, null, null, null, null,
+           false, false, false, null, null, true
+      from parent_removed_adults x
+     where x.event_id = p_event
+  ) l
+  order by l.removed, lower(l.last_name), lower(l.first_name), l.registration_id, l.adult_position, l.child_name;
 end;
 $$;
 
--- For Parent Registration's top card: the last visitor list download, and what's new or corrected since.
+-- For Parent Registration's top card: the last visitor list download, and what's new, corrected, or removed since.
+-- rows: how many rows a whole visitor list has (one per adult per child).
+drop function if exists public.parent_visitor_list_status(uuid);
 create or replace function public.parent_visitor_list_status(p_event uuid)
-returns table (last_at timestamptz, last_by_name text, last_rows integer, adults integer, new_adults integer,
-               changed_adults integer, names_to_check integer)
+returns table (last_at timestamptz, last_by_name text, last_rows integer, adults integer, rows integer, new_adults integer,
+               changed_adults integer, removed_adults integer, names_to_check integer)
 language plpgsql stable security definer set search_path = public
 as $$
 #variable_conflict use_column
@@ -782,11 +870,15 @@ begin
   return query
   select d.at, coalesce(nullif(btrim(p.full_name), ''), d.by_name), d.row_count,
          count(a.id)::int,
-         count(a.id) filter (where a.added_at > coalesce(d.at, '-infinity'))::int,
-         count(a.id) filter (where d.at is not null and a.added_at <= d.at and coalesce(a.name_changed_at, '-infinity') > d.at)::int,
+         coalesce(sum(jsonb_array_length(r.children)), 0)::int,
+         count(a.id) filter (where a.listed_at is null)::int,
+         count(a.id) filter (where a.listed_at is not null
+                               and (a.listed_first_name, a.listed_last_name) is distinct from (a.first_name, a.last_name))::int,
+         (select count(*)::int from parent_removed_adults x where x.event_id = p_event),
          count(a.id) filter (where a.name_needs_check)::int
     from (select 1) one
     left join parent_registration_adults a on a.event_id = p_event
+    left join parent_registrations r on r.id = a.registration_id
     left join profiles p on p.id = d.by_user
    group by d.at, p.full_name, d.by_name, d.row_count;
 end;
@@ -842,13 +934,44 @@ drop policy if exists "parent totals: hosts read" on public.parent_event_totals;
 create policy "parent totals: hosts read" on public.parent_event_totals
   for select to authenticated using (public.is_event_admin(event_id));
 
+-- "Our school has a copy": a Host or Co-host confirms, after the event, that the school saved the report. The
+-- save-the-report warning stays until then, and the week-before-deletion email is gentler. Who and when only.
+create table if not exists public.parent_report_copies (
+  event_id          uuid primary key references public.events (id) on delete cascade,
+  confirmed_by      uuid references public.profiles (id) on delete set null,
+  confirmed_by_name text,
+  confirmed_at      timestamptz not null default now()
+);
+alter table public.parent_report_copies enable row level security;
+revoke all on public.parent_report_copies from anon, authenticated;
+grant select, insert, update, delete on public.parent_report_copies to service_role;
+
+create or replace function public.confirm_parent_report_copy(p_event uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  if not (public.is_event_admin(p_event) and public.parent_data_kept(p_event)) then
+    raise exception 'Only the event''s Hosts and Co-hosts can do that.' using errcode = '42501';
+  end if;
+  if not exists (select 1 from events where id = p_event and (now() at time zone timezone)::date > ends_on) then
+    raise exception 'The report is final once the event is over. Confirm your school''s copy then.' using errcode = 'P0001';
+  end if;
+  insert into parent_report_copies (event_id, confirmed_by, confirmed_by_name)
+  values (p_event, auth.uid(), (select nullif(btrim(full_name), '') from profiles where id = auth.uid()))
+  on conflict (event_id) do nothing;
+end;
+$$;
+
 -- The report's numbers and state, live, final, or deleted (from the totals). Hosts and Co-hosts.
 -- deleted: families' details are gone (families is null when they went before totals were kept).
--- saved_*: the last time someone printed or downloaded the report.
+-- saved_*: the last time someone printed or downloaded the report. copy_*: who confirmed the school has a copy.
+drop function if exists public.parent_check_in_summary(uuid);
 create or replace function public.parent_check_in_summary(p_event uuid)
 returns table (families integer, adults integer, children integer, checked_in integer, sent_to_office integer,
                not_checked_in integer, today date, is_event_day boolean, is_final boolean, kept boolean, deleted boolean,
-               delete_on date, deleted_at timestamptz, saved_at timestamptz, saved_by_name text, saved_kind text)
+               delete_on date, deleted_at timestamptz, saved_at timestamptz, saved_by_name text, saved_kind text,
+               copy_confirmed_at timestamptz, copy_confirmed_by_name text)
 language plpgsql stable security definer set search_path = public
 as $$
 #variable_conflict use_column
@@ -856,6 +979,7 @@ declare
   ev    events;
   t     parent_event_totals;
   d     parent_list_downloads;
+  c     parent_report_copies;
   day   date;
   keep  boolean;
 begin
@@ -868,6 +992,7 @@ begin
   select * into t from parent_event_totals x where x.event_id = p_event;
   select * into d from parent_list_downloads x
    where x.event_id = p_event and x.kind in ('report_download', 'report_print') order by x.at desc limit 1;
+  select * into c from parent_report_copies x where x.event_id = p_event;
   if keep then
     return query
     select (select count(*)::int from parent_registrations r where r.event_id = p_event),
@@ -880,7 +1005,8 @@ begin
                                  and not public.parent_check_in_counts(a.checked_in_at, ev.timezone, ev.starts_on))::int,
            day, day between ev.starts_on and ev.ends_on, day > ev.ends_on, true, false,
            ev.ends_on + 31, null::timestamptz,
-           d.at, coalesce((select nullif(btrim(p.full_name), '') from profiles p where p.id = d.by_user), d.by_name), d.kind
+           d.at, coalesce((select nullif(btrim(p.full_name), '') from profiles p where p.id = d.by_user), d.by_name), d.kind,
+           c.confirmed_at, coalesce((select nullif(btrim(p.full_name), '') from profiles p where p.id = c.confirmed_by), c.confirmed_by_name)
       from (select 1) one
       left join parent_registration_adults a on a.event_id = p_event;
   else
@@ -888,7 +1014,8 @@ begin
     select t.families, t.adults, t.children, t.checked_in, t.sent_to_office,
            case when t.event_id is not null then t.adults - t.checked_in - t.sent_to_office end,
            day, false, true, false, true, ev.ends_on + 31, t.deleted_at,
-           d.at, coalesce((select nullif(btrim(p.full_name), '') from profiles p where p.id = d.by_user), d.by_name), d.kind;
+           d.at, coalesce((select nullif(btrim(p.full_name), '') from profiles p where p.id = d.by_user), d.by_name), d.kind,
+           c.confirmed_at, coalesce((select nullif(btrim(p.full_name), '') from profiles p where p.id = c.confirmed_by), c.confirmed_by_name);
   end if;
 end;
 $$;
@@ -925,6 +1052,8 @@ begin
     returning 1
   )
   select count(*)::int into n from gone;
+  delete from parent_removed_adults x using events e
+   where e.id = x.event_id and (now() at time zone e.timezone)::date > e.ends_on + 30;
   return n;
 end;
 $$;
@@ -946,30 +1075,33 @@ revoke all on public.parent_report_emails from anon, authenticated;
 grant select, insert, update, delete on public.parent_report_emails to service_role;
 
 -- Which report emails are due today (only events someone registered for, not yet sent, details still kept).
--- saved: someone printed or downloaded the report (the last email is gentler then).
+-- saved: someone printed or downloaded the report; confirmed: a Host or Co-host confirmed the school has a copy
+-- (the last email is gentler then, and still goes).
+drop function if exists public.parent_report_emails_due();
 create or replace function public.parent_report_emails_due()
-returns table (event_id uuid, kind text, families integer, saved boolean, access_ends_on date, delete_on date)
+returns table (event_id uuid, kind text, families integer, saved boolean, confirmed boolean, access_ends_on date, delete_on date)
 language sql stable security definer set search_path = public
 as $$
   with ev as (
     select e.*, (now() at time zone e.timezone)::date as today,
            (select count(*)::int from parent_registrations r where r.event_id = e.id) as families,
            exists (select 1 from parent_list_downloads d where d.event_id = e.id
-                    and d.kind in ('report_download', 'report_print')) as saved
+                    and d.kind in ('report_download', 'report_print')) as saved,
+           exists (select 1 from parent_report_copies c where c.event_id = e.id) as confirmed
       from events e
      where e.event_type::text = 'school_visit' and e.status = 'published'
   ), due as (
-    select ev.id, 'morning_after'::text as kind, ev.families, ev.saved, ev.ends_on from ev
+    select ev.id, 'morning_after'::text as kind, ev.families, ev.saved, ev.confirmed, ev.ends_on from ev
      where ev.today between ev.ends_on + 1 and ev.ends_on + 30
     union all
-    select ev.id, 'cohost_access', ev.families, ev.saved, ev.ends_on from ev
+    select ev.id, 'cohost_access', ev.families, ev.saved, ev.confirmed, ev.ends_on from ev
      where ev.today between ev.ends_on + 7 and ev.ends_on + 10
        and exists (select 1 from event_staff s where s.event_id = ev.id and s.role::text = 'co_host')
     union all
-    select ev.id, 'before_deletion', ev.families, ev.saved, ev.ends_on from ev
+    select ev.id, 'before_deletion', ev.families, ev.saved, ev.confirmed, ev.ends_on from ev
      where ev.today between ev.ends_on + 23 and ev.ends_on + 30
   )
-  select due.id, due.kind, due.families, due.saved, due.ends_on + 10, due.ends_on + 31
+  select due.id, due.kind, due.families, due.saved, due.confirmed, due.ends_on + 10, due.ends_on + 31
     from due
    where due.families > 0
      and not exists (select 1 from parent_report_emails m where m.event_id = due.id and m.kind = due.kind);
@@ -1211,7 +1343,7 @@ revoke execute on function
   public.update_parent_registration(uuid, text, text, jsonb, jsonb, text, text),
   public.cancel_parent_registration(uuid),
   public.record_parent_download(uuid, text, integer), public.parent_visitor_list(uuid), public.parent_visitor_list_status(uuid),
-  public.parent_check_in_report(uuid), public.parent_check_in_summary(uuid),
+  public.parent_check_in_report(uuid), public.parent_check_in_summary(uuid), public.confirm_parent_report_copy(uuid),
   public.clear_all_practice_parent_check_ins(), public.purge_parent_registrations(), public.parent_report_emails_due()
   from public, anon, authenticated;
 
@@ -1222,7 +1354,7 @@ grant execute on function
   public.set_parent_adult_name(uuid, text, text),
   public.import_parent_registration(uuid, text, text, text, jsonb, jsonb, text, text),
   public.record_parent_download(uuid, text, integer), public.parent_visitor_list(uuid), public.parent_visitor_list_status(uuid),
-  public.parent_check_in_report(uuid), public.parent_check_in_summary(uuid)
+  public.parent_check_in_report(uuid), public.parent_check_in_summary(uuid), public.confirm_parent_report_copy(uuid)
   to authenticated;
 
 grant execute on function

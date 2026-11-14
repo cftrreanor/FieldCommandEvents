@@ -75,3 +75,14 @@ Review: docs/design-reviews/2026-11-14-visitor-attendance-built.md (UX, UI, Cont
 | — | One action, three names | 2 | Owner's choice | **"Send to the front office"** everywhere; badge "Sent to the front office"; undo "Let Ben check in" |
 | — | Undo at the door | 2 | Owner's choice | **Hosts and Co-hosts** get "Let Ben check in" at the door, with a confirm; the door team sees only the note |
 | — | All other severity 2 and 1 findings | 2/1 | Take the advice | As written in the report |
+
+Building those fixes, a few details settled (within the decisions above; noted so later reviews know why):
+- Names to check have no split chosen at the start; saving with nothing chosen asks to choose one or Edit.
+- Adults removed since the last download appear only in the "new and changed" file; the "all" file is everyone
+  registered now, so its row count matches its button.
+- "Our school has a copy" can't be undone (a confirm window first; only the first confirmation counts).
+- "Reopen registration" is hidden once the closing time has passed (it would do nothing); the page points to
+  Registration settings.
+- The "Send to the front office" confirm button stays red (approved in round 2); "no red" applies to the door note.
+- The report's counts follow its group order (Sent to the front office first).
+- The three report emails come from the app's own name; replies still go to the organizer.

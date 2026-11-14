@@ -13,11 +13,11 @@ import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime, zoneName } from "@/lib/time";
 import { checkInSummary, visitorListStatus, type ReportSummary, type VisitorListStatus } from "@/lib/visitor-lists";
-import { deletedLine, plural, REPORT_NAME, saveBefore, savedLine, shortDate, WHO_SEES } from "@/lib/visitor-words";
+import { copyLine, deletedLine, joinNames, plural, REPORT_NAME, saveBefore, savedLine, SEND_TO_OFFICE, shortDate, WHO_SEES } from "@/lib/visitor-words";
 import { ActionButton, CopyLinkButton } from "../forms";
 import { saveParentSettings, setParentRegistrationOpen } from "./actions";
 import { FamiliesList, type ListedFamily } from "./families-list";
-import { DownloadLink, NamesToCheck, type NameToCheck } from "./visitor-controls";
+import { CopyConfirmButton, DownloadLink, NamesToCheck, type NameToCheck } from "./visitor-controls";
 import { ParentSettingsForm } from "./settings-form";
 import { importParents } from "@/app/dashboard/import-actions";
 import { SpreadsheetImport } from "@/components/spreadsheet-import";
@@ -104,6 +104,9 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
   const link = `${await getOrigin()}/e/${event.slug}/parents`;
   const closed = parentRegistrationClosed(event);
   const closesAt = event.parent_registration_closes_at;
+  // "Closed Fri, Nov 13" once that time has passed, "Closes" before.
+  const deadlinePassed = Boolean(closesAt && new Date(closesAt) <= new Date());
+  const closeWord = deadlinePassed ? "Closed" : "Closes";
   const published = event.status === "published";
   const [qrSvg, qrPng] = await Promise.all([
     QRCode.toString(link, { type: "svg", margin: 1, width: 160 }),
@@ -152,7 +155,7 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
           <span className="text-muted">
             {[
               showFamilies ? `${n(families.length, "family", "families")} · ${n(adultCount, "adult", "adults")} · ${n(childCount, "child", "children")}` : null,
-              closesAt && closed !== "over" ? `${closed === "deadline" ? "Closed" : "Closes"} ${closesAtLabel(closesAt, tz)}` : null,
+              closesAt && closed !== "over" ? `${closeWord} ${closesAtLabel(closesAt, tz)}` : null,
               closed === "over" ? "The event is over" : null,
             ]
               .filter(Boolean)
@@ -161,7 +164,19 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
         </p>
         <div className="mt-4">
           <p className="text-sm font-medium">Registration link</p>
-          <p className="mt-1 break-all text-sm text-muted">{link}</p>
+          <p className="mt-1 text-sm break-words text-muted">
+            {/* Long links break after a slash, not mid-word, on a phone. */}
+            {link.split("/").map((part, i, all) => (
+              <span key={i}>
+                {part}
+                {i < all.length - 1 && (
+                  <>
+                    /<wbr />
+                  </>
+                )}
+              </span>
+            ))}
+          </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <CopyLinkButton url={link} label="Copy link" />
             <a href={`/e/${event.slug}/parents`} target="_blank" className={smallButton}>
@@ -170,14 +185,31 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
             <Link href={`${base}/check-in`} className={smallButton}>
               Check-in
             </Link>
-            {published && (closed === null || closed === "closed") && (
+            {published && closed === null && (
               <ActionButton
-                action={setParentRegistrationOpen.bind(null, eventId, !event.parent_registration_open)}
-                variant={event.parent_registration_open ? "stop" : "go"}
+                action={setParentRegistrationOpen.bind(null, eventId, false)}
+                variant="stop"
                 className="px-3! text-xs!"
-                confirmMessage={event.parent_registration_open ? "Close parent registration? Parents won't be able to register." : undefined}
+                confirmMessage="Close parent registration? Parents won't be able to register."
               >
-                {event.parent_registration_open ? "Close registration" : "Open registration"}
+                Close registration
+              </ActionButton>
+            )}
+            {/* Closed by hand: a quiet way back, until the event day (names added after that miss the school's checks). */}
+            {published && closed === "closed" && !deadlinePassed && showFamilies && today < event.starts_on && (
+              <ActionButton
+                action={setParentRegistrationOpen.bind(null, eventId, true)}
+                variant="secondary"
+                className="px-3! font-medium!"
+                confirmMessage={`Reopen parent registration? Families can register from the link again. Anyone new needs to go to your school's visitor system before ${shortDate(event.starts_on)}.`}
+                confirmLabel="Reopen registration"
+              >
+                Reopen registration
+              </ActionButton>
+            )}
+            {published && closed === "closed" && !showFamilies && (
+              <ActionButton action={setParentRegistrationOpen.bind(null, eventId, true)} variant="go" className="px-3! text-xs!">
+                Open registration
               </ActionButton>
             )}
           </div>
@@ -186,9 +218,9 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
               Publish the event from its main page first, then open registration here.
             </p>
           )}
-          {closed === "deadline" && closesAt && (
+          {(closed === "deadline" || (closed === "closed" && deadlinePassed && showFamilies)) && closesAt && today < event.starts_on && (
             <p className="mt-3 text-sm">
-              Registration closed on its own on {closesAtLabel(closesAt, tz)}. To reopen it, change or remove the closing time in{" "}
+              Registration closed on {closesAtLabel(closesAt, tz)}. To reopen it, change or remove the closing time in{" "}
               <Link href={`${base}?tab=settings`} scroll={false} className="font-medium text-brand underline-offset-4 hover:underline">
                 Registration settings
               </Link>
@@ -196,7 +228,8 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
             </p>
           )}
           <p className="mt-2 text-sm text-muted">
-            Parents get a reminder to bring their photo ID the day before. Children&apos;s details are deleted 30 days after the event
+            {over ? "" : "Parents get a reminder to bring their photo ID the day before. "}
+            Families&apos; and children&apos;s details are deleted 30 days after the event
             {over ? `, on ${formatDate(addDays(event.ends_on, 31), { year: undefined })}` : ""}.
           </p>
           {/* Tucked away to keep the top of the page short; open it to show or download the code. */}
@@ -227,17 +260,27 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
           label="Parent registration"
           tabs={[
             ...(showFamilies
-              ? [{ key: "families", label: "Registered families", status: n(families.length, "family", "families"), href: `${base}?tab=families`, active: current === "families" }]
+              ? [
+                  {
+                    key: "families",
+                    label: "Registered families",
+                    short: "Families",
+                    status: n(families.length, "family", "families"),
+                    href: `${base}?tab=families`,
+                    active: current === "families",
+                  },
+                ]
               : []),
             {
               key: "settings",
               label: "Registration settings",
-              status: closesAt ? `${closed === "deadline" ? "Closed" : "Closes"} ${formatDate(utcToZonedDate(closesAt, tz), { year: undefined, weekday: undefined })}` : "Optional",
+              short: "Settings",
+              status: closesAt ? `${closeWord} ${formatDate(utcToZonedDate(closesAt, tz), { year: undefined, weekday: undefined })}` : "Optional",
               mark: closesAt ? ("done" as const) : undefined,
               href: `${base}?tab=settings`,
               active: current === "settings",
             },
-            ...(over ? [] : [{ key: "import", label: "Import families", status: "Optional", href: `${base}?tab=import`, active: current === "import" }]),
+            ...(over ? [] : [{ key: "import", label: "Import families", short: "Import", status: "Optional", href: `${base}?tab=import`, active: current === "import" }]),
           ]}
         />
         <div className="mt-6">
@@ -253,11 +296,17 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
               ) : (
                 <>
                   <p className="mt-1 mb-4 text-sm text-muted">
-                    Everyone who registered or was imported. Check them in at the door from{" "}
-                    <Link href={`${base}/check-in`} className="font-medium text-brand underline-offset-4 hover:underline">
-                      Check-in
-                    </Link>{" "}
-                    on the day.
+                    {over ? (
+                      "Everyone who registered or was imported."
+                    ) : (
+                      <>
+                        Everyone who registered or was imported. Check them in at the door from{" "}
+                        <Link href={`${base}/check-in`} className="font-medium text-brand underline-offset-4 hover:underline">
+                          Check-in
+                        </Link>{" "}
+                        on the day.
+                      </>
+                    )}
                   </p>
                   {families.length > 0 && (
                     <Downloads
@@ -267,6 +316,8 @@ export default async function ParentRegistrationPage({ params, searchParams }: P
                       reportOpen={today >= event.starts_on}
                       over={over}
                       canStop={canStop}
+                      adults={adultCount}
+                      namesToCheck={namesToCheck.length}
                       isAccountHost={accountHost?.user_id === user.id}
                       accountHostName={accountHost?.full_name?.trim() || "your Account Host"}
                     />
@@ -328,20 +379,23 @@ const PRIMARY_LINK = "inline-flex min-h-11 items-center justify-center rounded-m
 const OUTLINE_LINK =
   "inline-flex min-h-11 items-center justify-center rounded-md border border-field-border bg-surface px-4 text-center text-sm font-semibold hover:border-brand hover:bg-background";
 
-/** A warning that's due: the deletion date (docs/design-lessons.md L9). */
-function Warn({ children }: { children: React.ReactNode }) {
+/** A warning that's due: the deletion date (docs/design-lessons.md L9). The title in bold, what's known under it. */
+function Warn({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
-    <p role="note" className="flex gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm leading-6">
+    <div role="note" className="flex gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm leading-6">
       <LineIcon name="warning" className="mt-0.5 size-5 shrink-0 text-warning" />
-      <span className="font-semibold">{children}</span>
-    </p>
+      <div className="space-y-2">
+        <p className="font-semibold">{title}</p>
+        {children}
+      </div>
+    </div>
   );
 }
 
 /**
  * Parent Registration's top card: the one thing to do now. Before the day, send names to the school's visitor
  * system (names to check first, then the download); on the day, the door and the report; after the event, save the
- * report before it's deleted; after that, what's left.
+ * report before it's deleted, until someone confirms the school has a copy; after that, what's left.
  */
 function VisitorCard({
   summary,
@@ -396,19 +450,39 @@ function VisitorCard({
         </Card>
       );
     }
+    const result = (
+      <p className="text-sm leading-6">
+        The event is over. {summary.checked_in} of {plural(adults, "registered adult", "registered adults")} checked in.
+      </p>
+    );
+    // Someone confirmed the school has its copy: the warning's done, the date still stands.
+    if (summary.copy_confirmed_at) {
+      return (
+        <Card className="mt-6 space-y-3 p-4 sm:p-5">
+          <p className="text-sm leading-6">{copyLine(summary.copy_confirmed_by_name, utcToZonedDate(summary.copy_confirmed_at, tz), summary.delete_on)}</p>
+          {result}
+          <Link href={reportLink} className={OUTLINE_LINK}>
+            Open visitor check-in report
+          </Link>
+        </Card>
+      );
+    }
     return (
       <Card className="mt-6 space-y-3 border-brand p-4 sm:p-5">
-        {summary.saved_at ? (
-          <p className="text-sm leading-6">{savedLine(summary.saved_by_name, utcToZonedDate(summary.saved_at, tz), summary.delete_on)}</p>
-        ) : (
-          <Warn>{saveBefore(summary.delete_on)}</Warn>
-        )}
-        <p className="text-sm leading-6">
-          The event is over. {summary.checked_in} of {plural(adults, "registered adult", "registered adults")} checked in.
-        </p>
-        <Link href={reportLink} className={summary.saved_at ? OUTLINE_LINK : PRIMARY_LINK}>
-          Open visitor check-in report
-        </Link>
+        <Warn title={saveBefore(summary.delete_on)}>
+          <p>
+            {summary.saved_at
+              ? `${savedLine(summary.saved_by_name, utcToZonedDate(summary.saved_at, tz), summary.saved_kind)} Once the copy is where your school keeps its records, confirm it here.`
+              : "Nobody has printed or downloaded it yet."}
+          </p>
+        </Warn>
+        {result}
+        <div className="flex flex-wrap items-start gap-2">
+          <Link href={reportLink} className={summary.saved_at ? OUTLINE_LINK : PRIMARY_LINK}>
+            Open visitor check-in report
+          </Link>
+          <CopyConfirmButton eventId={eventId} deleteOn={formatDate(summary.delete_on)} />
+        </div>
       </Card>
     );
   }
@@ -416,16 +490,23 @@ function VisitorCard({
   if (isEventDay) {
     return (
       <Card className="mt-6 space-y-3 border-brand p-4 sm:p-5">
-        <p className="text-sm leading-6">
-          <span className="font-semibold">It&apos;s the day of the event.</span> Check parents in at the door, after their photo ID.
-        </p>
+        <div className="space-y-1 text-sm leading-6">
+          <p>
+            <span className="font-semibold">It&apos;s the day of the event.</span> Check parents in at the door, after their photo ID.
+          </p>
+          {adults > 0 && (
+            <p className="text-muted">
+              {summary.checked_in} of {plural(adults, "registered adult", "registered adults")} checked in so far
+            </p>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2">
           <Link href={`${base}/check-in`} className={PRIMARY_LINK}>
             Open check-in
           </Link>
           {adults > 0 && (
             <Link href={reportLink} className={OUTLINE_LINK}>
-              Open visitor check-in report · {summary.checked_in} of {adults} checked in so far
+              Open visitor check-in report
             </Link>
           )}
         </div>
@@ -438,12 +519,10 @@ function VisitorCard({
   const hasPrev = Boolean(listStatus.last_at);
   const added = hasPrev ? listStatus.new_adults : 0;
   const corrected = hasPrev ? listStatus.changed_adults : 0;
-  const since = [added ? `${added} new` : "", corrected ? `${corrected} corrected` : ""].filter(Boolean).join(" and ");
-  const what = since || `all ${adults}`;
+  const removed = hasPrev ? listStatus.removed_adults : 0;
+  const changes = added + corrected + removed;
+  const since = joinNames([added ? `${added} new` : "", corrected ? `${corrected} corrected` : "", removed ? `${removed} removed` : ""].filter(Boolean));
   const unchecked = namesToCheck.length;
-  const label = unchecked
-    ? `Download anyway: ${what} (${plural(unchecked, "name", "names")} not checked)`
-    : `Download visitor list: ${what}`;
   return (
     <Card className="mt-6 space-y-3 border-brand p-4 sm:p-5">
       <div className="space-y-1 text-sm leading-6">
@@ -462,19 +541,34 @@ function VisitorCard({
         </p>
       </div>
       <NamesToCheck eventId={eventId} names={namesToCheck} />
+      {/* One main button that follows where things stand: what's changed since the last download, or everyone. */}
       <div className="flex flex-wrap gap-2">
-        <DownloadLink href={`${base}/download?list=visitor${since ? "&only=new" : ""}`} primary={!unchecked}>
-          {label}
-        </DownloadLink>
-        {since && <DownloadLink href={`${base}/download?list=visitor`}>{`Download visitor list: all ${adults}`}</DownloadLink>}
+        {changes > 0 ? (
+          <DownloadLink href={`${base}/download?list=visitor&only=new`} primary namesToCheck={unchecked}>
+            {`Download ${plural(changes, "new and changed name", "new and changed names")}`}
+          </DownloadLink>
+        ) : (
+          <DownloadLink href={`${base}/download?list=visitor`} primary={!hasPrev} namesToCheck={unchecked}>
+            {allAdultsLabel(adults, listStatus.rows)}
+          </DownloadLink>
+        )}
       </div>
+      {changes > 0 && (
+        <p className="text-sm leading-6 text-muted">
+          New, corrected, and removed adults only. Corrected rows show the name they had before; removed ones are marked Removed. The whole list
+          is under Registered families.
+        </p>
+      )}
     </Card>
   );
 }
 
+/** "Download all 481 adults (612 rows)": one row per adult per child. */
+const allAdultsLabel = (adults: number, rows: number) => `Download all ${plural(adults, "adult", "adults")} (${plural(rows, "row", "rows")})`;
+
 /**
  * Registered families' downloads and the report, with the lines that explain them beside them: the front office,
- * who to add as a Co-host, and who sees what (once).
+ * who to add as a Co-host, and who sees what (once). After the event the report has its own button at the top.
  */
 function Downloads({
   base,
@@ -483,6 +577,8 @@ function Downloads({
   reportOpen,
   over,
   canStop,
+  adults,
+  namesToCheck,
   isAccountHost,
   accountHostName,
 }: {
@@ -492,56 +588,61 @@ function Downloads({
   reportOpen: boolean;
   over: boolean;
   canStop: boolean;
+  adults: number;
+  namesToCheck: number;
   isAccountHost: boolean;
   accountHostName: string;
 }) {
   const block = "flex flex-col items-start gap-1.5 rounded-lg border border-border p-3";
+  const can = over ? `open the ${REPORT_NAME.toLowerCase()} and save it` : `download the visitor list and open the ${REPORT_NAME.toLowerCase()}`;
   return (
     <div className="mb-6 space-y-3">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className={`grid gap-3 ${over ? "md:grid-cols-2" : "lg:grid-cols-3"}`}>
         <div className={block}>
-          <DownloadLink href={`${base}/download?list=visitor`}>Download visitor list</DownloadLink>
+          <DownloadLink href={`${base}/download?list=visitor`} namesToCheck={namesToCheck}>
+            {`Download visitor list: all ${plural(adults, "adult", "adults")}`}
+          </DownloadLink>
           <p className="text-sm text-muted">One row per adult per child, first and last names apart, for your school&apos;s visitor system</p>
         </div>
         <div className={block}>
           <DownloadLink href={`${base}/download?list=class`}>Download class list</DownloadLink>
           <p className="text-sm text-muted">One row per child, for teachers and planning</p>
         </div>
-        <div className={block}>
-          {reportOpen ? (
-            <Link href={`${base}/report`} className={OUTLINE_LINK}>
-              Open visitor check-in report
-            </Link>
-          ) : (
-            <span
-              aria-disabled="true"
-              className="inline-flex min-h-11 items-center rounded-md border border-dashed border-field-border px-4 text-sm font-semibold text-disabled"
-            >
-              Open visitor check-in report
-            </span>
-          )}
-          <p className="text-sm text-muted">
-            {reportOpen ? (over ? "Final: who checked in at the door" : "Who has checked in at the door so far") : `Opens ${shortDate(startsOn)}, the day of the event`}
-          </p>
-        </div>
+        {!over && (
+          <div className={block}>
+            {reportOpen ? (
+              <Link href={`${base}/report`} className={OUTLINE_LINK}>
+                Open visitor check-in report
+              </Link>
+            ) : (
+              <span
+                aria-disabled="true"
+                className="inline-flex min-h-11 items-center rounded-md border border-dashed border-field-border px-4 text-sm font-semibold text-disabled"
+              >
+                Open visitor check-in report
+              </span>
+            )}
+            <p className="text-sm text-muted">{reportOpen ? "Who has checked in at the door so far" : `Opens ${shortDate(startsOn)}, the day of the event`}</p>
+          </div>
+        )}
       </div>
       {canStop && (
         <p className="text-sm leading-6 text-muted">
-          If someone doesn&apos;t clear the school&apos;s check, use the <span className="font-semibold text-foreground">Stop at the door</span> button next to
-          their name below. Check-in then asks them to go to the front office, in place of their Check in button.
+          If someone doesn&apos;t clear the school&apos;s check, choose <span className="font-semibold text-foreground">{SEND_TO_OFFICE}</span> under their
+          name below. Check-in then shows a note asking them to go to the front office, in place of their Check in button.
         </p>
       )}
       <p className="text-sm leading-6 text-muted">
-        Does your front office run the visitor checks?{" "}
+        {over ? "Does your front office keep the school's visitor records?" : "Does your front office run the visitor checks?"}{" "}
         {isAccountHost ? (
           <>
             <Link href={`/dashboard/events/${eventId}/edit?section=team&tab=hosts`} className={LINK}>
               Add your front office as a Co-host
             </Link>{" "}
-            so they can download the visitor list and open the {REPORT_NAME.toLowerCase()}.
+            so they can {can}.
           </>
         ) : (
-          `Ask ${accountHostName} to add your front office as a Co-host, so they can download the visitor list and open the ${REPORT_NAME.toLowerCase()}.`
+          `Ask ${accountHostName} to add your front office as a Co-host, so they can ${can}.`
         )}
       </p>
       <p className="text-sm leading-6 text-muted">{WHO_SEES}</p>

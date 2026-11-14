@@ -2371,11 +2371,17 @@ begin
                             order by a.position)
             from public.parent_registration_adults a join public.parent_registrations r on r.id = a.registration_id
            where r.email = 'cruz@example.com')
-         = 'Maria de la|Cruz|true|Maria de la Cruz,Jan van|Berg|true|Jan van Berg,Cher||true|Cher',
-         'risky splits (3+ words, a particle, one word) are marked to check';
+         = 'Maria|de la Cruz|true|Maria de la Cruz,Jan|van Berg|true|Jan van Berg,Cher||true|Cher',
+         'risky splits (3+ words, a particle, one word) are marked to check, with particles in the last name';
   assert not (public.split_person_name('Ben Okafor')).unsure and (public.split_person_name('Mary Ann Smith')).unsure
          and (public.split_person_name('Luis da Silva')).unsure and (public.split_person_name('  Ben   Okafor ')).last_name = 'Okafor',
          'only splits that could be wrong are marked';
+  assert (select string_agg(s.first_name || '|' || s.last_name, ',' order by x.o)
+            from unnest(array['Luis Von Berg', 'Victor De la Cruz', 'Juan Carlos de la Cruz', 'Mary St. John', 'Anne Saint Clair',
+                              'Derek Le Blanc', 'Ana García López', 'Van Morrison']) with ordinality x(n, o)
+            cross join lateral public.split_person_name(x.n) s)
+         = 'Luis|Von Berg,Victor|De la Cruz,Juan Carlos|de la Cruz,Mary|St. John,Anne|Saint Clair,Derek|Le Blanc,Ana García|López,Van|Morrison',
+         'particles (von, de la, St., Saint, le...) start the last name; otherwise the last word is the last name';
 
   perform public.register_parents('10000000-0000-0000-0000-0000000000c1', 'Sam Second', 'sam@example.com', null,
             '[{"name":"Noah Kim","teacher":"Lee","grade":"5th"}]');
@@ -2486,6 +2492,21 @@ begin
   end;
   assert (select count(*) from public.parent_list_downloads) = 0, 'a Volunteer Lead can''t read the download log';
   begin
+    perform public.confirm_parent_report_copy('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a Volunteer Lead confirmed the school has a copy';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform 1 from public.parent_removed_adults;
+    raise exception 'FAIL: a Volunteer Lead read removed adults';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform 1 from public.parent_report_copies;
+    raise exception 'FAIL: a Volunteer Lead read the copy confirmations';
+  exception when insufficient_privilege then null;
+  end;
+  begin
     update public.parent_registration_adults set sent_to_office_at = now();
     raise exception 'FAIL: a browser wrote an adult''s record';
   exception when insufficient_privilege then null;
@@ -2502,7 +2523,7 @@ declare
 begin
   select id into marco from public.parent_registration_adults where first_name = 'Marco';
   select id into rosa from public.parent_registration_adults where first_name = 'Rosa';
-  select id into maria from public.parent_registration_adults where last_name = 'Cruz';
+  select id into maria from public.parent_registration_adults where last_name = 'de la Cruz';
 
   -- Marking someone already checked in clears their check-in.
   perform public.set_parent_adult_front_office(marco, true);
@@ -2521,11 +2542,14 @@ begin
   assert (select sent_to_office_at is null and sent_to_office_by is null from public.parent_registration_adults where id = rosa),
          'a Co-host clears the mark ("Let Rosa check in")';
 
-  -- Names to check: "Save name" (a fix) or "It's right" (the same name).
+  -- Names to check: "Save name" with the split a Co-host chose (the guess, here) or typed.
   perform public.set_parent_adult_name(maria, 'Maria', 'de la Cruz');
   assert (select first_name = 'Maria' and last_name = 'de la Cruz' and not name_needs_check and name_confirmed_at is not null
-                 and name_changed_at is not null and full_name = 'Maria de la Cruz'
-            from public.parent_registration_adults where id = maria), 'a Co-host fixes a name';
+                 and name_changed_at is null and full_name = 'Maria de la Cruz'
+            from public.parent_registration_adults where id = maria), 'a Co-host confirms the guessed split (not a change)';
+  perform public.set_parent_adult_name(maria, 'Maria de', 'la Cruz');
+  perform public.set_parent_adult_name(maria, 'Maria', 'de la Cruz');
+  assert (select name_changed_at is not null from public.parent_registration_adults where id = maria), 'a different split is a change';
   assert (select parent_name from public.parent_registrations where id = (select registration_id from public.parent_registration_adults where id = maria)) = 'Maria de la Cruz',
          'the registration''s name follows';
   perform public.set_parent_adult_name((select id from public.parent_registration_adults where first_name = 'Cher'), 'Cher', 'Okoro');
@@ -2547,6 +2571,9 @@ begin
   perform public.record_parent_download('10000000-0000-0000-0000-0000000000c1', 'visitor_list', n);
   assert (select by_user = auth.uid() and by_name = 'Val One' and row_count = 8 from public.parent_list_downloads),
          'the download log: who, when, which list, how many rows';
+  assert (select bool_and(listed_at is not null and listed_first_name = first_name and listed_last_name = last_name)
+            from public.parent_registration_adults where event_id = '10000000-0000-0000-0000-0000000000c1'),
+         'a download notes each adult''s name as the school now has it';
   begin
     perform public.record_parent_download('10000000-0000-0000-0000-0000000000c1', 'everything', 1);
     raise exception 'FAIL: logged an unknown kind of download';
@@ -2576,12 +2603,47 @@ begin
   perform public.set_parent_adult_name((select id from public.parent_registration_adults where first_name = 'Rosa'), 'Rosa', 'Díaz');
   assert (select string_agg(first_name, ',' order by first_name) from public.parent_visitor_list('10000000-0000-0000-0000-0000000000c1') where is_new) = 'Joost',
          'an adult added since the last download is new';
-  assert (select string_agg(first_name, ',' order by first_name) from public.parent_visitor_list('10000000-0000-0000-0000-0000000000c1') where name_changed) = 'Rosa',
-         'a name corrected since the last download is labeled';
+  assert (select string_agg(first_name || ' was ' || was_first_name || ' ' || was_last_name, ',' order by first_name)
+            from public.parent_visitor_list('10000000-0000-0000-0000-0000000000c1') where name_changed) = 'Rosa was Rosa Diaz',
+         'a name corrected since the last download is labeled, with the name it had ("Was")';
   select * into s from public.parent_visitor_list_status('10000000-0000-0000-0000-0000000000c1');
-  assert s.last_by_name = 'Val One' and s.last_rows = 8 and s.adults = 9 and s.new_adults = 1 and s.changed_adults = 1
-         and s.names_to_check = 1, format('the top card: last download, 1 new, 1 corrected, 1 name to check (%s)', s);
-  -- The parent can't rename or remove a marked adult, or cancel.
+  assert s.last_by_name = 'Val One' and s.last_rows = 8 and s.adults = 9 and s.rows = 9 and s.new_adults = 1 and s.changed_adults = 1
+         and s.removed_adults = 0 and s.names_to_check = 1,
+         format('the top card: last download, 9 adults in 9 rows, 1 new, 1 corrected, 1 name to check (%s)', s);
+end $$;
+reset role;
+-- A family takes an adult off after a download: the next download lists them as removed (name only), then forgets them.
+set role service_role;
+do $$
+declare tok uuid := (select access_token from public.parent_registrations where email = 'vandyke@example.com');
+begin
+  perform public.update_parent_registration(tok, null, null, '[{"name":"Zoe Van Dyke","teacher":"Lee","grade":"2nd"}]',
+            '[{"first_name":"Joost","last_name":"Van Dyke"}]', 'Pieter', 'Van Dyke');
+  assert (select string_agg(first_name || '|' || last_name, ',') from public.parent_removed_adults) = 'Ana|García López',
+         'a listed adult who''s removed is kept by name until the next download';
+  perform public.update_parent_registration(tok, null, null, '[{"name":"Zoe Van Dyke","teacher":"Lee","grade":"2nd"}]',
+            '[{"first_name":"Ana","last_name":"García López"},{"first_name":"Joost","last_name":"Van Dyke"}]', 'Pieter', 'Van Dyke');
+  assert (select count(*) from public.parent_removed_adults) = 1, 'an adult never downloaded isn''t kept when removed';
+end $$;
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
+do $$
+declare s record;
+begin
+  assert (select string_agg(first_name || '|' || last_name || '|' || coalesce(child_name, '-') || '|' || coalesce(email, '-'), ',')
+            from public.parent_visitor_list('10000000-0000-0000-0000-0000000000c1') where removed) = 'Ana|García López|-|-',
+         'the visitor list names a removed adult, with nothing else';
+  select * into s from public.parent_visitor_list_status('10000000-0000-0000-0000-0000000000c1');
+  assert s.removed_adults = 1 and s.new_adults = 2, format('the top card counts the removed adult (%s)', s);
+  perform public.record_parent_download('10000000-0000-0000-0000-0000000000c1', 'visitor_list', 9);
+  assert not exists (select 1 from public.parent_visitor_list('10000000-0000-0000-0000-0000000000c1')
+                      where removed or is_new or name_changed), 'after the next download, nothing is new, changed, or removed';
+  begin
+    perform public.confirm_parent_report_copy('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: confirmed a copy of a report that isn''t final';
+  exception when sqlstate 'P0001' then null;
+  end;
 end $$;
 reset role;
 set role service_role;
@@ -2707,12 +2769,12 @@ do $$
 declare s record;
 begin
   assert (select string_agg(first_name || ':' || status, ',' order by first_name) from public.parent_check_in_report('10000000-0000-0000-0000-0000000000c1'))
-         = 'Ana:not_yet,Cher:not_yet,Jan van:not_yet,Joost:not_yet,Marco:front_office,Maria:not_yet,Pieter:not_yet,Rita:checked_in,Rosa:checked_in',
+         = 'Ana:not_yet,Cher:not_yet,Jan:not_yet,Joost:not_yet,Marco:front_office,Maria:not_yet,Pieter:not_yet,Rita:checked_in,Rosa:checked_in',
          'the report: each adult''s status';
   assert (select checked_in_by_name = 'Lee Lead' from public.parent_check_in_report('10000000-0000-0000-0000-0000000000c1') where first_name = 'Rita'),
          'with who checked them in';
   assert (select typed_name = 'Jan van Berg' and name_needs_check from public.parent_check_in_report('10000000-0000-0000-0000-0000000000c1')
-           where first_name = 'Jan van'), 'a name still to check shows as typed';
+           where first_name = 'Jan'), 'a name still to check shows as typed';
   select * into s from public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1');
   assert s.families = 3 and s.adults = 9 and s.children = 3 and s.checked_in = 2 and s.sent_to_office = 1 and s.not_checked_in = 6
          and s.is_event_day and not s.is_final and s.kept and not s.deleted and s.saved_at is null,
@@ -2745,8 +2807,28 @@ do $$ begin
     raise exception 'FAIL: changed a stop mark after the event';
   exception when sqlstate 'P0001' then null;
   end;
-  assert (select is_final and checked_in = 2 and sent_to_office = 1 from public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1')),
+  assert (select is_final and checked_in = 2 and sent_to_office = 1 and copy_confirmed_at is null
+            from public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1')),
          'the report is final';
+  -- "Our school has a copy": recorded once, with who and when.
+  perform public.confirm_parent_report_copy('10000000-0000-0000-0000-0000000000c1');
+  perform public.confirm_parent_report_copy('10000000-0000-0000-0000-0000000000c1');
+  assert (select copy_confirmed_at is not null and copy_confirmed_by_name = 'Hana Host'
+            from public.parent_check_in_summary('10000000-0000-0000-0000-0000000000c1')),
+         'a Host confirms the school has a copy';
+  begin
+    perform 1 from public.parent_report_copies;
+    raise exception 'FAIL: a browser read the copy confirmations table';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000006","email":"stranger@example.com"}';
+do $$ begin
+  begin
+    perform public.confirm_parent_report_copy('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a stranger confirmed the school has a copy';
+  exception when insufficient_privilege then null;
+  end;
 end $$;
 set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000007","email":"newlead@example.com"}';
 do $$ begin
@@ -2758,7 +2840,7 @@ reset role;
 set role service_role;
 do $$ begin
   assert exists (select 1 from public.parent_report_emails_due() where event_id = '10000000-0000-0000-0000-0000000000c1'
-                   and kind = 'morning_after' and saved), 'the morning-after email is due';
+                   and kind = 'morning_after' and saved and confirmed), 'the morning-after email is due (it knows the school has a copy)';
   insert into public.parent_report_emails (event_id, kind) values ('10000000-0000-0000-0000-0000000000c1', 'morning_after');
   assert not exists (select 1 from public.parent_report_emails_due() where event_id = '10000000-0000-0000-0000-0000000000c1'),
          'and goes once';
@@ -2849,6 +2931,16 @@ do $$ begin
     raise exception 'FAIL: a visitor set the stop mark';
   exception when insufficient_privilege then null;
   end;
+  begin
+    perform public.confirm_parent_report_copy('10000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: a visitor confirmed a copy';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform 1 from public.parent_removed_adults;
+    raise exception 'FAIL: a visitor read removed adults';
+  exception when insufficient_privilege then null;
+  end;
 end $$;
 reset role;
 
@@ -2886,9 +2978,11 @@ do $$ begin
   end;
 end $$;
 reset role;
+insert into public.parent_removed_adults (event_id, first_name, last_name) values ('10000000-0000-0000-0000-0000000000c1', 'Gone', 'Adult');
 set role service_role;
 do $$ begin
   assert public.purge_parent_registrations() = 3, 'and erased by the clean-up';
+  assert not exists (select 1 from public.parent_removed_adults), 'removed adults'' names are erased too';
   assert not exists (select 1 from public.parent_registrations), 'nothing left';
   assert not exists (select 1 from public.parent_registration_adults), 'no adults left';
   assert (select families = 3 and adults = 9 and children = 3 and checked_in = 2 and sent_to_office = 1
@@ -4870,7 +4964,7 @@ do $$ begin
   assert (select string_agg(a.first_name || '|' || a.last_name || '|' || a.name_split_by_app || '|' || a.name_needs_check, ',' order by r.email, a.position)
             from public.parent_registration_adults a join public.parent_registrations r on r.id = a.registration_id
            where r.email in ('vd@example.com', 'ds@example.com'))
-         = 'Luis da|Silva|true|true,Rosa|Lima|true|false,Pieter|Van Dyke|false|false,Ana|García López|false|false',
+         = 'Luis|da Silva|true|true,Rosa|Lima|true|false,Pieter|Van Dyke|false|false,Ana|García López|false|false',
          'imported names: First/Last kept, full names split and marked only when unsure';
   assert (select parent_name = 'Pam Parent' and children -> 0 ->> 'name' = 'Pia Parent'
             from public.parent_registrations where email = 'pam@example.com'), 'the imported family is registered once';

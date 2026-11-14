@@ -15,6 +15,13 @@ export const WHO_SEES =
 export const REPORT_SCOPE =
   "Counts check-ins at the event door only. People who went through the school's own visitor process at the front office aren't counted here.";
 
+/** The report's groups, in order on screen and on paper: the people to act on first. */
+export const REPORT_GROUPS: { key: "front_office" | "checked_in" | "not_yet"; title: string }[] = [
+  { key: "front_office", title: "Sent to the front office" },
+  { key: "checked_in", title: "Checked in" },
+  { key: "not_yet", title: "Not checked in" },
+];
+
 /** "Sat, Nov 28" */
 export const shortDate = (date: string) => formatDate(date, { year: undefined });
 
@@ -22,13 +29,30 @@ export const shortDate = (date: string) => formatDate(date, { year: undefined })
 export const saveBefore = (deleteOn: string) =>
   `Save the visitor check-in report before ${formatDate(deleteOn)}. That day ${brand.name} deletes it, along with families' and children's details.`;
 
-/** Once someone printed or downloaded the report: what the app knows, and the date that still stands. */
-export const savedLine = (who: string | null, on: string, deleteOn: string) =>
-  `${who ?? "Someone"} printed or downloaded this report on ${shortDate(on)}. Check that your school has the copy. ${brand.name} deletes it, along with families' and children's details, on ${formatDate(deleteOn)}.`;
+/** The front-office mark: one name for the action, one for the state, and the way back. */
+export const SEND_TO_OFFICE = "Send to the front office";
+export const SENT_TO_OFFICE = "Sent to the front office";
+export const letCheckIn = (first: string) => `Let ${first} check in`;
+
+/**
+ * The last time someone printed or downloaded the report, saying which: "Pat Morgan printed this report on Sat, Nov 14"
+ * (on the report) or "...printed the report..." (elsewhere).
+ */
+export const savedLine = (who: string | null, on: string, kind: "report_print" | "report_download" | null, where: "report" | "elsewhere" = "elsewhere") =>
+  kind === "report_download"
+    ? `${who ?? "Someone"} downloaded the report spreadsheet on ${shortDate(on)}.`
+    : `${who ?? "Someone"} printed ${where === "report" ? "this" : "the"} report on ${shortDate(on)}.`;
+
+/** Once a Host or Co-host confirmed the school has its copy: who, when, and the date that still stands. */
+export const copyLine = (who: string | null, on: string, deleteOn: string) =>
+  `${who ?? "Someone"} confirmed your school has a copy of the report on ${shortDate(on)}. ${brand.name} deletes it, along with families' and children's details, on ${formatDate(deleteOn)}.`;
 
 /** After the clean-up. */
 export const deletedLine = (on: string) =>
-  `Families' and children's details were deleted on ${formatDate(on)}, as promised to families, and the visitor check-in report with them. Copies you printed or saved are your school's records.`;
+  `The visitor check-in report was deleted on ${formatDate(on)}, along with families' and children's details, as promised to families. Copies you printed or saved are your school's records.`;
+
+/** Under the report, on screen (paper has the dashboard's printed-records note). */
+export const REPORT_RECORDS_NOTE = `Copies you print or download are your school's records, to keep under your school's policies. ${brand.name} deletes only what's stored in the app.`;
 
 export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 

@@ -143,7 +143,7 @@ export default function StudentDataPrivacyPage() {
           <h2 className={h2}>What we collect</h2>
           <ul className="mt-6 divide-y divide-border rounded-lg border border-border">
             {collected.map((c) => (
-              <li key={c.event} className="grid gap-2 p-4 sm:grid-cols-[1fr_1.4fr_1.4fr] sm:gap-6">
+              <li key={c.event} className="grid gap-2 p-4 sm:grid-cols-[1fr_1fr_1.8fr] sm:gap-6">
                 <span className="font-semibold">{c.event}</span>
                 <span>
                   <span className="block text-xs font-medium uppercase tracking-wide text-muted">About students</span>
@@ -167,8 +167,8 @@ export default function StudentDataPrivacyPage() {
           <h2 className={h2}>Who can see it</h2>
           <ul className="mt-4 list-disc space-y-2 pl-5 leading-7">
             <li>
-              Children&apos;s and families&apos; details from visitor days: the event&apos;s Hosts and Co-hosts while the details are kept. The door
-              team sees families&apos; names, children, and phone numbers only from the day before the event through the event day (Volunteer Leads),
+              Children&apos;s and families&apos; details from visitor days: the event&apos;s Hosts and Co-hosts while the details are kept (a Co-host
+              of just that one event, until 10 days after it). The door team sees families&apos; names, children, and phone numbers only from the day before the event through the event day (Volunteer Leads),
               or on the event day (Coordinators), and never email addresses
             </li>
             <li>
@@ -177,15 +177,15 @@ export default function StudentDataPrivacyPage() {
             </li>
             <li>
               &ldquo;Send to the front office&rdquo; on visitor days: a yes or no on one adult, with no reason stored. Only Hosts and Co-hosts set or clear
-              it. Hosts, Co-hosts, and the door team at the door see it, as a note to send that adult to the front office
+              it. Hosts, Co-hosts, and the door team see it at the door, as a note asking that adult to go to the front office
             </li>
-            <li>Conference bookings, parents&apos; notes, and the number to call for phone calls: only the teacher who set up the conference and the event&apos;s hosts and co-hosts, who can reschedule or cancel a meeting</li>
+            <li>Conference bookings, parents&apos; notes, and the number to call for phone calls: only the teacher who set up the conference and the event&apos;s Hosts and Co-hosts, who can reschedule or cancel a meeting</li>
             <li>Volunteers&apos; phone numbers: Hosts, Co-hosts, and Volunteer Leads, and Coordinators on event day only</li>
             <li>
-              An organizer&apos;s volunteer history (who volunteered and how many shifts they kept): that organizer&apos;s Hosts, co-hosts of every event, and
+              An organizer&apos;s volunteer history (who volunteered and how many shifts they kept): that organizer&apos;s Hosts, Co-hosts of every event, and
               Volunteer Leads only, never other organizers
             </li>
-            <li>A co-host of one event sees only that event, and only until 10 days after it</li>
+            <li>A Co-host of one event sees only that event, and only until 10 days after it</li>
             <li>Visiting directors see their own registration, never other schools&apos; contact details</li>
             <li>Families never see who else registered or booked</li>
             <li>These rules are enforced inside the database, with an automated test for each one</li>
