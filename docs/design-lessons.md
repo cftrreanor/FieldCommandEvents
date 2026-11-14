@@ -41,6 +41,8 @@ done (invited, registered), full, closed and reopened, ended or past, and the bl
 - **Again in:** My team built (an expired invitation looked like a live one and offered Copy link
   for a dead link, 7 of 8 reviewers). Anything with an end date (a link, an invitation, a pass)
   has its own expired look: its own badge word, and only the actions that still work.
+- **Again in:** visitor check-in report mock-ups, 2026-11-14 (event-day page, print layout, multi-day, and after
+  deletion not drawn, 3 of 8). A record people print needs its **print** state drawn too.
 
 ## L3. Saving never loses work
 Automatic saving shows **Saving…, Saved, Couldn't save (Retry)**, and **typed but not added**.
@@ -149,6 +151,11 @@ tap", "directions", "in one step", "the order is filled in", "add a plan", "last
 - **Again in:** My team part 3 built ("puts them back as before" while the offer they'd had stayed
   ended, and screens still said they "stopped being a co-host"). **Sharper rule:** after an Undo
   or any other way back, re-read every message about the thing undone; each must still be true.
+- **Again in:** visitor check-in report mock-ups, 2026-11-14 ("Didn't come" when the app only knows "not checked in
+  here", 4 of 8; a reminder sent to co-hosts whose access had already ended under the privacy page's rule; the form's
+  "only the event team sees these details" next to a download for the school's own system). **Sharper rule:** a
+  status names what the app saw ("Not checked in"), never what it infers; any new way data leaves the app updates
+  every promise about who sees it, on the form and the privacy page, in the same change.
 
 ## L9. Warnings are earned
 Amber and warning icons only for things that are due soon or block the current step. Anything
@@ -218,6 +225,8 @@ sees them and when. Defaults filled in from someone's profile are suggestions un
   promised the wrong people), band contest v1 and v2 (director contact).
 - **Again in:** Meetings as built ("seen only by you" when creating the event, "you and your
   co-hosts" everywhere else). One sentence about who sees what, quoted everywhere.
+- **Again in:** visitor check-in report mock-ups ("only hosts and co-hosts" while Volunteer Leads could read the same
+  details for check-in; repeated three times in small text). Check the database's read rules before writing the line.
 
 ## L19. A state that depends on a date is a state everywhere
 When something can be "scheduled" or "opens later", every badge, button, count, email, and
@@ -286,6 +295,13 @@ and long examples move under the box as help.
   white as typed values.
 - **Check:** open each form in dark mode; every empty box reads as empty at a glance.
 
+## L28. A report that becomes a record is final only when the app says so
+A page people print or save as a record shows whether it's still changing ("Updated 11:15 AM", "In progress, as of …"
+on the printout) until it's final, keeps practice runs out, and doesn't lead with Print while it's partial.
+- **Why:** a printout made mid-way gets filed as the record.
+- **Seen in:** conference Meeting summary (printed before the day, it showed "Not marked" on every row; now a sheet to
+  work from), visitor check-in report mock-ups 2026-11-14 (Print as the main button during check-in, 5 of 8).
+
 ## Self-check before a review
 
 Go through every screen, in light **and dark**, at phone **and** desktop. Fix anything that fails
@@ -314,6 +330,7 @@ before the panel sees it.
 - [ ] **L19** Every date-based state (opens later, scheduled) shows on every badge, button, and job; a timer that ends refreshes the page
 - [ ] **L26** Every number on a board is worked out from the sample data; screens of the same moment agree
 - [ ] **L27** Empty boxes look empty in light and dark
+- [ ] **L28** A printable record says when it's still changing, and is final only when the app says so
 - [ ] **L25** Every screenshot matches its words, is seen as its people see it, and is cropped on white space
 - [ ] `npm run lint` passes (includes the automatic checks)
 
