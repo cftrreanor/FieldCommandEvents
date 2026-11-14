@@ -42,3 +42,24 @@ Full panel on the mock-ups. Owner decisions:
 Severity 1 items: all as recommended.
 
 Next: round-2 mock-ups of the changed parts (including the stop mark at Check-in), a light check, then build.
+
+## Round 2: light check on the revised mock-ups (2026-11-14)
+
+Review: docs/design-reviews/2026-11-14-visitor-attendance-mockups-2.md (UX, UI, Software Engineer, Content, Marketing,
+consultant). Owner decisions:
+
+| # | Finding | Severity | Decision | Notes |
+|---|---|---|---|---|
+| 1 | Stop mark enforced by the database | 4 | Take the advice | Check-in refuses a marked adult; only Hosts and Co-hosts set or clear it; security tests |
+| 2 | Other adults have no lasting identity | 3 | Take the advice | Each adult gets their own record; parents can't rename or remove a marked adult or cancel a marked registration |
+| 3 | "Only Hosts and Co-hosts" isn't true of the data | 3 | Take the advice, narrowed | **Owner: Volunteer Leads (and the door team) see families only from the day before the event through the event day, and never email addresses.** Downloads and report built on the server behind a Host/Co-host check |
+| 4 | "Final" isn't final | 3 | Take the advice | Check-ins and stop marks lock after the event's last day; practice check-ins from the day before are cleared when the event day starts |
+| 5 | "New since" needs a download log | 3 | Take the advice | Names-free download log; new or changed adults counted per adult; changed names labeled |
+| 6 | Names to check below the download | 3 | Take the advice | In the top card, above the download; corrected names count as changed |
+| 7 | "Saved" overclaims | 3 | Take the advice | "printed or downloaded by…"; the week-before email always goes |
+| 8 | Report hides rows | 3 | Take the advice | Every row, a find box, same grouping live and final, in print too |
+| 9 | Printed copy can come out blank | 3 | Take the advice | Fixed black-on-white print styles |
+| 10 | Privacy page and the stop mark | 3 | Take the advice | Privacy page and district packet updated in the same change |
+| — | Door note look | 2 | Owner's choice | **Clear but neutral:** as big as the Check in button, strong border in both themes, "Please ask Ben to go to the front office." No red or lock |
+| — | Children in the visitor list | 2 | Owner's choice | **One row per adult per child**, with Child name, Grade, and Teacher columns |
+| — | All other severity 2 and 1 findings | 2/1 | Take the advice | As written in the report |
