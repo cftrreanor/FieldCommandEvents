@@ -63,3 +63,15 @@ consultant). Owner decisions:
 | — | Door note look | 2 | Owner's choice | **Clear but neutral:** as big as the Check in button, strong border in both themes, "Please ask Ben to go to the front office." No red or lock |
 | — | Children in the visitor list | 2 | Owner's choice | **One row per adult per child**, with Child name, Grade, and Teacher columns |
 | — | All other severity 2 and 1 findings | 2/1 | Take the advice | As written in the report |
+
+## Built pages: light check (2026-11-14)
+
+Review: docs/design-reviews/2026-11-14-visitor-attendance-built.md (UX, UI, Content, consultant). Owner decisions:
+
+| # | Finding | Severity | Decision | Notes |
+|---|---|---|---|---|
+| 1 | Names to check offer a wrong guess as the one-tap answer | 3 | Take the advice | Particles stay with the last name; likely splits offered as choices plus Edit; every visitor-list download warns about unchecked names and unsaved edits |
+| 2 | Door note looks like a button | 3 | Fix it differently (owner) | **Soft amber note** across the row, small warning icon, bold "Send to the front office", then "Please ask Ben to go there". Still no red and no lock (round-2 decision) |
+| — | One action, three names | 2 | Owner's choice | **"Send to the front office"** everywhere; badge "Sent to the front office"; undo "Let Ben check in" |
+| — | Undo at the door | 2 | Owner's choice | **Hosts and Co-hosts** get "Let Ben check in" at the door, with a confirm; the door team sees only the note |
+| — | All other severity 2 and 1 findings | 2/1 | Take the advice | As written in the report |
