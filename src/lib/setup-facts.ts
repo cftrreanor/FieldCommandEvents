@@ -2,7 +2,7 @@ import "server-only";
 import { getEventAccess } from "@/lib/data";
 import { notReady, placeMissing } from "@/lib/conferences";
 import { loadConferenceSettings } from "@/lib/conference-settings";
-import { hasBooths, hasConferences, hasRooms } from "@/lib/event-types";
+import { hasBooths, hasConferences, hasParents, hasRooms } from "@/lib/event-types";
 import type { SetupFacts } from "@/lib/setup-checklist";
 import { createClient } from "@/lib/supabase/server";
 import { tooLongRooms, type Room } from "@/lib/rooms";
@@ -30,7 +30,7 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
   const count = async (q: PromiseLike<{ count: number | null }>) => (await q).count ?? 0;
   const head = { count: "exact" as const, head: true };
   const conferenceHere = hasConferences(type);
-  const [jobs, checkInStops, shifts, staff, invites, cohosts, files, finalsSlots, pathRooms, booths, conference, rooms, scheduleSlots, directorInvites, twoAtOnce, sponsorData] = await Promise.all([
+  const [jobs, checkInStops, shifts, staff, invites, cohosts, files, finalsSlots, pathRooms, booths, conference, rooms, scheduleSlots, directorInvites, twoAtOnce, sponsorData, parentFamilies] = await Promise.all([
     loadJobs(supabase, eventId),
     count(supabase.from("stations").select("id", head).eq("event_id", eventId).not("checkpoint_kind", "is", null)),
     count(supabase.from("shifts").select("id", head).eq("event_id", eventId)),
@@ -55,6 +55,7 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
     hasRooms(type) ? roomTwoAtOnce(supabase, eventId) : null,
     // The Sponsors add-on (band contests, festivals, and fairs): the optional step and "When you publish".
     isSponsorKind(type) ? loadEventSponsors(eventId, event.organization_id, type) : null,
+    hasParents(type) ? count(supabase.from("parent_registrations").select("id", head).eq("event_id", eventId)) : 0,
   ]);
   // Why the account's plan won't let this publish (packages: what's included, one at a time), or null.
   // For "one at a time", the event that's already published, to link to.
@@ -99,6 +100,7 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
     conferenceWeekly: conference?.schedule === "weekly",
     booths,
     parentRegistrationOpen: event.parent_registration_open,
+    parentFamilies,
     parentClosesAt: Boolean(event.parent_registration_closes_at),
     conferenceMissing: conferenceHere ? notReady(conference, event.venue_address, event.event_type) : null,
     // The setup steps split it: what Meeting times and Where you'll meet each still need.

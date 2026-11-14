@@ -77,7 +77,7 @@ export function FamiliesList({ eventId, families, canStop }: { eventId: string; 
                 ))}
               </ul>
               <div className="text-muted">
-                <p className="break-all">{f.email}</p>
+                <p className="[overflow-wrap:anywhere]">{f.email}</p>
                 {f.phone && <p>{f.phone}</p>}
                 <p className="text-xs">Registered {formatDate(f.registeredOn, { year: undefined, weekday: undefined })}</p>
               </div>

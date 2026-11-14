@@ -103,12 +103,6 @@ export default async function VisitorReportPage({ params }: PageProps<"/dashboar
               </p>
             </>
           )}
-          <Link
-            href={base}
-            className="inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand hover:bg-background"
-          >
-            Back to Parent Registration
-          </Link>
         </Card>
       </Shell>
     );

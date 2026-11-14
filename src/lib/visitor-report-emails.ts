@@ -112,7 +112,8 @@ async function recipients(admin: SupabaseClient, event: Event, kind: ReportEmail
     .map((r) => r.profiles?.email?.trim())
     .filter((e): e is string => {
       const key = e?.toLowerCase();
-      if (!key || seen.has(key)) return false;
+      // Demo-mode people (an admin's demo Host) never get records emails.
+      if (!key || seen.has(key) || key.endsWith("@demo.fieldcommandevents.com")) return false;
       seen.add(key);
       return true;
     });

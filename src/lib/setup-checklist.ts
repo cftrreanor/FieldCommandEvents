@@ -72,6 +72,8 @@ export type SetupFacts = {
   conferenceWeekly?: boolean;
   booths: number;
   parentRegistrationOpen: boolean;
+  /** Families registered or imported (registration has been opened, even if it's closed now). */
+  parentFamilies?: number;
   parentClosesAt: boolean;
   /** Conferences: what's still needed before publishing (null when ready). */
   conferenceMissing?: string | null;
@@ -409,7 +411,8 @@ export function setupChecklist(f: SetupFacts): SetupChecklist {
       label: "Open parent registration",
       hint: "Share the registration link or QR code with families.",
       href: `${base}/parents`,
-      done: f.published && f.parentRegistrationOpen,
+      // Done once it's open, and still done after it closes (families have registered).
+      done: f.published && (f.parentRegistrationOpen || (f.parentFamilies ?? 0) > 0),
       required: false,
     });
   }
