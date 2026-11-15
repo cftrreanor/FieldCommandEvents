@@ -1,3 +1,4 @@
+import { toCsv } from "@/lib/csv";
 import { GRADES } from "@/lib/grades";
 import { normalizePhone } from "@/lib/phone";
 
@@ -18,6 +19,8 @@ export type ImportField = {
   example: string;
   /** Matched against a list (a shift, a grade, a classification) value by value. */
   choice?: boolean;
+  /** false: read from a spreadsheet when it has the column, but left out of the template. */
+  template?: boolean;
 };
 
 /** One answer on a list, with other ways a spreadsheet might write it. */
@@ -68,7 +71,11 @@ const volunteerFields: ImportField[] = [
 ];
 
 const parentFields: ImportField[] = [
-  { key: "parentName", label: "Parent's name", required: true, aliases: ["parent", "parent name", "guardian", "guardian name", "your name", "name"], example: "Chris Lopez" },
+  // First and Last in their own columns; a sheet with one full-name column works too (split by the database, and
+  // marked for a Host to check when the split could be wrong). Either is needed; planParents says which is missing.
+  { key: "firstName", label: "First name", aliases: ["first", "given name", "parent first name", "parents first name", "guardian first name"], example: "Chris" },
+  { key: "lastName", label: "Last name", aliases: ["last", "surname", "family name", "parent last name", "parents last name", "guardian last name"], example: "Lopez" },
+  { key: "parentName", label: "Parent's full name", template: false, aliases: ["parent's name", "parent", "parent name", "guardian", "guardian name", "your name", "full name", "name"], example: "Chris Lopez" },
   { key: "email", label: "Email", required: true, aliases: ["email address", "parent email", "e-mail"], example: "chris@example.com" },
   { key: "phone", label: "Mobile phone", aliases: ["phone", "mobile", "cell", "phone number"], example: "(512) 555-0123" },
   { key: "childName", label: "Child's name", required: true, aliases: ["child", "student", "student name", "child name", "students name"], example: "Ava Lopez" },
@@ -334,7 +341,11 @@ export function planVolunteers(records: ImportRecord[]): ImportPlan<VolunteerImp
 }
 
 export type ParentImport = {
+  /** The whole name, for emails ("First Last", or the full-name column). */
   parentName: string;
+  /** From First name / Last name columns; null when the sheet has one full-name column. */
+  firstName: string | null;
+  lastName: string | null;
   email: string;
   phone: string | null;
   children: { name: string; teacher: string; grade: string }[];
@@ -350,7 +361,11 @@ export function planParents(records: ImportRecord[]): ImportPlan<ParentImport> {
     const v = r.values;
     const fail = (message: string) => problems.push({ rows: [r.row], message });
     const email = (v.email ?? "").toLowerCase();
-    if ((v.parentName ?? "").trim().length < 2) fail("The parent's name is missing.");
+    const first = (v.firstName ?? "").trim();
+    const last = (v.lastName ?? "").trim();
+    if (first && !last) fail("The parent's last name is missing.");
+    else if (!first && last) fail("The parent's first name is missing.");
+    else if (!first && (v.parentName ?? "").trim().length < 2) fail("The parent's name is missing.");
     else if (!isEmail(email)) fail(email ? `The email isn't valid (“${email}”).` : "The email is missing.");
     else if ((v.childName ?? "").trim().length < 2) fail("The child's name is missing.");
     else if (!(v.teacher ?? "").trim()) fail("The teacher is missing.");
@@ -367,7 +382,10 @@ export function planParents(records: ImportRecord[]): ImportPlan<ParentImport> {
       const name = r.values.childName.trim().replace(/\s+/g, " ").slice(0, 120);
       children.set(name.toLowerCase(), { name, teacher: r.values.teacher.trim().slice(0, 80), grade: r.values.grade });
     }
-    const parentName = rows[0].values.parentName.trim().replace(/\s+/g, " ");
+    const tidy = (x: string | undefined) => (x ?? "").trim().replace(/\s+/g, " ");
+    const firstName = tidy(rows[0].values.firstName).slice(0, 100) || null;
+    const lastName = firstName ? tidy(rows[0].values.lastName).slice(0, 100) : null;
+    const parentName = firstName ? `${firstName} ${lastName}` : tidy(rows[0].values.parentName);
     const otherAdults = [
       ...new Map(rows.flatMap((r) => list(r.values.otherAdults ?? "")).map((a) => [a.toLowerCase(), a.slice(0, 120)])).values(),
     ].filter((a) => a.toLowerCase() !== parentName.toLowerCase());
@@ -376,7 +394,7 @@ export function planParents(records: ImportRecord[]): ImportPlan<ParentImport> {
     else if (otherAdults.some((a) => a.length < 2)) problems.push({ rows: rowNumbers, message: `Please give each other adult's full name for ${email}.` });
     else {
       const phone = rows.map((r) => (r.values.phone ? normalizePhone(r.values.phone) : null)).find(Boolean) ?? null;
-      items.push({ rows: rowNumbers, parentName: parentName.slice(0, 200), email, phone, children: [...children.values()], otherAdults });
+      items.push({ rows: rowNumbers, parentName: parentName.slice(0, 200), firstName, lastName, email, phone, children: [...children.values()], otherAdults });
     }
   }
   return { items, problems };
@@ -384,6 +402,6 @@ export function planParents(records: ImportRecord[]): ImportPlan<ParentImport> {
 
 /** The sample file a host can download and fill in. */
 export function templateCsv(fields: ImportField[]) {
-  const cell = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
-  return `${fields.map((f) => cell(f.label)).join(",")}\n${fields.map((f) => cell(f.example)).join(",")}\n`;
+  const shown = fields.filter((f) => f.template !== false);
+  return toCsv([shown.map((f) => f.label), shown.map((f) => f.example)]);
 }

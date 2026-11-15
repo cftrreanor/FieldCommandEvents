@@ -5,7 +5,7 @@ import { getOrigin } from "@/lib/data";
 import { pause, sendEmail } from "@/lib/email";
 import { bookingEmail, bookingLink, withCallPhone, type Booking } from "@/lib/conference-bookings";
 import { loadConferenceSettings } from "@/lib/conference-settings";
-import { adultNames, parentEmail, parentLink, type Child } from "@/lib/parents";
+import { ADULTS, otherAdultNames, parentEmail, parentLink, type Child } from "@/lib/parents";
 import { runRetention } from "@/lib/retention";
 import { createAdminClient } from "@/lib/supabase/server";
 import { isSchemaError } from "@/lib/schema-check";
@@ -14,8 +14,10 @@ import { sendVolunteerDigests } from "@/lib/volunteer-digest";
 import { utcToZonedDate } from "@/lib/time";
 import { registrationIsOpen } from "@/lib/bands";
 import { deliverBandInvites, type InviteEvent } from "@/lib/band-invite-send";
+import { sendVisitorReportEmails } from "@/lib/visitor-report-emails";
 
-// Once a day (vercel.json): remind parents to bring their photo ID the day
+// Once a day (vercel.json): email Hosts and Co-hosts to save a school visitor
+// event's check-in report (lib/visitor-report-emails), remind parents to bring their photo ID the day
 // before a school visitor event, remind volunteers of their shifts (and what they're
 // bringing) the day before, erase parent registrations 30 days after
 // their event, volunteers 10 days after theirs, and old admin email records,
@@ -46,8 +48,12 @@ async function runDailyJob() {
   const admin = createAdminClient();
   const started = Date.now();
 
+  // Families' details 30 days after the event (names-free totals are kept first).
   const { data: purged, error: purgeError } = await admin.rpc("purge_parent_registrations");
   if (purgeError) console.error("purge_parent_registrations failed", purgeError);
+  // Practice check-ins (the day before) don't count once an event's first day starts.
+  const { error: practiceError } = await admin.rpc("clear_all_practice_parent_check_ins");
+  if (practiceError && !isSchemaError(practiceError)) console.error("clear_all_practice_parent_check_ins failed", practiceError);
   // Conference bookings (children's names, parents' notes) 30 days after the conference.
   const { data: bookingsPurged, error: bookingPurgeError } = await admin.rpc("purge_conference_bookings");
   if (bookingPurgeError && !isSchemaError(bookingPurgeError)) console.error("purge_conference_bookings failed", bookingPurgeError);
@@ -62,6 +68,15 @@ async function runDailyJob() {
   // Invitation send records (for the hourly limit) after a day.
   const { error: sendsPurgeError } = await admin.rpc("purge_invitation_sends");
   if (sendsPurgeError && !isSchemaError(sendsPurgeError)) console.error("purge_invitation_sends failed", sendsPurgeError);
+
+  // Vercel sets this to the site's main address (the custom domain, once there is one).
+  const production = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  const origin = production ? `https://${production}` : await getOrigin();
+
+  // Visitor check-in report emails to Hosts and Co-hosts (the morning after, Co-hosts' access, a week before deletion),
+  // after the clean-up so a deleted report is never offered. No family names in them.
+  const report = await sendVisitorReportEmails(admin, origin, started + 120_000);
+  if (report.unsent) console.error(`Daily job: ${report.unsent} visitor report email(s) not sent`);
 
   // Events starting tomorrow in their own time zone (look a day either side, then check).
   const shift = (days: number) => new Date(started + days * 86_400_000).toISOString().slice(0, 10);
@@ -80,15 +95,12 @@ async function runDailyJob() {
     return e.starts_on === next.toISOString().slice(0, 10);
   });
 
-  // Vercel sets this to the site's main address (the custom domain, once there is one).
-  const production = process.env.VERCEL_PROJECT_PRODUCTION_URL;
-  const origin = production ? `https://${production}` : await getOrigin();
   let reminded = 0;
   let unsent = 0;
   for (const event of tomorrow) {
     const { data: regs } = await admin
       .from("parent_registrations")
-      .select("id, parent_name, email, children, other_adults, access_token, calendar_sequence")
+      .select(`id, parent_name, email, children, access_token, calendar_sequence, ${ADULTS}`)
       .eq("event_id", event.id)
       .is("reminded_at", null);
     for (const r of regs ?? []) {
@@ -99,7 +111,7 @@ async function runDailyJob() {
       }
       const { subject, html, text } = await parentEmail(
         "reminder",
-        { ...r, children: r.children as Child[], other_adults: adultNames(r.other_adults) },
+        { ...r, children: r.children as Child[], other_adults: otherAdultNames(r.adults) },
         event,
         parentLink(origin, event.slug, r.access_token),
       );
@@ -292,6 +304,8 @@ async function runDailyJob() {
     itemsReminded,
     volunteerSummaries,
     bandInvitesSent,
+    reportEmailsSent: report.sent,
+    reportEmailsUnsent: report.unsent,
   });
 }
 

@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { toast } from "@/components/toaster";
 import { Button, Input } from "@/components/ui";
 import type { ActionState } from "@/lib/action-state";
+import { downloadCsv } from "@/lib/csv";
 import { formatDate } from "@/lib/time";
 import { confirmDialog } from "@/components/confirm-dialog";
 
@@ -41,11 +42,10 @@ const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
   { key: "last", label: "Last event" },
 ];
 
-function toCsv(rows: HistoryRow[]) {
-  const cell = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+function csvRows(rows: HistoryRow[]) {
   const head = ["Name", "Email", "Showed up (%)", "Checked in", "Signed up", "Events", "Last event", "Last event date"];
   const body = rows.map((r) => [r.full_name, r.email, showedUp(r), r.checked_in, r.signed_up, r.events, r.last_event_name, r.last_event_on]);
-  return [head, ...body].map((line) => line.map(cell).join(",")).join("\r\n");
+  return [head, ...body];
 }
 
 /**
@@ -75,15 +75,7 @@ export function HistoryTable({ rows, remove }: { rows: HistoryRow[]; remove?: (e
     }
   };
 
-  const download = () => {
-    const blob = new Blob([toCsv(shown)], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "volunteer-history.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  const download = () => downloadCsv("volunteer-history.csv", csvRows(shown));
 
   const removeOne = async (r: HistoryRow) => {
     if (!remove) return;

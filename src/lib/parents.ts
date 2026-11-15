@@ -11,12 +11,31 @@ import { formatDate, formatDateRange, formatTime, formatTimeRange, utcToZonedDat
 
 export type Child = { name: string; teacher: string; grade: string };
 
-/** An adult coming with the registering parent, checked in on their own at the door. */
-export type OtherAdult = { name: string; checked_in_at: string | null };
+/**
+ * One adult on a registration: its own record (parent_registration_adults), checked in on their own at the door.
+ * position 0 is the adult who registered (the email and phone are theirs).
+ */
+export type RegisteredAdult = {
+  id: string;
+  position: number;
+  first_name: string;
+  last_name: string;
+  full_name: string;
+  checked_in_at: string | null;
+  checked_in_by_name?: string | null;
+  sent_to_office_at: string | null;
+  name_needs_check?: boolean;
+};
 
-/** The other adults' names, from the stored list. */
-export const adultNames = (raw: unknown): string[] =>
-  Array.isArray(raw) ? raw.map((a) => (typeof a === "string" ? a : String((a as OtherAdult)?.name ?? ""))).filter(Boolean) : [];
+/** Embed a registration's adults in a select: `id, children, ${ADULTS}`. */
+export const ADULTS = "adults:parent_registration_adults(id, position, first_name, last_name, full_name, checked_in_at, checked_in_by_name, sent_to_office_at, name_needs_check)";
+
+/** A registration's adults (from the ADULTS embed), in order. */
+export const sortedAdults = (raw: unknown): RegisteredAdult[] =>
+  Array.isArray(raw) ? [...(raw as RegisteredAdult[])].sort((a, b) => a.position - b.position) : [];
+
+/** Everyone after the adult who registered, by name (emails, the calendar invite, the parent's page). */
+export const otherAdultNames = (raw: unknown): string[] => sortedAdults(raw).filter((a) => a.position > 0).map((a) => a.full_name);
 
 export const ID_REMINDER =
   "Bring a valid government-issued photo ID (driver's license, state ID, or passport). You won't be let in without it.";

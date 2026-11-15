@@ -1163,6 +1163,7 @@ export function ActionButton({
   variant = "primary",
   confirmMessage,
   confirmLabel,
+  cancelLabel,
   pendingText = "Saving…",
   className,
 }: {
@@ -1173,12 +1174,21 @@ export function ActionButton({
   confirmMessage?: string;
   /** The confirm window's button, naming what happens ("Close registration"). */
   confirmLabel?: string;
+  /** The confirm window's way out ("Never mind" if not given). */
+  cancelLabel?: string;
   pendingText?: string;
   /** For the button itself (e.g. a smaller one in a row of links). */
   className?: string;
 }) {
   return (
-    <ActionForm action={action} confirmMessage={confirmMessage} confirmLabel={confirmLabel} className="space-y-2" resetOnSuccess={false}>
+    <ActionForm
+      action={action}
+      confirmMessage={confirmMessage}
+      confirmLabel={confirmLabel}
+      cancelLabel={cancelLabel}
+      className="space-y-2"
+      resetOnSuccess={false}
+    >
       <SubmitButton
         variant={variant === "stop" ? "danger" : variant === "quiet-stop" ? "quiet-danger" : variant}
         pendingText={pendingText}

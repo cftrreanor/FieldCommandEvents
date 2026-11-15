@@ -4,11 +4,73 @@ import { useActionState, useState } from "react";
 import { BotCheck } from "@/components/bot-check";
 import { SubmitButton } from "@/components/submit-button";
 import { Button, Card, Field, FormMessage, Input, Select } from "@/components/ui";
-import type { ParentState } from "./actions";
+import type { FormAdult, ParentState } from "./actions";
 import { LineIcon } from "@/components/line-icon";
+import { brand } from "@/lib/brand";
 
 type Child = { name: string; teacher: string; grade: string };
 const blankChild = (): Child => ({ name: "", teacher: "", grade: "" });
+
+/** An adult on the form; `key` keeps each one's boxes in place as others are removed. */
+type AdultRow = FormAdult & { key: number };
+let nextKey = 1;
+
+/** Under the registering adult's name: how to split a name, and why it matters. */
+const NAME_HINT =
+  "Put your whole last name in Last name, like Van Dyke or García López. The school may check each adult's name in its visitor system before the event.";
+
+/** Who sees the form's details, and where they go (docs/design-decisions/2026-11-14-visitor-attendance.md). */
+const PRIVACY_LINE = `The event's organizers see these details. The school may add each adult's name to its visitor system, under its own rules. ${brand.name} deletes your family's details 30 days after the event.`;
+
+/** First name and Last name, side by side from tablet width up. */
+function NameBoxes({
+  legend,
+  hint,
+  first,
+  last,
+  onFirst,
+  onLast,
+  names,
+  autoComplete = true,
+}: {
+  legend: string;
+  hint?: string;
+  first?: string;
+  last?: string;
+  onFirst?: (v: string) => void;
+  onLast?: (v: string) => void;
+  /** Form field names, for the registering adult (the others go in one hidden field). */
+  names?: { first: string; last: string };
+  autoComplete?: boolean;
+}) {
+  const controlled = Boolean(onFirst);
+  return (
+    <fieldset>
+      <legend className="text-sm font-semibold">{legend}</legend>
+      {hint && <p className="mt-0.5 text-sm text-muted">{hint}</p>}
+      <div className="mt-2 grid gap-3 sm:grid-cols-2">
+        <Field label="First name">
+          <Input
+            name={names?.first}
+            required
+            maxLength={60}
+            autoComplete={autoComplete ? "given-name" : "off"}
+            {...(controlled ? { value: first ?? "", onChange: (e) => onFirst?.(e.target.value) } : { defaultValue: first })}
+          />
+        </Field>
+        <Field label="Last name">
+          <Input
+            name={names?.last}
+            required
+            maxLength={60}
+            autoComplete={autoComplete ? "family-name" : "off"}
+            {...(controlled ? { value: last ?? "", onChange: (e) => onLast?.(e.target.value) } : { defaultValue: last })}
+          />
+        </Field>
+      </div>
+    </fieldset>
+  );
+}
 
 /**
  * Parent registration: the parent, each child (name, teacher, grade), and the
@@ -30,7 +92,8 @@ export function ParentsForm({
   const [state, formAction] = useActionState(action, initial ? { values: initial } : {});
   const [startedAt] = useState(() => Date.now());
   const [children, setChildren] = useState<Child[]>(() => state.values?.children ?? [blankChild()]);
-  const [adults, setAdults] = useState<string[]>(() => state.values?.otherAdults ?? []);
+  const [adults, setAdults] = useState<AdultRow[]>(() => (state.values?.otherAdults ?? []).map((a) => ({ ...a, key: nextKey++ })));
+  const setAdult = (key: number, patch: Partial<FormAdult>) => setAdults((list) => list.map((a) => (a.key === key ? { ...a, ...patch } : a)));
   const set = (i: number, patch: Partial<Child>) => setChildren((list) => list.map((c, j) => (j === i ? { ...c, ...patch } : c)));
 
   if (state.confirmed?.existing) {
@@ -76,7 +139,8 @@ export function ParentsForm({
   return (
     <form action={formAction} className="space-y-6">
       <input type="hidden" name="children" value={JSON.stringify(children)} />
-      <input type="hidden" name="otherAdults" value={JSON.stringify(adults)} />
+      {/* Each adult already on the registration goes back with their id, so a renamed adult stays the same person. */}
+      <input type="hidden" name="otherAdults" value={JSON.stringify(adults.map((a) => ({ id: a.id, first_name: a.first_name, last_name: a.last_name })))} />
       <input type="hidden" name="startedAt" value={startedAt} />
       {/* Left empty by people; bots fill it in. */}
       <div aria-hidden className="hidden">
@@ -86,9 +150,13 @@ export function ParentsForm({
       </div>
       <Card className="space-y-4">
         <h2 className="text-xl font-semibold">You</h2>
-        <Field label="Your name">
-          <Input name="parentName" required autoComplete="name" defaultValue={state.values?.parentName} />
-        </Field>
+        <NameBoxes
+          legend="Your name, as it's on your photo ID"
+          hint={NAME_HINT}
+          first={state.values?.parentFirst}
+          last={state.values?.parentLast}
+          names={{ first: "parentFirst", last: "parentLast" }}
+        />
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Email" hint={editing ? "To use a different email, cancel and register again." : "Your confirmation and reminder go here."}>
             <Input name="email" type="email" required autoComplete="email" defaultValue={state.values?.email} readOnly={editing} />
@@ -97,7 +165,7 @@ export function ParentsForm({
             <Input name="phone" type="tel" inputMode="tel" autoComplete="tel" defaultValue={state.values?.phone} />
           </Field>
         </div>
-<div className="space-y-3 border-t border-border pt-4">
+        <div className="space-y-3 border-t border-border pt-4">
           <div>
             <p className="text-sm font-medium">Other adults coming with you</p>
             <p className="text-sm text-muted">
@@ -105,29 +173,30 @@ export function ParentsForm({
               adult needs their own photo ID, and the name here must match it.
             </p>
           </div>
-          {adults.map((name, i) => (
-            <div key={i} className="flex items-end gap-2">
-              <Field label={`Adult ${i + 2}`} className="flex-1">
-                <Input
-                  value={name}
-                  onChange={(e) => setAdults((list) => list.map((a, j) => (j === i ? e.target.value : a)))}
-                  required
-                  placeholder="First and last name"
-                  autoComplete="off"
+          {adults.map((a, i) => {
+            const name = `${a.first_name} ${a.last_name}`.trim();
+            return (
+              <div key={a.key} className="rounded-lg border border-border p-3">
+                <NameBoxes
+                  legend={`Adult ${i + 2}`}
+                  first={a.first_name}
+                  last={a.last_name}
+                  onFirst={(v) => setAdult(a.key, { first_name: v })}
+                  onLast={(v) => setAdult(a.key, { last_name: v })}
+                  autoComplete={false}
                 />
-              </Field>
-              <button
-                type="button"
-                className="min-h-11 px-2 text-sm font-medium text-danger hover:underline"
-                onClick={() => setAdults((list) => list.filter((_, j) => j !== i))}
-                aria-label={`Remove ${name || `adult ${i + 2}`}`}
-              >
-                Remove
-              </button>
-            </div>
-          ))}
+                <button
+                  type="button"
+                  className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-danger hover:underline"
+                  onClick={() => setAdults((list) => list.filter((x) => x.key !== a.key))}
+                >
+                  Remove {name || `adult ${i + 2}`}
+                </button>
+              </div>
+            );
+          })}
           {adults.length < 5 && (
-            <Button type="button" variant="secondary" onClick={() => setAdults((list) => [...list, ""])}>
+            <Button type="button" variant="secondary" onClick={() => setAdults((list) => [...list, { first_name: "", last_name: "", key: nextKey++ }])}>
               + Add another adult
             </Button>
           )}
@@ -187,9 +256,7 @@ export function ParentsForm({
       <SubmitButton pendingText={editing ? "Saving…" : "Registering…"} className="w-full sm:w-auto">
         {editing ? "Save changes" : "Register"}
       </SubmitButton>
-      <p className="text-xs text-muted">
-        Only the school&apos;s event team sees these details, and they&apos;re deleted 30 days after the event.
-      </p>
+      <p className="text-sm text-muted">{PRIVACY_LINE}</p>
     </form>
   );
 }

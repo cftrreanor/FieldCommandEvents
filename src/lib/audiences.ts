@@ -602,9 +602,9 @@ export const audiences = {
     eyebrow: "For school front offices and administrators",
     headline: "Parent check-in without the paper lists",
     intro:
-      "For family lunches, class parties, open houses, and award days, parents register ahead with each child's name, teacher, and grade. Your front office checks every adult in at the door, and children's details are deleted 30 days after the event.",
+      "For family lunches, class parties, open houses, and award days, parents register ahead with each child's name, teacher, and grade. Your front office checks every adult in at the door, and children's details in the app are deleted 30 days after the event.",
     replaces: [
-      "A spreadsheet of children's names that never gets deleted",
+      "Children's names left in a shared form spreadsheet long after the event",
       "Printed lists checked off by hand at the front door",
       "Reminder emails about photo ID sent by hand",
       "Headcounts guessed for the cafeteria or gym",
@@ -644,6 +644,8 @@ export const audiences = {
           "Children counted by grade and by teacher, for planning seating, food, and class coverage",
           "On the day, see how many adults have checked in, how many are still to arrive, and how many families are here, updated on its own",
           "Only counts appear there: children's names stay on the door list",
+          "Download a visitor list for your school's visitor system, one row per adult per child, and see who's new or corrected since your last download",
+          "After the event, print or download the visitor check-in report for your records",
         ],
         screen: {
           src: "/screens/parent-registration-numbers.webp",
@@ -654,10 +656,11 @@ export const audiences = {
         title: "Check-in at the door",
         body: "Your team checks off each adult at the door with one tap, on any phone, tablet, or laptop. On the day, a Check in parents button takes them straight to the list.",
         points: [
-          "Search by any adult's or child's name, a teacher, an email, or a phone number",
+          "Search by any adult's or child's name, a teacher, or a phone number",
           "See how many adults have checked in out of how many registered, updated on its own, for planning seating or food",
           "Undo a wrong tap, with a confirmation first",
           "Your staff still checks each photo ID in person",
+          "Hosts can mark an adult to stop at the front office, and the door sees a note in place of their Check in button",
         ],
         screen: {
           src: "/screens/parent-door-search.webp",
@@ -695,14 +698,20 @@ export const audiences = {
       },
     ],
     privacy: [
-      { title: "Children's details", body: "Only your event team sees children's names, teachers, and grades, and Coordinators see them only on event day." },
-      { title: "Gone when it's over", body: "Every registration, including children's details, is deleted 30 days after the event." },
+      {
+        title: "Children's details",
+        body: "Hosts and Co-hosts see children's names, teachers, and grades. Your door team sees them only from the day before the event through the event day, and never parents' email addresses.",
+      },
+      {
+        title: "Gone when it's over",
+        body: "Children's details in the app are deleted 30 days after the event, with every registration and the visitor check-in report. Lists you download are your school's records.",
+      },
       { title: "No accounts, no ads", body: "Parents never make an account, there are no ads or spam, and emails go out only for your event." },
     ],
     faqs: [
       {
         q: "Can we use this instead of an online form for parent check-in?",
-        a: "Yes. Parents register ahead with each child's name, teacher, and grade, get a reminder to bring a photo ID, and your front office checks every adult in at the door on any device. Unlike a form spreadsheet, children's details are seen only by your event team and are deleted 30 days after the event.",
+        a: "Yes. Parents register ahead with each child's name, teacher, and grade, get a reminder to bring a photo ID, and your front office checks every adult in at the door on any device. Unlike a shared form spreadsheet, children's details are seen only by your event team, and only around the event day by the door team. Children's details in the app are deleted 30 days after the event. Lists you download are your school's records.",
       },
       {
         q: "Do parents need an account or an app?",
@@ -714,7 +723,7 @@ export const audiences = {
       },
       {
         q: "Who can see children's names?",
-        a: "Only your event team. Coordinators see them only on the day of the event, and every registration is deleted 30 days after the event.",
+        a: "Your Hosts and Co-hosts. Volunteer Leads at the door see them only from the day before the event through the event day, and Coordinators only on the day. Only Hosts and Co-hosts can download the visitor list or the visitor check-in report. Children's details in the app are deleted 30 days after the event. Lists you download are your school's records.",
       },
       {
         q: "Can walk-ins still come?",

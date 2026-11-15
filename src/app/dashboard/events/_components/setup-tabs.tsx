@@ -11,6 +11,8 @@ export type SetupTab = {
   short?: string;
   /** Under the label: "3 bands", "Saved", "Optional". */
   status: string;
+  /** A shorter status for phones ("Closed" for "Closed Nov 13"). */
+  shortStatus?: string;
   /** A check (done), a yellow dot (still to do), or neither. */
   mark?: "done" | "todo";
   href: string;
@@ -61,7 +63,14 @@ export function SetupTabs({
               </span>
               <span className={folderTabNote(t.mark === "todo")}>
                 {t.mark === "todo" && <span aria-hidden>◆ </span>}
-                {t.status}
+                {t.shortStatus ? (
+                  <>
+                    <span className="sm:hidden">{t.shortStatus}</span>
+                    <span className="max-sm:hidden">{t.status}</span>
+                  </>
+                ) : (
+                  t.status
+                )}
               </span>
             </LeaveStepLink>
           </li>

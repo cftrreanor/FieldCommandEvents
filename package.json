@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint && node scripts/design-lint.mjs && node scripts/sponsor-scope.mjs",
     "typecheck": "next typegen && tsc --noEmit",
-    "test:db": "bash scripts/test-db.sh"
+    "test:db": "bash scripts/test-db.sh",
+    "test": "node --test src/lib/*.test.ts"
   },
   "dependencies": {
     "@sentry/nextjs": "^11.8.0",

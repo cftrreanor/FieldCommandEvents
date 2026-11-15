@@ -74,6 +74,18 @@ const visitFields: SystemEmailField[] = [
 /** The photo ID line (lib/parents ID_REMINDER): always in school visit emails. */
 const idReminder = "Bring a valid government-issued photo ID (driver's license, state ID, or passport). You won't be let in without it.";
 
+// The visitor check-in report emails to Hosts and Co-hosts (lib/visitor-report-emails.ts). Never family names.
+const reportFields: SystemEmailField[] = [
+  { key: "event_name", label: "Event name", sample: "Fall Family Lunch" },
+  { key: "deadline", label: "The day the report is deleted", sample: "Sun, Jan 3" },
+];
+const reportCountFields: SystemEmailField[] = [
+  { key: "checked_in", label: "How many adults checked in", sample: "42" },
+  { key: "adults", label: "How many adults registered", sample: "57" },
+];
+export const REPORT_HOW_TO_SAVE = "Print it, save it as a PDF, or download the spreadsheet.";
+export const REPORT_NO_NAMES = "No family names are in this email. The link asks you to sign in.";
+
 const volunteerFields: SystemEmailField[] = [
   { key: "first_name", label: "Their first name", sample: "Sam" },
   { key: "event_name", label: "Event name", sample: "Lakeside Marching Classic" },
@@ -362,6 +374,62 @@ export const SYSTEM_EMAILS: SystemEmail[] = [
       button_label: "Change or cancel",
     },
     locked: ["An updated calendar invite is attached, so your calendar shows the new day.", bookingRows],
+  },
+  {
+    key: "visitor_report_morning_after",
+    group: "Hosts: visitor check-in report",
+    name: "Report ready to save",
+    description:
+      "Goes to the Account Host and Co-hosts of every event the morning after a visitor registration event that families registered for. A records-safety email: it always goes.",
+    fields: [...reportFields, ...reportCountFields],
+    required: ["event_name", "deadline"],
+    starting: {
+      subject: "Save the {{event_name}} visitor check-in report before {{deadline}}",
+      heading: "Save the visitor check-in report for {{event_name}}",
+      body: "{{event_name}} is over, and its visitor check-in report is final: {{checked_in}} of {{adults}} registered adults checked in at the event door.\n\nSave the report before {{deadline}}. That day {{brand}} deletes it, along with families' and children's details, as promised to families.",
+      button_label: "Open visitor check-in report",
+    },
+    locked: [REPORT_HOW_TO_SAVE, REPORT_NO_NAMES],
+  },
+  {
+    key: "visitor_report_cohost_access",
+    group: "Hosts: visitor check-in report",
+    name: "Co-host's access ends",
+    description:
+      "Goes to the Co-hosts of just one event about a week after it, while they can still open it (until 10 days after the event). A records-safety email: it always goes.",
+    fields: [
+      ...reportFields,
+      { key: "access_ends", label: "Their last day with access", sample: "Sun, Dec 13" },
+      { key: "account_host", label: "The Account Host's name", sample: "Dana Whitfield" },
+    ],
+    required: ["event_name", "access_ends"],
+    starting: {
+      subject: "You can open the {{event_name}} visitor check-in report through {{access_ends}}",
+      heading: "Your access to {{event_name}} lasts through {{access_ends}}",
+      body: "As a Co-host of {{event_name}}, you can open the event and its visitor check-in report through {{access_ends}}. If your school needs a copy, save it before then.\n\nAfter that, your Account Host ({{account_host}}) and Co-hosts of every event can still open it. {{brand}} deletes it on {{deadline}}, along with families' and children's details.",
+      button_label: "Open visitor check-in report",
+    },
+    locked: [REPORT_HOW_TO_SAVE, REPORT_NO_NAMES],
+  },
+  {
+    key: "visitor_report_before_deletion",
+    group: "Hosts: visitor check-in report",
+    name: "A week before deletion",
+    description:
+      "Goes to the Account Host and Co-hosts of every event a week before a visitor registration event's report and families' details are deleted. Always goes, gentler once a Host or Co-host confirmed the school has a copy: then the subject and heading say \"Reminder: the [event] visitor check-in report is deleted on [date]\" in place of these.",
+    fields: reportFields,
+    required: ["event_name", "deadline"],
+    starting: {
+      subject: "Reminder: save the {{event_name}} visitor check-in report before {{deadline}}",
+      heading: "Save the visitor check-in report before {{deadline}}",
+      body: "On {{deadline}}, {{brand}} deletes the visitor check-in report for {{event_name}}, along with families' and children's details, as promised to families. Copies you print or download before then are your school's records.",
+      button_label: "Open visitor check-in report",
+    },
+    locked: [
+      "Who confirmed the school has a copy, and who printed or downloaded the report and when, or that nobody has yet",
+      REPORT_HOW_TO_SAVE,
+      REPORT_NO_NAMES,
+    ],
   },
   {
     key: "parent_visit_confirmation",

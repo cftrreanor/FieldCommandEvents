@@ -1,20 +1,32 @@
 import { GRADES } from "./grades";
+import { utcToZonedDate } from "./time";
 
 // Totals for a school visitor event's Parent registration card. Only counts:
 // no child's name leaves the door check-in list.
 
-type Row = { created_at: string; checked_in_at: string | null; adult_count: number | null; other_adults: unknown; children: unknown };
+type Adult = { checked_in_at: string | null; sent_to_office_at?: string | null };
+type Row = { created_at: string; adult_count: number | null; adults: unknown; children: unknown };
 type Kid = { name?: string; teacher?: string; grade?: string };
+
+/**
+ * Whether a check-in counts: a practice one, made before the event's first day (in its time zone), doesn't once the
+ * first day starts. The same rule as parent_check_in_counts() in the database.
+ */
+export function checkInCounts(at: string | null | undefined, timezone: string, startsOn: string, now = new Date()) {
+  if (!at) return false;
+  return utcToZonedDate(at, timezone) >= startsOn || utcToZonedDate(now.toISOString(), timezone) < startsOn;
+}
 
 export type ParentStats = ReturnType<typeof parentStats>;
 
-export function parentStats(rows: Row[], now = new Date()) {
+export function parentStats(rows: Row[], event: { timezone: string; starts_on: string }, now = new Date()) {
   const weekAgo = new Date(now.getTime() - 7 * 86_400_000).toISOString();
   const kids = (r: Row) => (Array.isArray(r.children) ? (r.children as Kid[]) : []);
-  const others = (r: Row) => (Array.isArray(r.other_adults) ? (r.other_adults as { checked_in_at?: string | null }[]) : []);
-  const adults = (r: Row) => Math.max(r.adult_count ?? 1, 1 + others(r).length);
-  // Each adult checks in on their own; a family has arrived once any of them has.
-  const adultsIn = (r: Row) => (r.checked_in_at ? 1 : 0) + others(r).filter((a) => a?.checked_in_at).length;
+  const people = (r: Row) => (Array.isArray(r.adults) ? (r.adults as Adult[]) : []);
+  const adults = (r: Row) => Math.max(r.adult_count ?? 1, people(r).length, 1);
+  // Each adult checks in on their own; a family has arrived once any of them has. Someone sent to the front office isn't in.
+  const adultsIn = (r: Row) =>
+    people(r).filter((a) => !a.sent_to_office_at && checkInCounts(a.checked_in_at, event.timezone, event.starts_on, now)).length;
   const arrived = rows.filter((r) => adultsIn(r) > 0);
 
   // Children per grade (in school order), and how many of them have a parent checked in.

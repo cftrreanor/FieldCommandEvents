@@ -7,13 +7,72 @@ import { eventForShare, shareLink } from "@/lib/share";
 import { createClient } from "@/lib/supabase/server";
 import { zonedToUtc } from "@/lib/time";
 
-/** At the door, after looking at one adult's photo ID (or undo). adult 0 is the parent who registered. */
-export async function setParentCheckedIn(eventId: string, registrationId: string, adult: number, checkedIn: boolean): Promise<ActionState> {
+/** At the door, after looking at one adult's photo ID (or undo). Refused for someone sent to the front office. */
+export async function setParentCheckedIn(eventId: string, adultId: string, checkedIn: boolean): Promise<ActionState> {
   await requireUser();
   const supabase = await createClient();
-  const { error } = await supabase.rpc("set_parent_checked_in", { p_id: registrationId, p_in: checkedIn, p_adult: adult });
-  if (error) return { error: friendlyDbError(error) };
+  const { error } = await supabase.rpc("set_parent_adult_checked_in", { p_adult: adultId, p_in: checkedIn });
+  if (error) return { error: error.code === "P0001" ? error.message : friendlyDbError(error) };
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
+  return { ok: true };
+}
+
+/**
+ * Hosts and Co-hosts: "Send to the front office" (on) or "Let Ben check in" (off), from Parent Registration or the
+ * door. The door shows "Send to the front office. Please ask Ben to go there." instead of Check in. Marking someone
+ * already checked in clears their check-in. No reason is saved.
+ */
+export async function setParentFrontOffice(eventId: string, adultId: string, on: boolean): Promise<ActionState> {
+  await requireUser();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_parent_adult_front_office", { p_adult: adultId, p_on: on });
+  if (error) return { error: error.code === "P0001" ? error.message : friendlyDbError(error) };
+  revalidatePath(`/dashboard/events/${eventId}`, "layout");
+  return { ok: true };
+}
+
+/** Hosts and Co-hosts at the door: "Let Ben check in" (the database refuses anyone else). */
+export async function letParentCheckIn(eventId: string, adultId: string): Promise<ActionState> {
+  return setParentFrontOffice(eventId, adultId, false);
+}
+
+/** Hosts and Co-hosts: "Save name" (the split they chose or typed, confirmed). */
+export async function saveParentAdultName(eventId: string, adultId: string, first: string, last: string): Promise<ActionState> {
+  await requireUser();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_parent_adult_name", { p_adult: adultId, p_first: first, p_last: last });
+  if (error) return { error: error.code === "P0001" ? error.message : friendlyDbError(error) };
+  revalidatePath(`/dashboard/events/${eventId}/parents`);
+  return { ok: true };
+}
+
+/** The report's Print button: notes "printed or downloaded by" (the download itself is noted by the download route). */
+export async function noteParentReportPrinted(eventId: string, rows: number): Promise<ActionState> {
+  await requireUser();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("record_parent_download", { p_event: eventId, p_kind: "report_print", p_rows: rows });
+  if (error) return { error: friendlyDbError(error) };
+  revalidatePath(`/dashboard/events/${eventId}/parents`);
+  return { ok: true };
+}
+
+/** Hosts and Co-hosts, after the event: "Our school has a copy" of the visitor check-in report. */
+export async function confirmParentReportCopy(eventId: string): Promise<ActionState> {
+  await requireUser();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("confirm_parent_report_copy", { p_event: eventId });
+  if (error) return { error: error.code === "P0001" ? error.message : friendlyDbError(error) };
+  revalidatePath(`/dashboard/events/${eventId}/parents`, "layout");
+  return { ok: true };
+}
+
+/** Hosts and Co-hosts, until the deletion date: undo "Our school has a copy" (the save warning comes back). */
+export async function undoParentReportCopy(eventId: string): Promise<ActionState> {
+  await requireUser();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("undo_parent_report_copy", { p_event: eventId });
+  if (error) return { error: friendlyDbError(error) };
+  revalidatePath(`/dashboard/events/${eventId}/parents`, "layout");
   return { ok: true };
 }
 
