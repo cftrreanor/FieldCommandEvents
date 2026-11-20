@@ -92,6 +92,8 @@ export async function TeamRoles({
       supabase
         .from("invitations")
         .select("id, email, role, as_host, station_id, token, expires_at, sent_at")
+        // Held for publishing (a duplicated event's Coordinators): no link yet, shown with the copy's Coordinators.
+        .not("token", "is", null)
         .or(`event_id.eq.${eventId},and(as_host.eq.true,organization_id.eq.${event.organization_id})`)
         .is("accepted_at", null)
         .order("created_at"),

@@ -142,6 +142,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
       ? supabase
           .from("invitations")
           .select("id, email, role, as_host, station_id, token, expires_at")
+          // Held for publishing (a duplicated event's Coordinators): no link yet, shown with the copy's Coordinators.
+          .not("token", "is", null)
           .eq("event_id", eventId)
           .is("accepted_at", null)
           .order("created_at")

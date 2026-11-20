@@ -9,9 +9,8 @@ import { requireUser } from "@/lib/auth";
 import { getOrigin } from "@/lib/data";
 import { sendEmail } from "@/lib/email";
 import { addedEmail, cohostChangedEmail, hostOfferAnsweredEmail, hostOfferEmail, hostOfferEndedEmail, leftEventEmail, removedEmail, undoneEmail } from "@/lib/team-emails";
-import { invitationEmail, invitationEmailKey, type InvitationDetails } from "@/lib/invitation-email";
-import { loadSystemEmail } from "@/lib/system-email-overrides";
-import { hasBands, leadWords } from "@/lib/event-types";
+import { sendInvitation } from "@/lib/send-invitation";
+import { leadWords } from "@/lib/event-types";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { utcToZonedDate } from "@/lib/time";
 
@@ -98,26 +97,6 @@ export async function resendInvitation(eventId: string, invitationId: string): P
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
   if (typeof sent === "string") return { error: sent };
   return sent ? { ok: true, message: "Sent again." } : { error: "The email didn't go out. Copy the link and send it yourself." };
-}
-
-/** Emails an invitation with its one-tap link. Returns false if the email failed, or an error message. */
-async function sendInvitation(invitationId: string): Promise<boolean | string> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("prepare_invitation_email", { p_id: invitationId }).single();
-  if (error) return friendlyDbError(error);
-  const details = data as InvitationDetails;
-  // The secret key is only readable with the server's private key.
-  const { data: key } = await createAdminClient()
-    .from("invitations")
-    .select("email_token, events(event_type)")
-    .eq("id", invitationId)
-    .single();
-  if (!key) return false;
-  const url = `${await getOrigin()}/invite/${details.token}?k=${key.email_token}`;
-  const eventType = (key.events as unknown as { event_type: string } | null)?.event_type;
-  const saved = await loadSystemEmail(invitationEmailKey(details));
-  const { subject, html, text } = invitationEmail(details, url, hasBands(eventType), leadWords(eventType).one, saved);
-  return sendEmail({ to: details.email, subject, html, text });
 }
 
 export async function cancelInvitation(eventId: string, invitationId: string): Promise<ActionState> {

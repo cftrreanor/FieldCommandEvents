@@ -1,13 +1,12 @@
 "use server";
 
-import { ensureDirectorContact } from "./band-registration-actions";
 import { revalidatePath } from "next/cache";
-import { brand } from "@/lib/brand";
 import { eventTypeLabel, hasConferences, isEventType } from "@/lib/event-types";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { z } from "zod";
 import { friendlyDbError, type ActionState } from "@/lib/action-state";
+import { changePublished } from "@/lib/publish-event";
 import { eventForShare, shareLink } from "@/lib/share";
 import { requireUser } from "@/lib/auth";
 import { emailMovedMeetings } from "@/app/e/[slug]/book/data";
@@ -358,29 +357,6 @@ export async function deleteEvent(eventId: string): Promise<ActionState> {
 
 export async function setEventPublished(eventId: string, publish: boolean): Promise<ActionState> {
   return changePublished(eventId, publish);
-}
-
-async function changePublished(eventId: string, publish: boolean, signupOpen?: boolean): Promise<ActionState> {
-  await requireUser();
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("events")
-    // Publishing can set volunteer sign-up open or closed in the same step, so it never goes live half done.
-    .update(publish ? { status: "published", ...(signupOpen === undefined ? {} : { volunteer_signup_open: signupOpen }) } : { status: "draft", volunteer_signup_open: false })
-    .eq("id", eventId)
-    .select("id, event_type");
-  if (error) {
-    // Plan limits say what's included and how to get more (friendlyDbError passes them through).
-    if (error.code === "42501" && !error.message.startsWith("Your ")) {
-      return { error: `Publishing needs an active ${brand.name} plan for your organization. Write to us at ${brand.supportEmail}.` };
-    }
-    return { error: friendlyDbError(error) };
-  }
-  if (!data?.length) return { error: "Only the event's host can publish it." };
-  // Directors always have someone to call: the host's details, if no contact was saved.
-  if (publish && data[0].event_type === "band_contest") await ensureDirectorContact(eventId);
-  revalidatePath(`/dashboard/events/${eventId}`, "layout");
-  return { ok: true };
 }
 
 /** Publish from a setup page, then go to the event's page (with its public link) to share it. */
