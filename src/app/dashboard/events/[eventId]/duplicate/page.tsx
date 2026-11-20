@@ -149,6 +149,8 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
   const pending = ((pendingRows ?? []) as { email: string; station_id: string | null }[]).map((p) => `${p.email}'s invitation for ${jobName(p.station_id)}`);
   const classifications = (ev.classifications ?? []).length;
   const shiftsLine = `${plural(source.counts.shifts, "shift", "shifts")} on the new dates, at the same times of day, with the same number of spots`;
+  // Everything comes over except volunteers, personal details, and dates (owner decision): typed-in dates are blanked.
+  const newDateLine = <li>Dates typed into descriptions and notes are left as &ldquo;[new date]&rdquo; for you to fill in</li>;
 
   // What comes over and what starts fresh, in each kind's own words (the shared "Starts fresh" lines last).
   const comesOver =
@@ -159,6 +161,7 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
           Registration setup: {plural(classifications, "classification", "classifications")}, information for directors, payment link, chaperone limit,
           meals, and contact for directors
         </li>
+        {newDateLine}
         <li>Registration dates, moved by the same number of days (left blank if that&apos;s in the past)</li>
         <li>Ready times and equipment spots</li>
         {stations.length > 0 && (
@@ -174,6 +177,7 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
       <>
         <li>Name, venue, times, time zone, and description</li>
         <li>{plural(rooms ?? 0, "room", "rooms")}, minutes per group, and walking time</li>
+        {newDateLine}
         <li>
           Registration setup: {plural(classifications, "classification", "classifications")}, registration questions, information for directors, payment
           link, meals, and contact for directors
@@ -199,6 +203,7 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
         {source.counts.items > 0 && <li>{plural(source.counts.items, "thing to bring", "things to bring")}, with how many of each are needed</li>}
         {ev.event_type === "fair" && <li>Zones</li>}
         {mapsLine}
+        {newDateLine}
       </>
     );
   const startsFresh = (
@@ -214,16 +219,11 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
           <li>Who arrived and which rooms were done</li>
         </>
       ) : null}
-      <li>
-        Volunteers aren&apos;t copied
-        {volunteers
-          ? `. The ${plural(volunteers, "volunteer who signed up stays", "volunteers who signed up stay")} on ${ev.name}, and their details are deleted 10 days after it, as usual`
-          : ""}
-      </li>
+      <li>Volunteers{volunteers ? `: the ${plural(volunteers, "volunteer who signed up stays", "volunteers who signed up stay")} on ${ev.name}` : " aren't copied"}</li>
       <li>{ev.event_type === "band_contest" || ev.event_type === "group_event" ? "Sponsors, check-ins, and announcements" : "Check-ins and announcements"}</li>
       <li>Where replies go, and who gets notified</li>
-      <li>Co-hosts and Volunteer Leads of {ev.name} only (Co-hosts of every event can open the copy as usual)</li>
-      {pending.length > 0 && <li>{listAnd(pending)}, which {pending.length === 1 ? "wasn't" : "weren't"} accepted</li>}
+      <li>Co-hosts and Volunteer Leads of {ev.name} only</li>
+      {pending.length > 0 && <li>{listAnd(pending)}, never accepted</li>}
     </>
   );
 
@@ -239,14 +239,14 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
               <span className="font-semibold">
                 {plural(invited.length, "Coordinator comes", "Coordinators come")} over as {invited.length === 1 ? "an invitation" : "invitations"}.
               </span>{" "}
-              You choose who&apos;s emailed when you publish.
+              You choose who&apos;s emailed when you publish. Each is asked again, so they can say yes for the new dates.
             </p>
             <p className="text-muted">{who(invited)}</p>
           </>
         )}
         {members.length > 0 && (
           <p className={invited.length ? "mt-2" : undefined}>
-            <span className="font-semibold">On your account, so added straight to the same {members.length === 1 && members[0].jobs.length === 1 ? "job" : "jobs"}:</span>{" "}
+            <span className="font-semibold">Already on your team, so they keep leading the same {members.length === 1 && members[0].jobs.length === 1 ? "job" : "jobs"}:</span>{" "}
             <span className="text-muted">{who(members)}</span>
           </p>
         )}
@@ -261,7 +261,9 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
       </p>
       <DuplicateForm
         source={source}
-        initialName={typeof keptName === "string" ? keptName.slice(0, 120) : ev.name}
+        initialName={typeof keptName === "string" ? keptName.slice(0, 120) : suggestedName(ev.name)}
+        // Without a year to move on, the name starts selected so typing replaces it.
+        selectName={typeof keptName !== "string" && suggestedName(ev.name) === ev.name}
         initialDay={typeof keptOn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(keptOn) && keptOn >= source.today ? keptOn : ""}
         comesOver={comesOver}
         startsFresh={startsFresh}
@@ -270,4 +272,9 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
       />
     </div>
   );
+}
+
+/** "Fall Park Cleanup 2026" becomes "Fall Park Cleanup 2027"; a name without a year stays (selected, to type over). */
+function suggestedName(name: string) {
+  return name.replace(/\b(20\d\d)\b/, (y) => String(Number(y) + 1)).slice(0, 120);
 }

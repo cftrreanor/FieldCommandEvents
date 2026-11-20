@@ -24,6 +24,8 @@ import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime, zoneName }
 import { deleteEvent, publishAndOpen, setEventPublished, setEventShowBrand, setEventType, updateEvent } from "../../../actions";
 import { DeleteEventButton } from "../delete-event";
 import { DuplicatePanel } from "./duplicate-panel";
+import { PublishCopyLink } from "../copy-publish";
+import { isUnpublishedCopy } from "@/lib/duplicate-event";
 import { reopenBandRegistration, setBandRegistrationOpen } from "../../../band-actions";
 import { ReopenRegistration } from "../bands/reopen-registration";
 import { DemoStart } from "@/components/demo-switcher";
@@ -566,6 +568,8 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
 
           {section === "more" && (
             <>
+              {/* Near the top, well away from Delete. */}
+              {!guided && <DuplicatePanel event={{ id: eventId, name: event.name, event_type: event.event_type, organization_id: event.organization_id }} />}
               <Panel
                 title="Publishing"
                 intro={
@@ -576,7 +580,12 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                       : "Your event isn't published yet. Publish it from the event page when you're ready."
                 }
               >
-                {!published && guided ? (
+                {!published && guided && (await isUnpublishedCopy(eventId)) ? (
+                  // A copy never published: its publish window, where who gets emailed is chosen.
+                  <PublishCopyLink eventId={eventId} version={event.event_type === "volunteer" ? "now" : event.event_type === "band_contest" || event.event_type === "group_event" ? "register" : "plain"}>
+                    Publish event
+                  </PublishCopyLink>
+                ) : !published && guided ? (
                   <ActionButton action={publishAndOpen.bind(null, eventId)} variant="go" pendingText="Publishing…">
                     Publish event
                   </ActionButton>
@@ -724,8 +733,6 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                   </div>
                 </Panel>
               )}
-
-              {!guided && <DuplicatePanel event={{ id: eventId, name: event.name, event_type: event.event_type, organization_id: event.organization_id }} />}
 
               {guided ? (
                 stepFooter

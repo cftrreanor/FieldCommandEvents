@@ -114,6 +114,13 @@ export async function TeamRoles({
   const copied = access.isHost && roles.includes("section-leads") ? await loadCopiedPeople(eventId) : null;
   const copiedIds = new Set((copied?.people ?? []).map((p) => p.id));
   const notEmailed = (copied?.people ?? []).filter((p) => p.status === "held" || p.status === "expired");
+  // Still waiting (not emailed yet, sent, or expired): Pending, one row each.
+  const copiedWaiting = (copied?.people ?? []).filter((p) => p.status !== "accepted");
+  // A Volunteer Lead sees that a copy's held invitations are waiting for a host (they can't send or remove them).
+  const heldCount =
+    !access.isHost && roles.includes("section-leads")
+      ? ((await supabase.from("invitations").select("id", { count: "exact", head: true }).eq("event_id", eventId).eq("held_for_publish", true)).count ?? 0)
+      : 0;
   const staffRows = (staff ?? []) as unknown as StaffRow[];
   const hosts = ((hostData ?? []) as Host[]).sort((a, b) => Number(b.kind === "owner") - Number(a.kind === "owner"));
   const accountHost = hosts.find((h) => h.kind === "owner");
@@ -212,18 +219,12 @@ export async function TeamRoles({
     if (tab === "hosts") hosts.forEach((h) => skip.add(h.user_id));
     if (tab === "volunteer-leads") [...hosts.map((h) => h.user_id), ...directors.map((d) => d.user_id)].forEach((id) => skip.add(id));
     if (tab === "section-leads") [...hosts.map((h) => h.user_id), ...leads.map((l) => l.user_id)].forEach((id) => skip.add(id));
-    // Copied Coordinators already invited here (held, sent, or expired): marked, not offered again.
-    const invitedAs = (email: string) => {
-      if (tab !== "section-leads") return undefined;
-      const p = (copied?.people ?? []).find((c) => c.status !== "accepted" && c.email.toLowerCase() === email.toLowerCase());
-      if (!p) return undefined;
-      const job = `${lead.one} for ${p.jobs.join(", ")}`;
-      return p.status === "held" ? `${job}, not emailed yet` : p.status === "expired" ? `${job}, invitation expired` : `${job}, invitation sent`;
-    };
-    const byPerson = new Map<string, { name: string; roles: string[]; holds: boolean; invited?: string }>();
+    // Copied Coordinators already invited here (held, sent, or expired) are in Pending: one row per person, so not here too.
+    const invitedHere = new Set(tab === "section-leads" ? (copied?.people ?? []).filter((c) => c.status !== "accepted").map((c) => c.email.toLowerCase()) : []);
+    const byPerson = new Map<string, { name: string; roles: string[]; holds: boolean }>();
     for (const o of options) {
-      if (skip.has(o.user_id)) continue;
-      const entry = byPerson.get(o.user_id) ?? { name: o.full_name || o.email, roles: [], holds: o.holds_spot, invited: invitedAs(o.email) };
+      if (skip.has(o.user_id) || invitedHere.has(o.email.toLowerCase())) continue;
+      const entry = byPerson.get(o.user_id) ?? { name: o.full_name || o.email, roles: [], holds: o.holds_spot };
       const role =
         o.kind === "admin"
           ? "Co-host of every event"
@@ -239,10 +240,9 @@ export async function TeamRoles({
       if (tab === "hosts" && o.kind === "volunteer_director" && o.event_id === eventId) entry.roles.push("Co-host replaces their Volunteer Lead role here");
       byPerson.set(o.user_id, entry);
     }
-    return [...byPerson.entries()]
-      .map(([userId, p]) => ({ userId, name: p.name, now: p.roles.join(" · "), takesSpot: !p.holds, invited: p.invited }))
-      // Already invited here: last, since there's nothing to add.
-      .sort((a, b) => Number(Boolean(a.invited)) - Number(Boolean(b.invited)));
+    // A short line: the first two roles, then how many more (a Co-host of six events isn't six lines).
+    const short = (roles: string[]) => (roles.length > 2 ? `${roles.slice(0, 2).join(" · ")} · ${roles.length - 2} more` : roles.join(" · "));
+    return [...byPerson.entries()].map(([userId, p]) => ({ userId, name: p.name, now: short(p.roles), takesSpot: !p.holds }));
   };
 
   // Everything one role's step needs.
@@ -250,11 +250,14 @@ export async function TeamRoles({
     const pending = invitations.filter((inv) =>
       tab === "hosts" ? inv.as_host || inv.role === "co_host" : tab === "volunteer-leads" ? inv.role === "volunteer_director" : inv.role === "section_lead",
     );
-    const current = new Set((tab === "hosts" ? hosts : tab === "volunteer-leads" ? directors : leads).map((m) => m.user_id));
+    const current = new Set([...(tab === "hosts" ? hosts : tab === "volunteer-leads" ? directors : leads).map((m) => m.user_id), ...(tab === "section-leads" ? hostLeads.map((h) => h.user_id) : [])]);
+    // Invited again (a copied invitation counts, as does Undo): not "Removed" any more.
+    const invitedAgain = new Set(tab === "section-leads" ? (copied?.people ?? []).map((c) => c.email.toLowerCase()) : []);
     const removed = removals.filter(
       (r) =>
         (tab === "hosts" ? r.role === "co_host" : r.role === (tab === "volunteer-leads" ? "volunteer_director" : "section_lead")) &&
         !current.has(r.user_id) &&
+        !invitedAgain.has(r.email.toLowerCase()) &&
         !pending.some((inv) => inv.email.toLowerCase() === r.email.toLowerCase()),
     );
     // The Account Host adds co-hosts; hosts add Volunteer Leads; Volunteer Leads add Coordinators too.
@@ -264,10 +267,8 @@ export async function TeamRoles({
   };
   const coHosts = hosts.filter((h) => h.kind !== "owner").length;
   const leadCount = leads.length + hostLeads.length;
-  // Copied Coordinators who accepted show in the copied list above, so not again under Current members (as before).
-  const acceptedCopy = (l: StaffRow) =>
-    (copied?.people ?? []).some((p) => p.status === "accepted" && p.email.toLowerCase() === (l.profiles?.email ?? "").toLowerCase());
-  const shownLeads = leads.filter((l) => !acceptedCopy(l));
+  // Copied Coordinators who accepted are current members like anyone else (one row per person).
+  const shownLeads = leads;
   const count = { hosts: coHosts, "volunteer-leads": directors.length, "section-leads": leadCount };
   const steps: Record<TeamTab, { title: string; status: string }> = {
     hosts: { title: "Co-hosts", status: plural(coHosts, "co-host", "co-hosts") },
@@ -584,8 +585,8 @@ export async function TeamRoles({
               )}
 
               {/* Kept on the page while it's a copy, even once its list is empty, so Undo stays in reach after a Remove. */}
-              {tab === "section-leads" && copied && (copied.people.length > 0 || !copied.published) && (
-                <section className={copied.people.length ? "space-y-3" : undefined}>
+              {tab === "section-leads" && copied && notEmailed.length > 0 && (!copied.team.coordinators_included || (copied.team.max != null && copied.team.free === 0)) && (
+                <section className="space-y-3">
                   {!copied.team.coordinators_included && notEmailed.length > 0 && (
                     <div className="rounded-md border border-brand/25 bg-brand-soft px-3 py-2 text-sm leading-6">
                       <p>
@@ -604,33 +605,18 @@ export async function TeamRoles({
                         <span className="font-semibold">
                           Your team is full: {copied.team.used} of {copied.team.max} team spots.
                         </span>{" "}
-                        An invitation takes a spot when it&apos;s sent, so these wait here. Freeing a spot doesn&apos;t send them: press Send once there&apos;s
-                        room. Publishing still works.
+                        An invitation takes a spot when it&apos;s sent, so these wait in Pending. Freeing a spot doesn&apos;t send them: send each one once
+                        there&apos;s room. Publishing still works.
                       </p>
                       <Link href="/dashboard/team" className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
                         Free a spot on My team
                       </Link>
                     </div>
                   )}
-                  {copied.people.length > 0 && (
-                  <div>
-                    <h2 className="text-sm font-semibold">Copied from {copied.source ?? "the event you duplicated"}</h2>
-                    <p className="mt-1 text-sm leading-6 text-muted">
-                      Invitations for the same jobs. They can&apos;t open {event.name} until they accept.
-                      {notEmailed.length > 0 && copied.team.coordinators_included && (
-                        <>
-                          {" "}
-                          <span aria-hidden className="inline-block size-2.5 rounded-full bg-warning align-middle" /> means not emailed yet.
-                        </>
-                      )}
-                    </p>
-                  </div>
-                  )}
-                  <CopiedCoordinators eventId={eventId} eventName={event.name} people={copied.people} published={copied.published} leadTitle={lead.one} />
                 </section>
               )}
 
-              {tab === "section-leads" && !(copied && copied.people.length > 0 && hostLeads.length === 0 && shownLeads.length === 0) && (
+              {tab === "section-leads" && (
                 <div>
                   <h2 className="text-sm font-semibold">Current members</h2>
                   <p className="mt-1 text-sm leading-6 text-muted">
@@ -709,10 +695,31 @@ export async function TeamRoles({
                 </div>
               )}
 
-              {(canInvite || pending.length > 0) && (
+              {(canInvite || pending.length > 0 || (tab === "section-leads" && copiedWaiting.length > 0)) && (
               <section>
                 <h2 className="text-sm font-semibold">Pending</h2>
+                {tab === "section-leads" && copied && (copiedWaiting.length > 0 || !copied.published) && (
+                  // A copy's Coordinators: one row per person, one status, one next action (and Undo after a Remove).
+                  <div className="mt-2 space-y-2">
+                    {copiedWaiting.length > 0 && (
+                      <p className="text-sm leading-6 text-muted">
+                        Copied from {copied.source ?? "the event you duplicated"}, for the same jobs. They can&apos;t help run it until they accept. Your
+                        public page isn&apos;t affected. Your Account Host and Co-hosts of every event skip the invitation and keep leading their jobs.
+                      </p>
+                    )}
+                    <CopiedCoordinators eventId={eventId} eventName={event.name} people={copied.people} published={copied.published} leadTitle={lead.one} />
+                  </div>
+                )}
+                {tab === "section-leads" && !access.isHost && heldCount > 0 && (
+                  // A Volunteer Lead doesn't send or remove held invitations: say who does.
+                  <p className="mt-2 rounded-md bg-brand-soft px-3 py-2 text-sm leading-6">
+                    {heldCount === 1 ? "1 Coordinator copied from an earlier event is" : `${heldCount} Coordinators copied from an earlier event are`} waiting
+                    for a host to send {heldCount === 1 ? "their invitation" : "their invitations"}. Ask {accountHost?.full_name || "a host"} if it&apos;s
+                    time.
+                  </p>
+                )}
                 {pending.length === 0 ? (
+                  tab === "section-leads" && (copiedWaiting.length > 0 || heldCount > 0) ? null : 
                   <p className="mt-2 text-sm text-muted">No invitations waiting.</p>
                 ) : (
                   <ul className="mt-2 divide-y divide-border rounded-lg border border-dashed border-field-border">
@@ -735,7 +742,7 @@ export async function TeamRoles({
                           <div className="flex flex-wrap items-center gap-1">
                             {mine && (
                               <SmallActionButton action={resendInvitation.bind(null, eventId, inv.id)} label={`Resend invitation to ${inv.email}`}>
-                                {inv.sent_at ? "Resend" : "Send"}
+                                {inv.sent_at ? "Send a new invitation" : "Send invitation"}
                               </SmallActionButton>
                             )}
                             <CopyLinkButton url={`${origin}/invite/${inv.token}`} label="Copy link" />
@@ -788,8 +795,8 @@ export async function TeamRoles({
                           </p>
                         </div>
                         {canInvite && (
-                          <SmallActionButton action={reinviteMember.bind(null, eventId, r.id)} label={`Re-invite ${r.email}`}>
-                            Re-invite
+                          <SmallActionButton action={reinviteMember.bind(null, eventId, r.id)} label={`Send a new invitation to ${r.email}`}>
+                            Send a new invitation
                           </SmallActionButton>
                         )}
                       </li>

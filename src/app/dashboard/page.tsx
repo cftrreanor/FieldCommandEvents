@@ -288,6 +288,25 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // soonest few read their whole setup; every draft gets the plan check (one call).
   const upcomingDrafts = ownEvents.filter((e) => e.status === "draft" && !isPast(e));
   const passFor = (type: string | null) => (plan && type && !plan.event_types.includes(type) ? (plan.passes_unused[type] ?? 0) : 0);
+  // Drafts made by duplicating: where each came from, on its card until it's published (hosts read event_copies).
+  const draftIds = ownEvents.filter((e) => e.status === "draft").map((e) => e.id);
+  const { data: copyRows } = draftIds.length
+    ? await supabase.from("event_copies").select("event_id, summary").in("event_id", draftIds).is("first_published_at", null)
+    : { data: [] as { event_id: string; summary: unknown }[] };
+  const copiedFrom = new Map(
+    ((copyRows ?? []) as { event_id: string; summary: { source?: { name?: string; starts_on?: string } } | null }[])
+      .filter((c) => c.summary?.source?.name)
+      .map((c) => [c.event_id, `${c.summary!.source!.name}${c.summary!.source!.starts_on ? ` (${formatDate(c.summary!.source!.starts_on, { weekday: undefined })})` : ""}`]),
+  );
+  // A copy with "[new date]" left can't publish yet: its card says so (the same fact as its event page).
+  const newDatesLeft = new Map<string, number>(
+    await Promise.all(
+      [...copiedFrom.keys()].map(async (id) => {
+        const { data } = await supabase.rpc("copy_new_date_spots", { p_event: id });
+        return [id, ((data ?? []) as { count: number }[]).reduce((n, x) => n + x.count, 0)] as [string, number];
+      }),
+    ),
+  );
   const drafts = new Map<string, DraftStatus>(
     await Promise.all(
       upcomingDrafts.map(async (e, i) => {
@@ -371,6 +390,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                 spot={spotHolder?.id === e.id ? spotHolder.ends_on : null}
                 ask={accountHost && org ? { host: accountHost, orgName: org.name } : null}
                 duplicable={adminOrgs.has(e.organization_id) && canDuplicateKind(e.event_type) && (e.status !== "draft" || isPast(e))}
+                copiedFrom={e.status === "draft" ? (copiedFrom.get(e.id) ?? null) : null}
+                newDates={newDatesLeft.get(e.id) ?? 0}
               />
             ),
           }))}
@@ -563,7 +584,13 @@ function HostedCard({
   spot,
   ask,
   duplicable = false,
+  copiedFrom = null,
+  newDates = 0,
 }: {
+  /** A copy's "[new date]" markers left: publishing waits for them. */
+  newDates?: number;
+  /** A draft made by duplicating: "Fall Park Cleanup (Nov 7, 2026)", until it's published. */
+  copiedFrom?: string | null;
   event: EventSummary;
   showType: boolean;
   signups: number;
@@ -604,7 +631,8 @@ function HostedCard({
           Today · {day.label} →
         </Link>
       ) : e.status === "published" ? (
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        // The Duplicate button sits in the same place on every card: its own row, under what the card says.
+        <div className="space-y-2">
           <div className="space-y-1 text-sm">
             <p className="font-medium">{signupLine(e.event_type, signups)}</p>
             {spot && <p className="text-muted">Uses your one free conference spot through {formatDate(spot, { weekday: undefined, year: undefined })}</p>}
@@ -612,9 +640,22 @@ function HostedCard({
           {duplicable && <DuplicateButton event={e} />}
         </div>
       ) : draft ? (
-        <DraftNext draft={draft} href={href} ask={ask ?? null} />
+        <div className="space-y-1">
+          {/* A copy reads differently from the event it came from, until it's published. */}
+          {copiedFrom && <p className="text-sm text-muted">Copied from {copiedFrom}</p>}
+          {newDates > 0 ? (
+            <Link href={href} className="relative z-10 inline-flex min-h-11 items-center text-sm font-medium text-warning underline underline-offset-4">
+              <span aria-hidden>◆&nbsp;</span>Next: add the new date ({newDates} {newDates === 1 ? "spot" : "spots"})
+            </Link>
+          ) : (
+            <DraftNext draft={draft} href={href} ask={ask ?? null} />
+          )}
+        </div>
       ) : (
-        <p className="text-sm font-medium">Next: finish setup and publish</p>
+        <div className="space-y-1">
+          {copiedFrom && <p className="text-sm text-muted">Copied from {copiedFrom}</p>}
+          <p className="text-sm font-medium">Next: finish setup and publish</p>
+        </div>
       )}
     </EventCard>
   );

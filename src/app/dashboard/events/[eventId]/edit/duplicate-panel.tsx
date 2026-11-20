@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 const OUTLINE = "inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand";
 
 /**
- * Event settings, Publishing and more: the Duplicate event panel, above Delete. The Account Host and Co-hosts of
+ * Event settings, Publishing and more: the Duplicate event panel, first (well away from Delete). The Account Host and Co-hosts of
  * every event see what comes over and the button; a Co-host of this event only sees who can do it for them.
  */
 export async function DuplicatePanel({ event }: { event: { id: string; name: string; event_type: string | null; organization_id: string } }) {

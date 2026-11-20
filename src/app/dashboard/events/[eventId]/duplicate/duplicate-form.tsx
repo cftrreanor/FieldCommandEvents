@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { duplicateEvent } from "@/app/dashboard/duplicate-actions";
 import { DateField } from "@/components/date-field";
 import { IconTile, LineIcon } from "@/components/line-icon";
@@ -44,10 +44,13 @@ export function DuplicateForm({
   startsFresh,
   coordinatorLine,
   cancelHref,
+  selectName = false,
 }: {
   cancelHref: string;
   source: DuplicateSource;
   initialName: string;
+  /** Start with the name selected, so typing replaces it (a name without a year to move on). */
+  selectName?: boolean;
   initialDay: string;
   comesOver: ReactNode;
   startsFresh: ReactNode;
@@ -60,12 +63,20 @@ export function DuplicateForm({
   const [problem, setProblem] = useState<Problem | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const requestId = useRef<string | null>(null);
+  const nameBox = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (selectName) nameBox.current?.select();
+  }, [selectName]);
   const contest = source.kind === "band_contest" || source.kind === "group_event";
   const length = daysBetween(source.startsOn, source.endsOn);
   const valid = /^\d{4}-\d{2}-\d{2}$/.test(day) && day >= source.today;
   const end = valid ? addDays(day, length) : null;
   const offset = valid ? daysBetween(source.startsOn, day) : 0;
   const dayLabel = length === 0 ? (source.kind === "band_contest" ? "New contest day" : "New date") : "New first day";
+  // Changing the name or date is a new request: a retry only reuses the id for the same name and date.
+  const changed = () => {
+    if (problem?.kind !== "dropped") requestId.current = null;
+  };
   const newName = name.trim() || source.name;
   const { counts } = source;
 
@@ -126,14 +137,19 @@ export function DuplicateForm({
       >
         <Field
           label="Name of the new event"
-          hint={`It starts as “${source.name}”. A different name helps tell the two apart on My events.`}
+          hint={`A different name helps tell it apart from ${source.name} on My events.`}
           error={nameError ?? undefined}
           errorId="dup-name-error"
         >
           <Input
+            ref={nameBox}
             name="name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            autoFocus={selectName}
+            onChange={(e) => {
+              setName(e.target.value);
+              changed();
+            }}
             required
             maxLength={120}
             aria-invalid={nameError ? true : undefined}
@@ -153,6 +169,7 @@ export function DuplicateForm({
               value={day}
               onChange={(e) => {
                 setDay(e.target.value);
+                changed();
                 if (problem?.kind === "missing" || problem?.kind === "field") setProblem(null);
               }}
               aria-invalid={fieldProblem ? true : undefined}
@@ -190,10 +207,11 @@ export function DuplicateForm({
           </div>
         )}
 
-        <div className="space-y-3 border-t border-border pt-5">
+        {/* Phones: the button stays in reach under the long lists (a sticky bar, like the step pages). */}
+        <div className="space-y-3 border-t border-border pt-5 max-sm:sticky max-sm:bottom-0 max-sm:z-10 max-sm:-mx-4 max-sm:bg-surface max-sm:px-4 max-sm:pb-4 max-sm:shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
           {problem?.kind === "missing" && (
             <p role="alert" className="text-sm font-semibold text-danger">
-              {fieldProblem}, outlined in red above.
+              {fieldProblem} in the box above.
             </p>
           )}
           {problem?.kind === "failed" && (
@@ -260,20 +278,38 @@ function DatePreview({ source, start, end, offset }: { source: DuplicateSource; 
   const opensTo = moved(source.opensOn);
   const opensBlank = Boolean(opensTo && (opensTo < source.today || !deadlineTo || deadlineBlank || opensTo > deadlineTo));
   const weekdayChanged = offset % 7 !== 0;
+  const daysOut = daysBetween(source.today, start);
   return (
     <div role="status" className="mt-3 space-y-3 rounded-md border border-brand/25 bg-brand-soft px-4 py-3 text-sm leading-6">
+      {start === source.today && (
+        <p className="font-semibold">That&apos;s today. People would have only today to sign up.</p>
+      )}
       <p>
         <span className="font-semibold">{longRange(start, end)}.</span> Every shift{contest && (source.deadline || source.opensOn) ? " and registration date" : ""} moves{" "}
         {offsetWords(offset)}, at the same times of day. {source.name} was {source.dates}.
       </p>
       {weekdayChanged && (
-        <div className="flex gap-2 rounded-md border border-warning/50 bg-warning-soft px-3 py-2">
-          <LineIcon name="warning" className="mt-0.5 size-5 shrink-0" />
+        <div className="flex gap-2">
+          <LineIcon name="warning" className="mt-0.5 size-5 shrink-0 text-warning" />
           <p>
             <span className="font-semibold">
               Different days of the week: {weekdays(start, end)}, not {weekdays(source.startsOn, source.endsOn)}.
             </span>{" "}
             Shifts keep their order, so {longWeekday(source.startsOn)}&apos;s shifts move to {longWeekday(start)}.
+          </p>
+        </div>
+      )}
+      {contest && daysOut <= 21 && (
+        // A day close to now leaves directors little time: say so before copying, not after.
+        <div className="flex gap-2">
+          <LineIcon name="warning" className="mt-0.5 size-5 shrink-0 text-warning" />
+          <p>
+            <span className="font-semibold">
+              {daysOut === 0 ? "That's today." : `That's ${plural(daysOut, "day", "days")} away.`}
+            </span>{" "}
+            {daysOut <= 1
+              ? "There's no time for directors to register before it."
+              : `The deadline has to be before ${formatDate(addDays(start, -1), { year: undefined })}, so directors would have ${plural(daysOut - 1, "day", "days")} at most to register.`}
           </p>
         </div>
       )}
@@ -298,14 +334,14 @@ function DatePreview({ source, start, end, offset }: { source: DuplicateSource; 
         </ul>
       )}
       {source.shifts.length > 0 && (
-        <details className="group rounded-md border border-border bg-surface">
-          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 px-3 text-sm font-semibold text-brand">
+        <details className="group">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-brand">
             <span aria-hidden className="inline-block transition-transform group-open:rotate-90">
               ›
             </span>
             {source.shifts.length === 1 ? "See the shift on its new day" : `See the ${source.shifts.length} shifts on their new days`}
           </summary>
-          <ul className="divide-y divide-border border-t border-border px-3 text-sm">
+          <ul className="divide-y divide-border border-t border-brand/25 text-sm">
             {source.shifts.map((s, i) => (
               <li key={i} className="flex flex-col gap-0.5 py-2 sm:flex-row sm:items-baseline sm:gap-3">
                 <span className="font-medium sm:w-40 sm:shrink-0">{s.job}</span>

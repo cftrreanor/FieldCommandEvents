@@ -60,13 +60,15 @@ import { hasSponsorsCard, SponsorsCardBody, SponsorsSection } from "./sponsors/s
 import { festivalRegistrationMissing, festivalRoomsMissing } from "@/lib/setup-checklist";
 import { minutesPerGroup } from "@/lib/rooms";
 import { datesMoved } from "@/lib/schedule-emails";
-import { CopiedNote, CopiedStepsLine, loadCopyFacts, type CopyFacts } from "./copied-note";
+import { CopiedNote, CopiedStepsLine, loadCopyFacts, NewDateList, type CopyFacts } from "./copied-note";
 import { CopyPublish } from "./copy-publish";
 import { NotEmailedLine } from "./team/copied-coordinators";
 import { loadCopiedPeople } from "@/lib/duplicate-event";
-import { copyStepLabel, copyStepPath } from "@/lib/duplicate-words";
+import { copyStepLabel, copyStepPath, newDateBlocker } from "@/lib/duplicate-words";
 
 export const metadata: Metadata = { title: "Event setup" };
+// Publishing a copy sends its Coordinators' invitations after it publishes, in small batches: room for a long list.
+export const maxDuration = 120;
 
 type Person = { full_name: string; email: string; phone: string | null } | null;
 type StaffRow = { user_id: string; role: "volunteer_director" | "section_lead"; created_at: string; profiles: Person };
@@ -1335,8 +1337,8 @@ function PublishPanel({
   festival,
   copy,
 }: {
-  /** A duplicated draft: its publish window in place of the buttons, and what's left to look over. */
-  copy?: { buttons: ReactNode; readyLine: ReactNode; effect: string | null };
+  /** A duplicated draft: its publish window in place of the buttons, what's left to look over, and any "[new date]" left. */
+  copy?: { buttons: ReactNode; readyLine: ReactNode; effect: string | null; newDates: { title: string; list: ReactNode } | null };
   /** A festival: its page, to preview before publishing. */
   festival?: { previewHref: string };
   facts: SetupFacts;
@@ -1371,7 +1373,7 @@ function PublishPanel({
   const festReg = festival ? festivalRegistrationMissing(facts) : null;
   // Doesn't stop publishing, but posting the schedule waits for it.
   const festFix = festival && !festRooms && facts.roomTwoAtOnce ? facts.roomTwoAtOnce : null;
-  const blocked = needsJob || Boolean(bandMissing) || meetingTodo.length > 0 || Boolean(festRooms || festReg);
+  const blocked = needsJob || Boolean(bandMissing) || meetingTodo.length > 0 || Boolean(festRooms || festReg) || Boolean(copy?.newDates);
   // A volunteer event says what its own button opens (it chooses when sign-up opens), as band contests do.
   const effects = [
     ...publishEffects(facts).map((line) =>
@@ -1398,10 +1400,28 @@ function PublishPanel({
           </Link>
         </div>
       )}
+      {copy?.newDates && (
+        // A copy: every date typed into its copied text was left as "[new date]". Publishing waits for each one.
+        <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
+          <p className="font-semibold">
+            <span aria-hidden>◆ </span>
+            {copy.newDates.title}
+          </p>
+          <p className="mt-1">Dates typed into the copied text were left as &ldquo;[new date]&rdquo;. Publishing waits until each one is filled in.</p>
+          {copy.newDates.list}
+        </div>
+      )}
       {bandMissing && (
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
           <p className="font-semibold">{bandMissing}</p>
-          <p className="mt-1">Publishing needs a registration deadline that hasn&apos;t passed and at least one classification.</p>
+          {/* Only what's missing (not a classification that's already there). */}
+          <p className="mt-1">
+            {/classification/.test(bandMissing) && /deadline/.test(bandMissing)
+              ? "Publishing needs a registration deadline that hasn't passed and at least one classification."
+              : /classification/.test(bandMissing)
+                ? "Publishing needs at least one classification."
+                : "Publishing needs a registration deadline that hasn't passed."}
+          </p>
           <Link href={`/dashboard/events/${facts.eventId}/bands`} className={`${BTN} mt-3`}>
             Go to band registration
           </Link>
@@ -2144,14 +2164,18 @@ async function copyPublishParts(f: CopyFacts, previewHref: string, userId: strin
   const base = `/dashboard/events/${event.id}`;
   const label = (step: string) => copyStepLabel(step, event.event_type);
   const labels = Object.fromEntries(check.steps.map((s) => [s.step, label(s.step)]));
-  const today = new Date().toISOString().slice(0, 10);
   const { data: reg } = await supabase.from("events").select("band_registration_opens_on, band_registration_deadline").eq("id", event.id).maybeSingle();
+  const today = utcToZonedDate(new Date().toISOString(), event.timezone || "America/Chicago");
   const coordinators = check.invitations.length;
   return {
     readyLine: <CopiedStepsLine facts={f} labels={labels} />,
+    // Every "[new date]" left: publishing waits for them (the database checks too), with a link to each.
+    newDates: check.newDates.length
+      ? { title: newDateBlocker(check.newDates, event.event_type), list: <NewDateList base={base} spots={check.newDates} className="mt-2" /> }
+      : null,
     effect: coordinators
       ? check.toOffer.length
-        ? `You choose which copied ${coordinators === 1 ? "Coordinator gets" : "Coordinators get"} an invitation email. You see who before anything is sent.`
+        ? `You pick which copied ${coordinators === 1 ? "Coordinator gets" : "Coordinators get"} an invitation email, in the window that opens before anything is sent.`
         : null
       : null,
     buttons: (
@@ -2168,8 +2192,8 @@ async function copyPublishParts(f: CopyFacts, previewHref: string, userId: strin
           jobs: p.jobs,
           why: check.team.coordinators_included ? (p.why_not ?? "There's no free team spot.") : "Your plan doesn't include Volunteer Leads and Coordinators.",
         }))}
-        alreadySent={check.invitations.filter((i) => i.status === "sent").map((i) => ({ name: i.name, sentOn: i.sent_at?.slice(0, 10) ?? null }))}
-        unopened={check.unopened.map((u) => ({ label: label(u.step), href: `${base}${copyStepPath(u.step)}`, quotes: u.oldDates }))}
+        alreadySent={check.invitations.filter((i) => i.status === "sent").map((i) => ({ name: i.name, sentOn: i.sent_at ? utcToZonedDate(i.sent_at, event.timezone || "America/Chicago") : null }))}
+        unopened={check.unopened.map((u) => ({ label: label(u.step), href: `${base}${copyStepPath(u.step)}` }))}
         host={{ name: me?.full_name ?? "", email: me?.email ?? userEmail }}
       />
     ),

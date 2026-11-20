@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useId, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { publishCopy } from "@/app/dashboard/duplicate-actions";
 import { toast } from "@/components/toaster";
 import { Button } from "@/components/ui";
@@ -11,15 +11,15 @@ import { formatDate } from "@/lib/time";
 
 export type PublishPerson = { id: string; name: string; email: string; jobs: string[]; expired: boolean };
 export type PublishBlocked = { name: string; jobs: string[]; why: string };
-export type UnopenedStep = { label: string; href: string; quotes: { text: string; context: string }[] };
+export type UnopenedStep = { label: string; href: string };
 
-type Version = "now" | "later" | "plain" | "register";
+export type Version = "now" | "later" | "plain" | "register";
 
 /**
  * Publishing a duplicated event: the same buttons as any draft, each opening a window that says what publishing
  * does in that version (open sign-up now or later; a contest's or festival's registration, now or on its opening
- * day), lists copied steps nobody has opened (quoting old dates found in their text), and names, ticked, who'll be
- * emailed an invitation. Publishing runs first, as the signed-in person (the plan is checked); then the ticked
+ * day), lists copied steps nobody has opened, and names, ticked, who'll be emailed an invitation. Every other
+ * Publish button on a never-published copy comes here (?publish=…) and opens this window. Publishing runs first, as the signed-in person (the plan is checked); then the ticked
  * invitations go. Nobody is emailed twice.
  */
 export function CopyPublish({
@@ -49,7 +49,7 @@ export function CopyPublish({
   /** Sent and still working: publishing doesn't email them again. */
   alreadySent: { name: string; sentOn: string | null }[];
   unopened: UnopenedStep[];
-  /** Whoever is publishing: the email is from them. */
+  /** Whoever is publishing: the email names them and gives their address for replies. */
   host: { name: string; email: string };
 }) {
   const router = useRouter();
@@ -67,18 +67,31 @@ export function CopyPublish({
     setVersion(v);
     setTicked(people.map((p) => p.id));
     setFailure(null);
-    dialog.current?.showModal();
+    if (!dialog.current?.open) dialog.current?.showModal();
   };
+  // Another Publish button (Jobs and shifts, Band registration, Event settings) sent them here to choose.
+  const query = useSearchParams();
+  const asked = query.get("publish");
+  useEffect(() => {
+    if (!asked) return;
+    const t = setTimeout(() => {
+      // The version this kind has (a volunteer event opens sign-up now or later; contests and festivals register).
+      open(registers ? "register" : kind === "volunteer" ? (asked === "later" ? "later" : "now") : "plain");
+      // Once: the address bar loses ?publish, so a refresh doesn't open it again.
+      window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+    }, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asked]);
   const going = people.filter((p) => ticked.includes(p.id));
   const who = listAnd(going.map((p) => p.name));
   const count = `${going.length} ${going.length === 1 ? "Coordinator" : "Coordinators"}`;
-  const opensWords = opensOn ? `registration opens ${formatDate(opensOn, { weekday: undefined, year: undefined })}` : "open registration";
-  const doing =
-    version === "now" ? "open sign-up" : version === "later" ? "open sign-up later" : version === "register" ? opensWords : "";
+  // Contests and festivals: the title asks one thing (publish, and email); the sentence says when registration opens.
+  const doing = version === "now" ? "open sign-up" : version === "later" ? "open sign-up later" : "";
   const title = going.length
     ? `Publish ${eventName}${doing ? `, ${doing},` : ""} and email ${who}?`
     : doing
-      ? `Publish ${eventName} and ${version === "later" ? "open sign-up later" : doing}?`
+      ? `Publish ${eventName} and ${doing}?`
       : `Publish ${eventName}?`;
   const label = going.length
     ? `Publish${doing ? `, ${doing},` : ""} and email ${count}`
@@ -88,7 +101,7 @@ export function CopyPublish({
         ? "Publish, open sign-up later"
         : version === "register"
           ? opensOn
-            ? `Publish, ${opensWords}`
+            ? "Publish event"
             : "Publish and open registration"
           : "Publish event";
   const sentence =
@@ -97,7 +110,7 @@ export function CopyPublish({
       : version === "later"
         ? "Your public page goes online. Sign-up stays closed until you open it, so people can see the event but can't sign up yet. Volunteers aren't emailed."
         : version === "register"
-          ? `${page} goes online, and ${contestWord} registration opens ${opensOn ? `on ${formatDate(opensOn)}` : "now"}${deadline ? ` through ${formatDate(deadline)}` : ""}. Directors aren't emailed: share the registration link or invite directors from ${kind === "band_contest" ? "Band registration" : "Registration"} when you're ready. Volunteer sign-up stays closed until you open it.`
+          ? `${page} goes online. ${contestWord === "band" ? "Band" : "Group"} registration opens ${opensOn ? formatDate(opensOn) : "right away"}${deadline ? ` and closes ${formatDate(deadline)}` : ""}. Directors aren't emailed: share the registration link or invite directors from ${kind === "band_contest" ? "Band registration" : "Registration"} when you're ready. Volunteer sign-up stays closed until you open it.`
           : "Your public page goes online. Volunteer sign-up stays closed until you open it. Volunteers aren't emailed.";
 
   const submit = async () => {
@@ -108,6 +121,7 @@ export function CopyPublish({
       const r = await publishCopy(eventId, ticked, version === "now" || version === "later" ? version : undefined);
       if (r.error) {
         setBusy(false);
+        // The server read the event's state before choosing these words: still a draft, nobody emailed.
         setFailure(`Couldn't publish: ${r.error.replace(/\.$/, "")}. ${eventName} is still a draft, and nobody was emailed.`);
         return;
       }
@@ -115,8 +129,10 @@ export function CopyPublish({
       dialog.current?.close();
       router.push(`/dashboard/events/${eventId}?published=1&copy=1`);
     } catch {
+      // No answer: it may have published. Say so, and show the event as it is now.
       setBusy(false);
-      setFailure(`Couldn't publish: the connection dropped. Try again. Nobody is emailed twice.`);
+      setFailure(`We didn't hear back, so ${eventName} may have published. Close this to see it as it is now. Trying again never emails anyone twice.`);
+      router.refresh();
     }
   };
 
@@ -126,7 +142,7 @@ export function CopyPublish({
       {registers ? (
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button type="button" onClick={() => open("register")} className={go}>
-            {opensOn ? `Publish, ${opensWords}` : "Publish and open registration"}
+            {opensOn ? "Publish event" : "Publish and open registration"}
           </button>
           {kind === "group_event" && (
             <a href={previewHref} target="_blank" className="inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand">
@@ -174,27 +190,19 @@ export function CopyPublish({
             <p className="mt-3 leading-7 text-muted">{sentence}</p>
 
             {unopened.length > 0 && (
-              <div className="mt-4 rounded-md border border-warning/50 bg-warning-soft px-3 py-2 text-sm leading-6">
-                <p className="font-semibold">
-                  Copied, and nobody has opened {unopened.length === 1 ? "this step" : "these steps"} yet
-                </p>
-                <ul className="mt-1 space-y-1">
-                  {unopened.map((u) => (
-                    <li key={u.label}>
-                      <Link href={u.href} className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4 sm:min-h-0">
+              <div className="mt-4 rounded-md border border-border bg-background px-3 py-2 text-sm leading-6">
+                <p>
+                  <span className="font-semibold">Copied: check it</span> ·{" "}
+                  {unopened.map((u, i) => (
+                    <span key={u.label}>
+                      {i > 0 && (i === unopened.length - 1 ? (unopened.length > 2 ? ", and " : " and ") : ", ")}
+                      <Link href={u.href} className="font-semibold text-brand underline underline-offset-4">
                         {u.label}
                       </Link>
-                      {u.quotes.length > 0 && (
-                        <span>
-                          {" "}
-                          still mentions {listAnd(u.quotes.slice(0, 3).map((q) => `“${q.text}”`))}
-                          <span className="block text-muted">{u.quotes[0].context}</span>
-                        </span>
-                      )}
-                    </li>
+                    </span>
                   ))}
-                </ul>
-                <p className="mt-1 text-muted">You can still publish, and change any of it after.</p>
+                </p>
+                <p className="text-muted">You can still publish, and change any of it after.</p>
               </div>
             )}
 
@@ -218,7 +226,7 @@ export function CopyPublish({
                               {p.name} · <span className="font-normal">{listAnd(p.jobs)}</span>
                             </span>
                             <span className="block text-muted [overflow-wrap:anywhere]">{p.email}</span>
-                            {p.expired && <span className="block text-muted">Invitation expired: this sends a new one</span>}
+                            {p.expired && <span className="block text-muted">Their invitation expired: this sends a new one</span>}
                           </span>
                         </label>
                       </li>
@@ -245,8 +253,8 @@ export function CopyPublish({
                 )}
                 {people.length > 0 && (
                   <p className="mt-2 text-sm leading-6 text-muted">
-                    Anyone unticked stays in Team setup as &ldquo;Not emailed yet&rdquo;, to send later. Nobody can open the event until they accept. The email
-                    is from you, {host.name || host.email}, and gives {host.email} for anyone who can&apos;t help.
+                    Anyone unticked stays in Team setup as &ldquo;Not emailed yet&rdquo;, to send later. They can&apos;t help run it until they accept. Your public
+                    page isn&apos;t affected. The email names you{host.name ? `, ${host.name},` : ""} and gives your address ({host.email}) for replies.
                   </p>
                 )}
               </fieldset>
@@ -282,5 +290,20 @@ export function CopyPublish({
         </div>
       </dialog>
     </>
+  );
+}
+
+/**
+ * A Publish button elsewhere (Jobs and shifts, Band registration, Event settings) on a copy that was never
+ * published: it opens the copy's publish window on the event page, so who gets emailed is always chosen.
+ */
+export function PublishCopyLink({ eventId, version, className = "", children }: { eventId: string; version: Version; className?: string; children: ReactNode }) {
+  return (
+    <Link
+      href={`/dashboard/events/${eventId}?publish=${version}#publish`}
+      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-success px-4 text-sm font-semibold text-success-foreground shadow-sm hover:brightness-90 ${className}`}
+    >
+      {children}
+    </Link>
   );
 }

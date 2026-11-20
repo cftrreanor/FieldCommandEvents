@@ -78,6 +78,10 @@ automated test.
   event day.
 - **Duplicated events (20270207000000_duplicate_event.sql):** duplicating an event never copies volunteers, families,
   children, or anyone's details, and Coordinators copied with it get no access until they accept their invitation.
+  Dates typed into the copied text are replaced with "[new date]". The copy's record of where it came from keeps no
+  address from the original event's unaccepted invitations, a removed Coordinator's address is kept only for the
+  10 minutes Undo works, and a copied Coordinator's name is shown only once they accept or when they're already on
+  the account's team (otherwise their email address).
 - **Visiting directors:** see their own registration, never other schools' contact details.
 - **The public:** sees only what the organizer publishes, such as the schedule. Families never
   see who else booked or registered.

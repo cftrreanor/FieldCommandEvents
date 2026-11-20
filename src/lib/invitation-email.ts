@@ -140,8 +140,9 @@ export function invitationEmail(
       ],
       button: { label: custom?.button || "Accept invitation", url: acceptUrl },
       // When it stops working, next to the button; the footer keeps the sign-in limit.
-      buttonNote: `Works until ${formatDate(inv.expires_at.slice(0, 10))}`,
-      footer: `This invitation is for ${inv.email}. The button signs you in for the first ${EMAIL_LINK_DAYS} days; after that, sign in with this email to accept. Please don't forward it. If you weren't expecting it, you can ignore this email.`,
+      // One date, next to the button, and the sign-in limit in plain words beside it.
+      buttonNote: `Works until ${formatDate(inv.expires_at.slice(0, 10))}. For the first ${EMAIL_LINK_DAYS} days, the button signs you in too. After that, sign in with ${inv.email} first, then accept.`,
+      footer: `This invitation is for ${inv.email}. Please don't forward it. If you weren't expecting it, you can ignore this email.`,
     }),
   };
 }

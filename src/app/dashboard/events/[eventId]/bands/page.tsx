@@ -18,6 +18,8 @@ import { getEventAccess, getOrigin } from "@/lib/data";
 import { formatPhone } from "@/lib/phone";
 import { missing } from "@/lib/schema-check";
 import { CopiedNote, loadCopyFacts } from "../copied-note";
+import { PublishCopyLink } from "../copy-publish";
+import { isUnpublishedCopy } from "@/lib/duplicate-event";
 import { loadMealOrders, loadMealSettings } from "@/lib/meals";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatDateRange, utcToZonedDate } from "@/lib/time";
@@ -352,7 +354,12 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
               <a href={`/e/${event.slug}/${hasRooms(event.event_type) ? "register" : "bands"}`} target="_blank" className="inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand">
                 {roomsHere ? "Preview the form" : "Preview page"}
               </a>
-              {!published && !roomsHere && (
+              {!published && !roomsHere && (await isUnpublishedCopy(eventId)) ? (
+                // A copy never published: its publish window, where who gets emailed is chosen.
+                <PublishCopyLink eventId={eventId} version="register">
+                  Publish and open registration
+                </PublishCopyLink>
+              ) : !published && !roomsHere && (
                 <ActionButton
                   action={publishAndOpenBandRegistration.bind(null, eventId)}
                   variant="go"

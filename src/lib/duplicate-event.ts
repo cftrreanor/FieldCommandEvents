@@ -1,13 +1,13 @@
 import "server-only";
+import { cache } from "react";
 import { getOrigin } from "@/lib/data";
-import { addDays, coordinatorStatus } from "@/lib/duplicate-words";
+import { addDays, coordinatorStatus, type NewDateSpot } from "@/lib/duplicate-words";
 import { FILES_BUCKET } from "@/lib/event-files";
-import { eachDay, findOldDates, type OldDate } from "@/lib/old-dates";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 // Duplicate event (owner decisions: docs/design-decisions/2026-11-20-duplicate-event.md). The database does the
 // copy and every rule (supabase/migrations/20270207000000_duplicate_event.sql); this is what the server adds: the
-// stored maps and documents, and the publish step's facts with old dates found in copied text.
+// stored maps and documents, and the publish step's facts (with every "[new date]" left to fill in).
 
 export type CopiedFile = { id: string; label: string; file_name: string; from: string; to: string };
 
@@ -41,8 +41,8 @@ export type DuplicateSummary = {
     /** Couldn't be copied (named, never failing the copy). */
     skipped: { name: string; email: string; job: string }[];
   };
-  /** Invitations on the source nobody accepted: not copied. */
-  not_copied_invitations: { email: string; job: string }[];
+  /** How many invitations on the source nobody accepted (not copied; no addresses are kept). */
+  not_copied_invitations: number;
   volunteers_on_source: number;
   bands_on_source: number;
   files: CopiedFile[];
@@ -70,7 +70,8 @@ export type CopyCoordinator = {
   why_not: string | null;
 };
 
-export type CopyStep = { step: string; opened: boolean; confirmed: boolean };
+/** A copied step: "Copied: check it" until opened; opening it checks it off. */
+export type CopyStep = { step: string; opened: boolean };
 
 export type CopyPublishCheck = {
   source: DuplicateSummary["source"];
@@ -78,10 +79,10 @@ export type CopyPublishCheck = {
   created_at: string;
   first_published_at: string | null;
   steps: CopyStep[];
-  /** Copied steps nobody has opened, each with old dates found in its copied text. */
-  unopened: { step: string; oldDates: OldDate[] }[];
-  /** Old dates found in any copied text, by step. */
-  oldDates: Partial<Record<string, OldDate[]>>;
+  /** Copied steps nobody has opened yet ("Copied: check it"). Publishing doesn't wait for them. */
+  unopened: { step: string }[];
+  /** Every spot still holding "[new date]", in step order. Publishing waits for them (the database checks too). */
+  newDates: NewDateSpot[];
   invitations: CopyCoordinator[];
   /** Ticked in the publish window: not emailed yet, or expired, and able to be sent. */
   toOffer: CopyCoordinator[];
@@ -97,9 +98,18 @@ export type CopyPublishCheck = {
  * the copy never points at a missing file; it's named in what comes back. Safe to run again (a retry): a file
  * already there counts as copied.
  */
-export async function copyCopiedFiles(eventId: string, files: CopiedFile[]): Promise<{ copied: CopiedFile[]; failed: CopiedFile[] }> {
+export async function copyCopiedFiles(eventId: string, files: CopiedFile[], retry = false): Promise<{ copied: CopiedFile[]; failed: CopiedFile[] }> {
   if (!files.length) return { copied: [], failed: [] };
   const bucket = createAdminClient().storage.from(FILES_BUCKET);
+  // A retry copies only the rows still there whose file isn't (a file that didn't copy the first time had its row removed).
+  if (retry) {
+    const supabase = await createClient();
+    const { data: rows } = await supabase.from("event_files").select("id").eq("event_id", eventId);
+    const still = new Set((rows ?? []).map((r) => r.id as string));
+    const left = (await Promise.all(files.filter((f) => still.has(f.id)).map(async (f) => ((await bucket.exists(f.to)).data ? null : f)))).filter(Boolean) as CopiedFile[];
+    if (!left.length) return { copied: files.filter((f) => still.has(f.id)), failed: [] };
+    files = left;
+  }
   const results = await Promise.all(
     files.map(async (f) => {
       // Only within the source's and the copy's own folders.
@@ -120,6 +130,16 @@ export async function copyCopiedFiles(eventId: string, files: CopiedFile[]): Pro
   return { copied: results.filter((r) => r.ok).map((r) => r.f), failed };
 }
 
+/**
+ * A duplicated event that was never published: every Publish button opens its publish window (who gets emailed is
+ * chosen there). False for anyone who can't see where it came from, or before the database update.
+ */
+export async function isUnpublishedCopy(eventId: string): Promise<boolean> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("event_copies").select("first_published_at").eq("event_id", eventId).maybeSingle();
+  return !error && Boolean(data) && !data?.first_published_at;
+}
+
 /** The copy's Coordinators and their ladder (hosts only; empty before the database update or for anyone else). */
 export async function loadCopyCoordinators(eventId: string): Promise<CopyCoordinator[]> {
   const supabase = await createClient();
@@ -128,36 +148,18 @@ export async function loadCopyCoordinators(eventId: string): Promise<CopyCoordin
   return (data ?? []) as CopyCoordinator[];
 }
 
-type RawPublishCheck = Omit<CopyPublishCheck, "unopened" | "oldDates" | "toOffer" | "cantSend"> & {
-  texts: Record<string, (string | null)[]>;
-};
+type RawPublishCheck = Omit<CopyPublishCheck, "unopened" | "newDates" | "toOffer" | "cantSend"> & { new_dates: NewDateSpot[] };
 
 /**
- * What the copy's Publish step needs: copied steps opened or not, old dates found in copied text, who can be
- * emailed and who can't (and why), and whether Delete and start over is open. Null for an event that wasn't
- * duplicated (or before the database update).
+ * What the copy's Publish step needs: copied steps opened or not, every "[new date]" left, who can be emailed and
+ * who can't (and why), and whether Delete and start over is open. Null for an event that wasn't duplicated (or
+ * before the database update). The heavy check: run once per request (the step bar uses loadCopySteps).
  */
-export async function loadCopyPublishCheck(eventId: string): Promise<CopyPublishCheck | null> {
+export const loadCopyPublishCheck = cache(async (eventId: string): Promise<CopyPublishCheck | null> => {
   const supabase = await createClient();
-  const [{ data, error }, { data: ev }] = await Promise.all([
-    supabase.rpc("copy_publish_check", { p_event: eventId }),
-    supabase.from("events").select("starts_on, ends_on, band_registration_deadline, band_registration_opens_on").eq("id", eventId).maybeSingle(),
-  ]);
-  if (error || !data || !ev) return null;
+  const { data, error } = await supabase.rpc("copy_publish_check", { p_event: eventId });
+  if (error || !data) return null;
   const raw = data as RawPublishCheck;
-  // The copy's own dates aren't old: its days, and its registration dates.
-  const keep = [...eachDay(ev.starts_on, ev.ends_on), ev.band_registration_deadline, ev.band_registration_opens_on].filter(Boolean) as string[];
-  const oldYear = raw.source?.starts_on ? Number(raw.source.starts_on.slice(0, 4)) : undefined;
-  const oldDates: Partial<Record<string, OldDate[]>> = {};
-  for (const [area, texts] of Object.entries(raw.texts ?? {})) {
-    const found = texts.flatMap((t) => findOldDates(t, keep, oldYear));
-    const seen = new Set<string>();
-    const unique = found.filter((d) => !seen.has(d.text.toLowerCase()) && seen.add(d.text.toLowerCase()));
-    if (unique.length) oldDates[area] = unique;
-  }
-  // Each step's copied text: Details has the description; a contest's or festival's registration step has the
-  // information for directors and meals; jobs (or volunteers) have instructions and shift notes.
-  const textFor = (step: string) => (step === "volunteers" ? "jobs" : step);
   const invitations = raw.invitations ?? [];
   return {
     source: raw.source,
@@ -165,32 +167,29 @@ export async function loadCopyPublishCheck(eventId: string): Promise<CopyPublish
     created_at: raw.created_at,
     first_published_at: raw.first_published_at,
     steps: raw.steps ?? [],
-    // One rule everywhere (the publish window, the Ready card, the phone line): still "Copied: check it", that is,
-    // not opened and not saved or confirmed.
-    unopened: (raw.steps ?? []).filter((s) => !s.opened && !s.confirmed).map((s) => ({ step: s.step, oldDates: oldDates[textFor(s.step)] ?? [] })),
-    oldDates,
+    // One rule everywhere (the publish window, the Ready card, the step bar): "Copied: check it" until opened.
+    unopened: (raw.steps ?? []).filter((s) => !s.opened).map((s) => ({ step: s.step })),
+    newDates: raw.new_dates ?? [],
     invitations,
     toOffer: invitations.filter((i) => (i.status === "held" || i.status === "expired") && i.can_send),
     cantSend: invitations.filter((i) => (i.status === "held" || i.status === "expired") && !i.can_send),
     team: raw.team,
     discard_blocker: raw.discard_blocker,
   };
-}
+});
 
 /**
- * The copied steps still asking to be checked, for the step bar: "copied" until opened, then "opened" until saved
- * or confirmed. Empty for an event that wasn't duplicated (or before the database update).
+ * The step bar's light check: each copied step "copied" until opened, then "opened" (checked off); and how many
+ * "[new date]" markers each step holds ("Add the new date"). Empty for an event that wasn't duplicated.
  */
-export async function loadCopySteps(eventId: string): Promise<Partial<Record<string, "copied" | "opened">>> {
+export async function loadCopySteps(eventId: string): Promise<{ copied: Partial<Record<string, "copied" | "opened">>; newDates: Partial<Record<string, number>> }> {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("event_copy_steps").select("step, opened_at, confirmed_at").eq("event_id", eventId);
-  if (error || !data?.length) return {};
-  const open = data.filter((s) => !s.confirmed_at);
-  if (!open.length) return {};
-  // "Saved since the copy was made" counts as confirmed: the publish check works that out.
-  const { data: check } = await supabase.rpc("copy_publish_check", { p_event: eventId });
-  const confirmed = new Set(((check as { steps?: CopyStep[] } | null)?.steps ?? []).filter((s) => s.confirmed).map((s) => s.step));
-  return Object.fromEntries(open.filter((s) => !confirmed.has(s.step)).map((s) => [s.step, s.opened_at ? "opened" : "copied"]));
+  const { data, error } = await supabase.from("event_copy_steps").select("step, opened_at").eq("event_id", eventId);
+  if (error || !data?.length) return { copied: {}, newDates: {} };
+  const { data: spots } = await supabase.rpc("copy_new_date_spots", { p_event: eventId });
+  const newDates: Partial<Record<string, number>> = {};
+  for (const s of (spots ?? []) as NewDateSpot[]) newDates[s.step] = (newDates[s.step] ?? 0) + s.count;
+  return { copied: Object.fromEntries(data.map((s) => [s.step, s.opened_at ? "opened" : "copied"])), newDates };
 }
 
 /** One copied Coordinator as Team setup and the event page show them (the ladder's words worked out once). */
@@ -217,7 +216,7 @@ export async function loadCopiedPeople(eventId: string): Promise<{ people: Copie
   if (!check) return null;
   const supabase = await createClient();
   const [{ data: ev }, { data: tokens }] = await Promise.all([
-    supabase.from("events").select("status").eq("id", eventId).maybeSingle(),
+    supabase.from("events").select("status, timezone").eq("id", eventId).maybeSingle(),
     check.invitations.some((i) => i.status === "sent")
       ? supabase.from("invitations").select("id, token").in("id", check.invitations.filter((i) => i.status === "sent").map((i) => i.invitation_id))
       : Promise.resolve({ data: [] as { id: string; token: string | null }[] }),
@@ -226,7 +225,7 @@ export async function loadCopiedPeople(eventId: string): Promise<{ people: Copie
   const origin = await getOrigin();
   const until = addDays(new Date().toISOString().slice(0, 10), 30);
   const people = check.invitations.map((c) => {
-    const s = coordinatorStatus(c, published, check.team.coordinators_included);
+    const s = coordinatorStatus(c, published, check.team.coordinators_included, ev?.timezone || "America/Chicago");
     const token = (tokens ?? []).find((t) => t.id === c.invitation_id)?.token;
     return {
       id: c.invitation_id,

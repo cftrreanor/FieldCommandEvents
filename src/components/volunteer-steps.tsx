@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { markCopyStep } from "@/app/dashboard/duplicate-actions";
 import { usePendingCounts } from "@/components/pending-edits";
 import { SETUP_STEPS as STEPS, type SetupStepFacts, type StepsKind } from "@/lib/setup-steps";
@@ -36,9 +36,7 @@ export function SetupSteps({
   // The same rule as the page: any section asked for, by ?section= or an old ?step= link.
   const settings = query.has("section") || query.has("step");
   const here = preview ? 0 : settings ? -1 : steps.findIndex((s) => pathname === `${base}${s.path}`);
-  // A duplicated draft's copied steps: "Copied: check it" until opened, then "Opened" until saved or confirmed.
-  const router = useRouter();
-  const [checking, startChecking] = useTransition();
+  // A duplicated draft's copied steps: "Copied: check it" until opened; opening one checks it off ("Opened").
   const [openedNow, setOpenedNow] = useState<string[]>([]);
   const hereKey = here >= 0 ? steps[here].key : null;
   const hereCopied = hereKey && !preview ? facts.copied?.[hereKey] : undefined;
@@ -56,10 +54,12 @@ export function SetupSteps({
     return c === "copied" && openedNow.includes(key) ? "opened" : c;
   };
   const last = steps.length - 1;
+  // A copied step that still holds "[new date]": "Add the new date" until every one is filled in (publishing waits).
+  const newDates = (key: string) => (preview ? 0 : (facts.newDates?.[key] ?? 0));
   const done = steps.map((s, i) =>
     preview
       ? false
-      : copiedState(s.key)
+      : copiedState(s.key) === "copied" || newDates(s.key) > 0
         ? false
         : i === 0
           ? true
@@ -68,7 +68,8 @@ export function SetupSteps({
             : (facts.done?.[s.key] ?? (s.key === "volunteers" ? Boolean(facts.volunteersDone) : facts.middleDone)),
   );
   // Still "Copied: check it" (not opened yet): the same rule as the Ready card and the publish window.
-  const copiedSteps = steps.filter((s) => copiedState(s.key) === "copied");
+  // (Optional steps that hold "[new date]" need work too: publishing waits for them.)
+  const copiedSteps = steps.filter((s) => copiedState(s.key) === "copied" && newDates(s.key) === 0);
   // The strip under each step: copied steps have their own look (outlined in the brand color, tinted).
   const strip = (s: (typeof steps)[number], i: number) =>
     i === here
@@ -77,16 +78,19 @@ export function SetupSteps({
         ? "h-1.5 bg-success"
         : needsWork.includes(s)
           ? "h-1.5 bg-warning"
-          : copiedState(s.key)
+          : copiedState(s.key) === "copied"
             ? "h-1.5 border-[1.5px] border-brand bg-brand-soft"
             : s.optional
               ? "h-1.5 border-[1.5px] border-dashed border-muted bg-surface"
               : "h-1.5 border border-field-border bg-surface";
   // What a required step still needs ("Add your hours"), from its own note or the middle step's.
-  const stepNote = (key: string, i: number) => (facts.notes && key in facts.notes ? (facts.notes[key] ?? null) : i === 1 ? facts.middleNote : null);
+  const stepNote = (key: string, i: number) =>
+    newDates(key) > 0 ? "Add the new date" : facts.notes && key in facts.notes ? (facts.notes[key] ?? null) : i === 1 ? facts.middleNote : null;
   const doneCount = done.filter(Boolean).length;
   // Required steps that still need something, named: shown in words on phones too, not only on wider screens.
-  const needsWork = steps.filter((s, i) => !preview && !s.optional && i > 0 && i < last && !done[i] && Boolean(stepNote(s.key, i)));
+  const needsWork = steps.filter(
+    (s, i) => !preview && ((!s.optional && i > 0 && i < last) || newDates(s.key) > 0) && !done[i] && Boolean(stepNote(s.key, i)),
+  );
   const stepList = (className: string) => (
           <ol className={className}>
             {steps.map((s, i) => {
@@ -94,12 +98,15 @@ export function SetupSteps({
               // A required middle step that still needs something: amber, saying what. An optional one stays neutral.
               const needs = needsWork.includes(s);
               const copied = copiedState(s.key);
-              const copiedNote = copied === "opened" ? "Opened" : copied ? "Copied: check it" : null;
-              const optionalNote = s.optional && !done[i] ? (copiedNote ? `Optional · ${copiedNote.toLowerCase()}` : ((s.key === "volunteers" ? facts.volunteersNote : facts.notes?.[s.key]) ?? "Optional")) : null;
+              // One wording for the copied state everywhere: "Copied: check it" (after "Optional · " too).
+              const copiedNote = copied === "copied" ? "Copied: check it" : null;
+              const optionalNote = s.optional && !done[i] ? (copiedNote ? `Optional · ${copiedNote}` : ((s.key === "volunteers" ? facts.volunteersNote : facts.notes?.[s.key]) ?? "Optional")) : null;
               // The step you're on says "Now", "Now · ready" once it has everything it needs, or "Now · not saved".
               const note =
                 done[i] && !now
-                  ? "Done"
+                  ? copied === "opened"
+                    ? "Opened"
+                    : "Done"
                   : now && unsaved
                     ? "Now · not saved"
                     : needs
@@ -108,8 +115,8 @@ export function SetupSteps({
                         ? `Now · ${lowerFirst(stepNote(s.key, i) ?? "")}`
                         : stepNote(s.key, i)
                       : now
-                        ? copied
-                          ? `Now · ${s.optional ? "optional · " : ""}copied: check it`
+                        ? copied === "copied"
+                          ? `Now · ${s.optional ? "optional · " : ""}Copied: check it`
                           : done[i] && i < last
                             ? "Now · all set"
                             : optionalNote
@@ -128,7 +135,7 @@ export function SetupSteps({
                       {s.label}
                     </Link>
                   )}
-                  <span className={`block text-xs leading-5 ${done[i] && !now ? "text-success" : needs ? "font-medium text-warning" : copied ? "font-medium text-foreground" : "text-muted"}`}>
+                  <span className={`block text-xs leading-5 ${done[i] && !now ? "text-success" : needs ? "font-medium text-warning" : copied === "copied" ? "font-medium text-foreground" : "text-muted"}`}>
                     {done[i] && !now && <span aria-hidden>✓ </span>}
                     {needs && <span aria-hidden>◆ </span>}
                     {note}
@@ -184,7 +191,7 @@ export function SetupSteps({
       {copiedSteps.length > 0 && (
         // Phones name the copied steps in words too.
         <p className="mt-1 text-sm font-medium sm:hidden">
-          Copied, not opened yet: {copiedSteps.map((s) => s.label).join(", ")}
+          Copied: check it · {copiedSteps.map((s) => s.label).join(", ")}
         </p>
       )}
       <details className="group sm:hidden">
@@ -197,26 +204,6 @@ export function SetupSteps({
         {stepList("grid grid-cols-1 gap-y-1")}
       </details>
       {stepList(`mt-2 hidden gap-x-3 gap-y-1 sm:grid ${steps.length >= 6 ? "sm:grid-cols-6" : steps.length === 5 ? "sm:grid-cols-5" : steps.length === 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`)}
-      {hereKey && copiedState(hereKey) && (
-        // A copied step stays "Opened" until it's saved, or checked here without changing anything.
-        <p className="mt-2 flex flex-wrap items-center gap-x-3 text-sm">
-          <span className="text-muted">Copied from the event you duplicated. Nothing to change here?</span>
-          <button
-            type="button"
-            aria-disabled={checking || undefined}
-            onClick={() =>
-              !checking &&
-              startChecking(async () => {
-                const r = await markCopyStep(eventId, hereKey, true);
-                if (r.ok) router.refresh();
-              })
-            }
-            className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4 aria-disabled:cursor-wait"
-          >
-            {checking ? "Saving…" : `${steps[here].label} looks right`}
-          </button>
-        </p>
-      )}
     </nav>
   );
 }

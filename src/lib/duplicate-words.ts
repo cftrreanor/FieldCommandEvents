@@ -2,7 +2,7 @@
 // out once so the Duplicate page, the copy's note, the publish window, and the emails say them the same way. Pure,
 // so the browser can use it too.
 
-import { formatDate } from "@/lib/time";
+import { formatDate, utcToZonedDate } from "@/lib/time";
 
 /** The kinds of event with jobs, the ones that can be duplicated. */
 export const DUPLICABLE = ["volunteer", "fair", "band_contest", "group_event"] as const;
@@ -93,7 +93,7 @@ export function copyStepPath(step: string) {
   return step === "details" ? "/edit" : step === "registration" ? "/bands" : step === "rooms" ? "/rooms" : "/volunteering";
 }
 
-/** "Not emailed yet · sent when you publish" and the rest of a copied Coordinator's ladder. */
+/** "Not emailed yet · sent when you publish" and the rest of a copied Coordinator's ladder (dates in the event's time zone). */
 export function coordinatorStatus(c: {
   status: "held" | "sent" | "expired" | "accepted";
   sent_at: string | null;
@@ -101,23 +101,57 @@ export function coordinatorStatus(c: {
   accepted_at: string | null;
   can_send: boolean;
   why_not: string | null;
-}, published: boolean, planIncludes: boolean): { text: string; dot: boolean; tone: "warn" | "good" | "plain" } {
+}, published: boolean, planIncludes: boolean, tz = "America/Chicago"): { text: string; dot: boolean; tone: "warn" | "good" | "plain" } {
+  const day = (iso: string | null) => (iso ? formatDate(utcToZonedDate(iso, tz), { weekday: undefined, year: undefined }) : "");
   switch (c.status) {
     case "accepted":
-      return { text: `Accepted ${c.accepted_at ? formatDate(c.accepted_at.slice(0, 10)) : ""}`.trim(), dot: false, tone: "good" };
+      return { text: `Accepted ${day(c.accepted_at)}`.trim(), dot: false, tone: "good" };
     case "sent":
       return {
-        text: `Invitation sent ${c.sent_at ? formatDate(c.sent_at.slice(0, 10)) : ""}${c.expires_at ? ` · works until ${formatDate(c.expires_at.slice(0, 10))}` : ""}`,
+        text: `Invitation sent ${day(c.sent_at)}${c.expires_at ? ` · works until ${day(c.expires_at)}` : ""}`,
         dot: false,
         tone: "plain",
       };
     case "expired":
-      // The Send again button sits beside it, so the words don't repeat it.
-      return { text: `Invitation expired ${c.expires_at ? formatDate(c.expires_at.slice(0, 10)) : ""}`.trim(), dot: true, tone: "warn" };
+      return { text: `Invitation expired ${day(c.expires_at)}`.trim(), dot: true, tone: "warn" };
     default:
       if (!planIncludes) return { text: "Not emailed · your plan doesn't include Coordinators", dot: false, tone: "plain" };
-      // A full team: a freed spot doesn't send it on its own (round-2 decision): Send it once there's room.
+      // A full team: a freed spot doesn't send it on its own (round-2 decision): send it once there's room.
       if (!c.can_send) return { text: "Not emailed yet · needs a free team spot", dot: true, tone: "warn" };
       return { text: published ? "Not emailed yet" : "Not emailed yet · sent when you publish", dot: true, tone: "warn" };
   }
+}
+
+/** The one name for sending a copied Coordinator's invitation, wherever it's offered. */
+export function sendLabel(status: "held" | "sent" | "expired" | "accepted", published: boolean) {
+  return status === "held" ? (published ? "Send invitation" : "Send invitation now") : "Send a new invitation";
+}
+
+/** A spot on a copy still holding "[new date]" (copy_new_date_spots): its step, what it is, and the job it's on. */
+export type NewDateSpot = { step: string; what: string; station_id: string | null; job: string | null; count: number };
+
+/** "The description", "Trail crew: a shift", "A map or document's name (Park map)". */
+export function newDateSpotLabel(s: NewDateSpot) {
+  if (!s.job) return s.what;
+  return s.station_id ? `${s.job}: ${s.what.charAt(0).toLowerCase()}${s.what.slice(1)}` : `${s.what} (${s.job})`;
+}
+
+/** Where each "[new date]" is filled in. */
+export function newDateSpotHref(base: string, s: NewDateSpot) {
+  if (s.step === "details") return s.what.startsWith("A map") ? `${base}/edit?section=files` : `${base}/edit`;
+  if (s.step === "registration") return `${base}/bands`;
+  if (s.step === "rooms") return `${base}/rooms`;
+  return `${base}/volunteering${s.station_id ? `?station=${s.station_id}` : ""}`;
+}
+
+/** "Add the new date in Details: 1 spot", or "… in Details (1 spot) and Jobs and shifts (2 spots)". */
+export function newDateBlocker(spots: NewDateSpot[], kind: string | null | undefined) {
+  const by = new Map<string, number>();
+  for (const s of spots) {
+    const label = copyStepLabel(s.step, kind);
+    by.set(label, (by.get(label) ?? 0) + s.count);
+  }
+  const parts = [...by.entries()];
+  if (parts.length === 1) return `Add the new date in ${parts[0][0]}: ${plural(parts[0][1], "spot", "spots")}`;
+  return `Add the new date in ${listAnd(parts.map(([l, n]) => `${l} (${plural(n, "spot", "spots")})`))}`;
 }

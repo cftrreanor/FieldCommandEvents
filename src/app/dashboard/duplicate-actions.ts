@@ -40,10 +40,10 @@ export async function duplicateEvent(fromEventId: string, requestId: string, _pr
   const fieldErrors: Record<string, string> = {};
   if (!name) fieldErrors.name = "Fill in the name of the new event";
   else if (name.length > 120) fieldErrors.name = "Keep the name under 120 characters";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(startsOn)) fieldErrors.startsOn = "Pick the new first day";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startsOn)) fieldErrors.startsOn = "Pick the new date";
   if (Object.keys(fieldErrors).length) {
     const n = Object.keys(fieldErrors).length;
-    return { error: n === 1 ? `${Object.values(fieldErrors)[0]}, outlined in red above.` : `Fix the ${n} answers outlined in red above.`, fieldErrors };
+    return { error: n === 1 ? `${Object.values(fieldErrors)[0]} in the box above.` : `Fix the ${n} answers marked above.`, fieldErrors };
   }
   if (!UUID.test(fromEventId) || !UUID.test(requestId)) return { error: "Nothing was created. Try again." };
 
@@ -61,11 +61,11 @@ export async function duplicateEvent(fromEventId: string, requestId: string, _pr
     return { error: error && (error.code === "42501" || error.code === "P0001") ? friendlyDbError(error) : "Nothing was created. Try again." };
   }
   const result = data as DuplicateResult;
-  const { failed } = await copyCopiedFiles(result.event_id, result.summary.files ?? []);
+  const { failed } = await copyCopiedFiles(result.event_id, result.summary.files ?? [], result.existing);
   // A contest's copy lands on Band registration, so that step is opened by landing there (marked here, so every
   // screen agrees from the first render).
   if (result.summary.kind === "band_contest") {
-    await supabase.rpc("mark_copy_step", { p_event: result.event_id, p_step: "registration", p_confirmed: false });
+    await supabase.rpc("mark_copy_step", { p_event: result.event_id, p_step: "registration" });
   }
 
   revalidatePath("/dashboard", "layout");
@@ -80,14 +80,13 @@ export async function duplicateEvent(fromEventId: string, requestId: string, _pr
   };
 }
 
-/** A copied step was opened ("Opened"), or saved or confirmed (it stops asking to be checked). */
-export async function markCopyStep(eventId: string, step: string, confirmed = false): Promise<ActionState> {
+/** A copied step was opened: that checks it off ("Copied: check it" becomes "Opened"). */
+export async function markCopyStep(eventId: string, step: string): Promise<ActionState> {
   await requireUser();
   if (!UUID.test(eventId) || !STEPS.includes(step as (typeof STEPS)[number])) return { error: "That step isn't on this event." };
   const supabase = await createClient();
-  const { error } = await supabase.rpc("mark_copy_step", { p_event: eventId, p_step: step, p_confirmed: confirmed });
+  const { error } = await supabase.rpc("mark_copy_step", { p_event: eventId, p_step: step });
   if (error) return { error: friendlyDbError(error) };
-  if (confirmed) revalidatePath(`/dashboard/events/${eventId}`, "layout");
   return { ok: true };
 }
 
@@ -97,23 +96,24 @@ export async function sendCopyInvitationNow(eventId: string, invitationId: strin
   const person = (await loadCopyCoordinators(eventId)).find((c) => c.invitation_id === invitationId);
   if (!person) return { error: "That invitation isn't on this event anymore. Refresh to see the team." };
   if (person.status === "accepted") return { error: `${person.name} has already accepted.` };
-  if (person.status === "sent") return { error: `${person.name}'s invitation was already sent. Use Resend.` };
-  const sent = await sendCopyInvitation(invitationId);
+  // A sent one can be sent again too (a send cut off partway may never have been delivered): a new invitation.
+  const sent = await sendCopyInvitation(invitationId, person.status === "expired" || person.status === "sent");
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
   if (sent !== true) return { error: sent };
   return { ok: true, message: `Invitation sent to ${person.name}.` };
 }
 
 /**
- * Sends one copied invitation. If the email didn't go out, it goes back to "Not emailed yet" (nobody holds a link
- * that was never delivered). Returns true, or why it wasn't sent.
+ * Sends one copied invitation. If the email didn't go out, it goes back to where it was: "Not emailed yet", or
+ * expired for one emailed before (`wasSent`), so nobody holds a link that was never delivered. Returns true, or
+ * why it wasn't sent.
  */
-async function sendCopyInvitation(invitationId: string): Promise<true | string> {
+async function sendCopyInvitation(invitationId: string, wasSent = false): Promise<true | string> {
   const sent = await sendInvitation(invitationId);
   if (sent === true) return true;
   if (sent === false) {
     const supabase = await createClient();
-    await supabase.rpc("copy_invitation_not_sent", { p_id: invitationId });
+    await supabase.rpc("copy_invitation_not_sent", { p_id: invitationId, p_was_expired: wasSent });
     return "The email didn't go out. Check the address, then send it again.";
   }
   return sent;
@@ -144,7 +144,7 @@ export async function undoRemoveCopyCoordinator(eventId: string, removalId: stri
   return { ok: true, message: "Put back." };
 }
 
-/** Fix the address of a copied Coordinator who hasn't been emailed; "Save and send" sends it too. */
+/** Change the email of a copied Coordinator who hasn't been emailed; "Save and send" sends it too. */
 export async function fixCopyCoordinatorEmail(eventId: string, invitationId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
   await requireUser();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -205,19 +205,30 @@ export async function publishCopy(eventId: string, send: string[], signup?: "now
   // A contest or festival opens registration as it publishes (on its opening day, if one is set), as its own
   // publish button does; everything else publishes with sign-up open now or later.
   const published = registers
-    ? await publishAndOpenBandRegistration(eventId)
-    : await changePublished(eventId, true, signsUp && signup ? signup === "now" : undefined);
-  if (published.error) return { error: published.error };
+    ? await publishAndOpenBandRegistration(eventId, true)
+    : await changePublished(eventId, true, signsUp && signup ? signup === "now" : undefined, true);
+  if (published.error) {
+    // Read the event's state before choosing the words: it may have published even though a step after failed.
+    const { data: now } = await supabase.from("events").select("status").eq("id", eventId).maybeSingle();
+    if (now?.status !== "published") return { error: published.error };
+    revalidatePath(`/dashboard/events/${eventId}`, "layout");
+    return { ok: true, message: `Published, but ${lowerFirst(published.error)} Nobody was emailed yet: send invitations from Team setup.` };
+  }
 
   const people = await loadCopyCoordinators(eventId);
   const ticked = people.filter((p) => send.includes(p.invitation_id) && (p.status === "held" || p.status === "expired"));
   const emailed: { name: string; email: string }[] = [];
   const notEmailed: { invitationId: string; name: string; email: string; why: string }[] = [];
-  // One at a time: each takes a team spot as it's sent, and a full team stops the rest with the reason.
-  for (const p of ticked) {
-    const sent = await sendCopyInvitation(p.invitation_id);
-    if (sent === true) emailed.push({ name: p.name, email: p.email });
-    else notEmailed.push({ invitationId: p.invitation_id, name: p.name, email: p.email, why: sent });
+  // After publishing, in small batches (each takes a team spot as it's sent; a full team stops the rest with the
+  // reason). The page allows enough time for a long list (maxDuration on the event page).
+  for (let i = 0; i < ticked.length; i += 3) {
+    const batch = ticked.slice(i, i + 3);
+    const results = await Promise.all(batch.map((p) => sendCopyInvitation(p.invitation_id, p.status === "expired")));
+    results.forEach((sent, j) => {
+      const p = batch[j];
+      if (sent === true) emailed.push({ name: p.name, email: p.email });
+      else notEmailed.push({ invitationId: p.invitation_id, name: p.name, email: p.email, why: sent });
+    });
   }
   // Everyone else still not emailed: unticked in the window, or couldn't be sent now. The message names them too.
   const left = people.filter((p) => (p.status === "held" || p.status === "expired") && !ticked.includes(p));

@@ -105,6 +105,24 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
     const past = isAdmin && canDuplicateKind(type) ? await pastEvents(supabase, org.id, type) : [];
     // A date already typed before (or kept from starting over) stays.
     const day = typeof on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(on) ? on : undefined;
+    const details = (
+      <Card className="mt-6">
+        <h2 className="text-lg font-semibold">Event details</h2>
+        <p className="mt-1 text-sm text-muted">The name, dates, times, and venue everyone sees.</p>
+        <div className="mt-4">
+          <EventForm
+            action={createEvent}
+            organizationId={org.id}
+            eventType={type}
+            initial={{ timezone: org.default_timezone, startsOn: day, endsOn: day }}
+            venueSearchEnabled={isPlacesConfigured}
+            submitLabel="Save and continue"
+            setup={{}}
+            extra={brand && <SetupLogo eventId={null} logo={brand.logo} color={brand.color} />}
+          />
+        </div>
+      </Card>
+    );
     return (
       <div className="mx-auto max-w-5xl" data-required-marks>
         {type === "volunteer" || type === "band_contest" || type === "group_event" ? (
@@ -127,23 +145,8 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
           </SetupHeader>
         )}
         {trialNote}
-        {past.length > 0 && <StartFromEvent events={past} kindWords={KIND_WORDS[type] ?? "an event"} />}
-        <Card className="mt-6">
-          <h2 className="text-lg font-semibold">Event details</h2>
-          <p className="mt-1 text-sm text-muted">The name, dates, times, and venue everyone sees.</p>
-          <div className="mt-4">
-            <EventForm
-              action={createEvent}
-              organizationId={org.id}
-              eventType={type}
-              initial={{ timezone: org.default_timezone, startsOn: day, endsOn: day }}
-              venueSearchEnabled={isPlacesConfigured}
-              submitLabel="Save and continue"
-              setup={{}}
-              extra={brand && <SetupLogo eventId={null} logo={brand.logo} color={brand.color} />}
-            />
-          </div>
-        </Card>
+        {/* Once an event is picked to start from, the blank form folds away behind "Or fill in the details yourself". */}
+        {past.length > 0 ? <StartFromEvent events={past} kindWords={KIND_WORDS[type] ?? "an event"}>{details}</StartFromEvent> : details}
       </div>
     );
   }

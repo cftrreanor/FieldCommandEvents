@@ -11,7 +11,8 @@ import { saveMyDigestPrefs } from "../../../notify-actions";
 import { DigestCard } from "./digest-card";
 import { getEventAccess, getOrigin } from "@/lib/data";
 import { missing } from "@/lib/schema-check";
-import { loadCopyCoordinators } from "@/lib/duplicate-event";
+import { isUnpublishedCopy, loadCopyCoordinators } from "@/lib/duplicate-event";
+import { PublishCopyLink } from "../copy-publish";
 import { createClient } from "@/lib/supabase/server";
 import { loadAccountPlan } from "@/lib/plan";
 import { eachDate, formatDate, formatTimeRange, utcToZonedDate, utcToZonedTime } from "@/lib/time";
@@ -134,6 +135,8 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
   ].filter((z): z is string => Boolean(z));
   const zones = hasBooths(event.event_type) ? [...new Set(made.length ? made : FAIR_ZONES)] : undefined;
 
+  // A duplicated draft never published: its Publish button opens the copy's publish window.
+  const unpublishedCopy = access.isHost && event.status !== "published" ? await isUnpublishedCopy(eventId) : false;
   // A duplicated draft's copied Coordinators not emailed yet (or whose invitation expired), on their jobs.
   const copiedLeads = access.isHost ? (await loadCopyCoordinators(eventId)).filter((c) => c.status === "held" || c.status === "expired") : [];
   const shifts = (shiftData ?? []) as Shift[];
@@ -154,6 +157,11 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
   const other = tab === "import" && !jobsHere ? "import" : tab === "order" && hasBands(event.event_type) ? "order" : null;
   const adding = !other && (tab === "new" || stations.length === 0);
   const current = adding || other ? null : (stations.find((s) => s.id === tab) ?? stations[0]);
+  // Where this job's copied text still holds "[new date]" (instructions sit under More options).
+  const { data: spotData } = unpublishedCopy ? await supabase.rpc("copy_new_date_spots", { p_event: eventId }) : { data: null };
+  const newDateHere = ((spotData ?? []) as { station_id: string | null; what: string }[])
+    .filter((x) => x.station_id && x.station_id === current?.id)
+    .map((x) => (x.what === "Instructions" ? "its instructions (More options, below)" : x.what === "A shift" ? "a shift's name or note" : "a thing to bring"));
   const currentShifts = current ? shifts.filter((s) => s.station_id === current.id) : [];
   const currentItems = current ? items.filter((i) => i.station_id === current.id) : [];
   const itemSignups: ItemSignup[] | undefined =
@@ -357,7 +365,12 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                 >
                   Print volunteer badges
                 </Link>
-                {event.status !== "published" && access.isHost && (
+                {event.status !== "published" && access.isHost && unpublishedCopy ? (
+                  // A copy never published: its publish window, where who gets emailed is chosen.
+                  <PublishCopyLink eventId={eventId} version="now" className="px-3!">
+                    Publish and open sign-ups
+                  </PublishCopyLink>
+                ) : event.status !== "published" && access.isHost && (
                   <ActionButton
                     action={publishAndOpenSignups.bind(null, eventId)}
                     variant="go"
@@ -483,6 +496,15 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
             ]}
           />
           <div className={jobsHere ? "mt-2" : "mt-6"}>
+            {current && newDateHere.length > 0 && (
+              // A copy: this job's copied text still holds "[new date]" (publishing waits for it). Say where.
+              <p className="mb-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm leading-6">
+                <span className="font-semibold">
+                  <span aria-hidden>◆ </span>Add the new date
+                </span>{" "}
+                · &ldquo;[new date]&rdquo; is in {newDateHere.join(" and ")}. Replace it with the new date, or take it out.
+              </p>
+            )}
             {current ? (
               <StationPanel
                 // A fresh panel per station, so its forms never keep the previous tab's choices.

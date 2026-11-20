@@ -1,35 +1,31 @@
 // Run with: npm test (node's built-in test runner; Node strips the types).
+// The same cases run against the database's copy_blank_dates in supabase/tests/security_test.sql ("dup: blank").
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { eachDay, findOldDates } from "./old-dates.ts";
+import { blankOldDates, countNewDates, eachDay, NEW_DATE } from "./old-dates.ts";
 
-const keep = eachDay("2027-04-17", "2027-04-18");
+// A copy on Sat–Sun, Nov 6–7, 2027.
+const keep = eachDay("2027-11-06", "2027-11-07");
+const blank = (t: string) => blankOldDates(t, keep).text;
 
-test("finds last year's dates in copied text", () => {
-  const found = findOldDates("Bring gloves. See you Saturday, Nov 21! Trail work runs through November 22nd, 2026.", keep, 2026);
-  assert.deepEqual(
-    found.map((f) => f.text),
-    ["Nov 21", "November 22nd, 2026"],
-  );
-  assert.match(found[0].context, /See you Saturday, Nov 21/);
+test("old dates in copied text become [new date], times stay", () => {
+  assert.equal(blank("Arrive by 7:45 on Nov 7. See you Saturday, Nov 7!"), "Arrive by 7:45 on Nov 7. See you [new date]!");
+  assert.equal(blank("Forms due 11/1/26 or 10/30. Bring 1/2 gallon. Room 13/40."), "Forms due [new date] or [new date]. Bring 1/2 gallon. Room 13/40.");
+  assert.equal(blank("Through November 22nd, 2026 and Nov. 21-22. The 2026 shirts."), "Through [new date] and [new date]. The 2026 shirts.");
+  assert.equal(blank("May 3rd; march on; Dec 1–2"), "[new date]; march on; [new date]");
 });
 
-test("the copy's own dates aren't old", () => {
-  assert.deepEqual(findOldDates("See you April 17 and Apr. 18, 2027 (4/17).", keep, 2026), []);
+test("the copy's own days stay, with a weekday only when it matches", () => {
+  assert.equal(blank("See you Nov 7 2027 and Sunday, Nov 7 and Sat Nov 6"), "See you Nov 7 2027 and Sunday, Nov 7 and Sat Nov 6");
+  assert.equal(blank("Monitor 11/7 maybe. Sat 11/14."), "Monitor 11/7 maybe. [new date].");
+  assert.equal(blank("Nov 7, 2026"), NEW_DATE, "the right day in another year is old");
 });
 
-test("numbers and a year on its own", () => {
-  assert.deepEqual(
-    findOldDates("Forms due 11/14/26. The 2026 shirts are in.", keep, 2026).map((f) => f.text),
-    ["11/14/26", "2026"],
-  );
-  assert.deepEqual(findOldDates("Since 2019, our 2027 cleanup", keep, 2026), [], "other years and the copy's year are fine");
-});
-
-test("nothing to check", () => {
-  assert.deepEqual(findOldDates(null, keep), []);
-  assert.deepEqual(findOldDates("Meet at the north lot", keep), []);
-  assert.deepEqual(findOldDates("Call 512/555 or room 13/40", keep), [], "not a date");
+test("counts", () => {
+  assert.equal(blankOldDates("Nov 1 and 11/2", keep).count, 2);
+  assert.equal(blankOldDates(null, keep).count, 0);
+  assert.equal(countNewDates(`a ${NEW_DATE} b ${NEW_DATE}`), 2);
+  assert.equal(countNewDates("Meet at the north lot"), 0);
 });
 
 test("each day of an event", () => {

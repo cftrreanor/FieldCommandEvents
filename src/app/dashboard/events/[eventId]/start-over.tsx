@@ -21,7 +21,8 @@ export function StartOverButton({ eventId, name, bullets }: { eventId: string; n
       title: `Delete ${name} and start over?`,
       bullets,
       confirmLabel: "Delete this copy",
-      cancelLabel: `Keep ${name}`,
+      // Short, so it never wraps (a long event name made it two lines).
+      cancelLabel: "Keep this copy",
       danger: true,
     });
     if (!ok) return;

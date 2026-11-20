@@ -18,7 +18,7 @@ import { customWords, loadSystemEmail } from "@/lib/system-email-overrides";
 import { createRegistration } from "@/lib/band-registration";
 import { parseFestival } from "@/lib/festival-registration";
 import { sendBandInvites } from "./band-invite-actions";
-import { setEventPublished } from "./actions";
+import { changePublished } from "@/lib/publish-event";
 import { formatDate, formatTime, utcToZonedDate, zoneAbbreviation, zonedToUtc } from "@/lib/time";
 
 // ---------------------------------------------------------------------------
@@ -234,13 +234,14 @@ export async function setBandRegistrationOpen(eventId: string, open: boolean) {
  * Band Registration's one button before the event is live: publish it and open
  * registration, then the link to send directors, on the Registered bands tab.
  */
-export async function publishAndOpenBandRegistration(eventId: string): Promise<ActionState> {
+export async function publishAndOpenBandRegistration(eventId: string, fromCopyWindow: unknown = false): Promise<ActionState> {
   // Opening with a deadline that's already passed would close registration straight away.
   const supabase = await createClient();
   const { data: ev } = await supabase.from("events").select("timezone, band_registration_deadline").eq("id", eventId).maybeSingle();
   if (ev?.band_registration_deadline && ev.band_registration_deadline < utcToZonedDate(new Date().toISOString(), ev.timezone))
     return { error: "The registration deadline has passed. Pick a new one in Registration first." };
-  const published = await setEventPublished(eventId, true);
+  // Only publishCopy passes true (a form's bound call passes its previous state here, never true).
+  const published = await changePublished(eventId, true, undefined, fromCopyWindow === true);
   if (published.error) return published;
   const opened = await updateEventRow(eventId, { band_registration_open: true });
   // On to the event page, which leads with how to get the word out.

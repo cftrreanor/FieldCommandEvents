@@ -40,10 +40,14 @@ Volunteers can be added to band contests and festivals too (the "Jobs and shifts
 **Duplicate event** (every kind with jobs; the Account Host and Co-hosts of every event): a new draft on new dates
 from New event ("Start from one of your events"), a card on My events, or Event settings, Publishing and more. Details,
 jobs, shifts, things to bring, maps and documents, and contest or festival registration setup come over, every date
-moved by the same number of days; never volunteers, bands, groups, or anyone's details. Copied steps say "Copied:
-check it" until opened. Coordinators come over as invitations, emailed when the organizer publishes (ticked in the
-publish window) or with Send now; the message after publishing names anyone not emailed. Account members who led a
-job are put straight on it and show as current Coordinators. Decisions: `docs/design-decisions/2026-11-20-duplicate-event.md`
+moved by the same number of days; never volunteers, bands, groups, or anyone's details. Dates typed into copied text
+(descriptions, job instructions, shift notes, things to bring, information for directors) are left as "[new date]":
+the step shows "Add the new date", the copied note and Publish step link each spot, and publishing waits until none is
+left (checked in the database too). Copied steps say "Copied: check it" until opened; opening one checks it off.
+Coordinators come over as invitations in Team setup's Pending list, emailed when the organizer publishes (ticked in the
+publish window, which every Publish button on a never-published copy opens) or with "Send invitation now"; the message
+after publishing names anyone not emailed. People already on the team who led a job are put straight on it. Drafts
+made by duplicating say "Copied from [event]" on My events until published. Decisions: `docs/design-decisions/2026-11-20-duplicate-event.md`
 
 ## Add-ons and packages
 
@@ -103,6 +107,7 @@ Sample people are never emailed, and "Back to me" or "Remove demo people" takes 
 
 Keep the last ten or so; older ones are in git history and `docs/design-decisions/`.
 
+- 2026-11-20 (PR pending): Duplicate event, fixes from the built-page review: old dates in copied text become "[new date]" and hold back publishing; every Publish button on a never-published copy opens its publish window; no name shown for an address that isn't on your team; the "looks right" link is gone (opening a step checks it off); one row per person in Team setup with "Send invitation now", "Send invitation", or "Send a new invitation"; suggested next-year names; "Copied from" on draft cards; New event folds the blank form once an event is picked
 - 2026-11-20 (PR pending): Duplicate event: a new draft from any event with jobs, on new dates, from New event, My events, or Event settings; Coordinators come over as invitations sent when you publish (or Send now); replaces "Start from a previous contest" and the festival copy. Also: a Co-host of one event no longer sees "That event wasn't found" on Event settings' Publishing card, Team setup's tabs fit a phone, and forms no longer cause a hydration warning (submit buttons look not-ready from CSS)
 - 2026-11-19 (PR pending): Event details: on a multi-day event the times read "Daily start time" and "Daily end time" (the hours each day, which is how shifts and the event page use them), not first-day start and last-day end
 - 2026-11-14 (PR pending): Visitor check-in follow-up fixes: one deletion date everywhere, kept totals after deletion, "Our school has a copy" can be undone, "Saved:" left where a checked name was, the safe choice first in the download warning, and "Let Ben check in" as a button

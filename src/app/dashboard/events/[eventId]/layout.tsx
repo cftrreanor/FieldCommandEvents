@@ -49,8 +49,8 @@ export default async function EventLayout({ children, params }: LayoutProps<"/da
             ? festivalSteps(facts)
             : meetingSteps(facts)
       : null;
-  // A duplicated draft: its copied steps say "Copied: check it" until opened, then "Opened" until saved or confirmed.
-  if (steps && kind && kind !== "meeting") steps.copied = await loadCopySteps(eventId);
+  // A duplicated draft: its copied steps say "Copied: check it" until opened, and "Add the new date" while one holds "[new date]".
+  if (steps && kind && kind !== "meeting") Object.assign(steps, await loadCopySteps(eventId));
   return (
     <>
       {day && <DayBar day={day} />}
