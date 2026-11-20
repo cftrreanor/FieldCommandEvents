@@ -24,7 +24,7 @@ logged in `docs/design-decisions/`. The rules behind it, with where each was fou
    steps are marked "Optional" and never block. An optional step that would hold only one setting isn't a
    step: the setting goes on Publish (a one-day meetings event's contact email, owner, 2026-11-09).
 5. **Every step says where it stands, in words, not color alone:** "Done", "Now", "Not yet", "Optional", or
-   what it needs ("Add a job"). The step you're on always says "Now" first ("Now · add a job"). On phones,
+   what it needs ("Add a job"). The step you're on always says "Now" first, with a capital after it ("Now · Add a job"). On phones,
    the steps that need work are named in a line under the bar.
 6. **Event settings is one link away from every step,** but it's a separate page with its own plain menu
    (no done circles, no "Optional" under items). Opened during setup, it says "Back to setup".

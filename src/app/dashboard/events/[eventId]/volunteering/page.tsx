@@ -11,6 +11,9 @@ import { saveMyDigestPrefs } from "../../../notify-actions";
 import { DigestCard } from "./digest-card";
 import { getEventAccess, getOrigin } from "@/lib/data";
 import { missing } from "@/lib/schema-check";
+import { isUnpublishedCopy, loadCopyCoordinators, loadNewDatePlaces } from "@/lib/duplicate-event";
+import { newDateSpotHref } from "@/lib/duplicate-words";
+import { PublishCopyLink } from "../copy-publish";
 import { createClient } from "@/lib/supabase/server";
 import { loadAccountPlan } from "@/lib/plan";
 import { eachDate, formatDate, formatTimeRange, utcToZonedDate, utcToZonedTime } from "@/lib/time";
@@ -20,6 +23,7 @@ import { importFields, type Choice } from "@/lib/imports";
 import { createStation, moveCheckpoint, publishAndOpenSignups, setVolunteerSignupOpen } from "../../../actions";
 import { ActionButton, CopyLinkButton, NewStationForm, type LeadOption } from "../forms";
 import { StationTabs, UnsavedChangesProvider } from "./station-steps";
+import { NewDatesElsewhere } from "@/components/new-date-note";
 import { FAIR_ZONES, hasBands, hasBooths, hasRooms, leadWords, usesJobs, volunteerAreaName } from "@/lib/event-types";
 import { kindLabel, sortStations } from "@/lib/contest-day";
 import { CheckInOrderList } from "./check-in-order";
@@ -96,7 +100,8 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
           .order("created_at")
       : Promise.resolve({ data: [] }),
     // Coordinators invited but not joined yet, shown on their sign-up.
-    supabase.from("invitations").select("email, station_id").eq("event_id", eventId).eq("role", "section_lead").is("accepted_at", null),
+    // Held for publishing (a duplicated event's Coordinators) have no link yet: they show as "not emailed yet" below.
+    supabase.from("invitations").select("email, station_id").eq("event_id", eventId).eq("role", "section_lead").is("accepted_at", null).not("token", "is", null),
   ]);
   // Check-in stations first, in the band's order, matching the volunteer sign-up page.
   if (stationsError) missing();
@@ -108,9 +113,19 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
   const published = event.status === "published";
   // With the Sponsors add-on, a band contest's or festival's optional Sponsors step comes next, then Publish.
   const sponsorsNext = !published && (bandsHere || festival) && (await sponsorsEnabled(event.organization_id));
-  const nextStep = sponsorsNext
-    ? { href: `/dashboard/events/${eventId}/sponsors`, label: "Next up: Sponsors" }
-    : { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish" };
+  // A duplicated draft's "[new date]" places on this step, by job: a ◆ on each job's tab, a line naming the others,
+  // and Next goes to the next one while any are left.
+  const places = published ? [] : await loadNewDatePlaces(eventId, bandsHere || festival ? "volunteers" : "jobs");
+  const placesFor = (id: string) => places.filter((p) => p.station_id === id).reduce((n, p) => n + p.count, 0);
+  // The job on screen (no ?station= opens the first one).
+  const shownId = typeof tab === "string" && tab !== "new" && tab !== "import" && tab !== "order" ? tab : sortStations((stationData ?? []) as unknown as Omit<Station, "lead_ids">[])[0]?.id;
+  const elsewhere = places.filter((p) => p.station_id !== shownId);
+  const nextPlace = elsewhere[0] ?? null;
+  const nextStep = nextPlace
+    ? { href: newDateSpotHref(`/dashboard/events/${eventId}`, nextPlace), label: `Next up: Add the new date${nextPlace.job ? ` in ${nextPlace.job}` : ""}` }
+    : sponsorsNext
+      ? { href: `/dashboard/events/${eventId}/sponsors`, label: "Next up: Sponsors" }
+      : { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish" };
   const stations = sortStations((stationData ?? []) as unknown as Omit<Station, "lead_ids">[]).map((st) => ({
     ...st,
     lead_ids: (leadRows ?? []).filter((l) => l.station_id === st.id).map((l) => l.user_id),
@@ -132,6 +147,10 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
   ].filter((z): z is string => Boolean(z));
   const zones = hasBooths(event.event_type) ? [...new Set(made.length ? made : FAIR_ZONES)] : undefined;
 
+  // A duplicated draft never published: its Publish button opens the copy's publish window.
+  const unpublishedCopy = access.isHost && event.status !== "published" ? await isUnpublishedCopy(eventId) : false;
+  // A duplicated draft's copied Coordinators not emailed yet (or whose invitation expired), on their jobs.
+  const copiedLeads = access.isHost ? (await loadCopyCoordinators(eventId)).filter((c) => c.status === "held" || c.status === "expired") : [];
   const shifts = (shiftData ?? []) as Shift[];
   // Items to bring (stations without times), and for the open one, who's bringing what.
   const { data: itemData } = await supabase
@@ -150,6 +169,15 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
   const other = tab === "import" && !jobsHere ? "import" : tab === "order" && hasBands(event.event_type) ? "order" : null;
   const adding = !other && (tab === "new" || stations.length === 0);
   const current = adding || other ? null : (stations.find((s) => s.id === tab) ?? stations[0]);
+  // Where this job's copied text still holds "[new date]" (its name, location, and instructions sit under More options).
+  const placeWords: Record<string, string> = {
+    "job-name": "its name",
+    location: "its location (More options, below)",
+    instructions: "its instructions (More options, below)",
+    shift: "a shift",
+    item: "a thing to bring",
+  };
+  const newDateHere = [...new Set(places.filter((x) => x.station_id && x.station_id === current?.id).map((x) => placeWords[x.what] ?? "its text"))];
   const currentShifts = current ? shifts.filter((s) => s.station_id === current.id) : [];
   const currentItems = current ? items.filter((i) => i.station_id === current.id) : [];
   const itemSignups: ItemSignup[] | undefined =
@@ -353,7 +381,12 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                 >
                   Print volunteer badges
                 </Link>
-                {event.status !== "published" && access.isHost && (
+                {event.status !== "published" && access.isHost && unpublishedCopy ? (
+                  // A copy never published: its publish window, where who gets emailed is chosen.
+                  <PublishCopyLink eventId={eventId} version="now" className="px-3!">
+                    Publish and open sign-ups
+                  </PublishCopyLink>
+                ) : event.status !== "published" && access.isHost && (
                   <ActionButton
                     action={publishAndOpenSignups.bind(null, eventId)}
                     variant="go"
@@ -422,6 +455,16 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
               : "Each sign-up is a job, a place, or a list of things to bring, like Parking, Concessions, or a potluck. People sign up for its time slots or its items."}
           </p>
         )}
+        {places.length > 0 && (
+          // Which other jobs still hold "[new date]" (each tab has its ◆ too).
+          <NewDatesElsewhere
+            here={places.some((p) => p.station_id === current?.id)}
+            others={[...new Map(elsewhere.map((p) => [p.station_id ?? p.what, p])).values()].map((p) => ({
+              label: p.job ?? "A zone's name",
+              href: newDateSpotHref(`/dashboard/events/${eventId}`, p),
+            }))}
+          />
+        )}
         <UnsavedChangesProvider
           key={current?.id ?? "new"}
           needsDetails={false}
@@ -444,6 +487,7 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                 job: jobsHere,
                 stop: jobsHere ? (st.checkpoint_order ?? undefined) : undefined,
                 needsLead: jobsHere && Boolean(st.checkpoint_kind) && st.lead_ids.length === 0,
+                newDates: placesFor(st.id),
               };
             })}
             add={jobsHere ? (adding && stations.length > 0 ? { href: tabHref("new"), active: true, label: "New job" } : undefined) : { href: tabHref("new"), active: adding }}
@@ -479,6 +523,15 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
             ]}
           />
           <div className={jobsHere ? "mt-2" : "mt-6"}>
+            {current && newDateHere.length > 0 && (
+              // A copy: this job's copied text still holds "[new date]" (publishing waits for it). Say where.
+              <p className="mb-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm leading-6">
+                <span className="font-semibold">
+                  <span aria-hidden className="text-warning">◆ </span>Add the new date
+                </span>{" "}
+                · &ldquo;[new date]&rdquo; is in {newDateHere.join(" and ")}. Replace it with the new date, or take it out.
+              </p>
+            )}
             {current ? (
               <StationPanel
                 // A fresh panel per station, so its forms never keep the previous tab's choices.
@@ -488,6 +541,7 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                 items={currentItems}
                 itemSignups={itemSignups}
                 stationShifts={currentShifts}
+                newDateShifts={places.filter((p) => p.what === "shift" && p.station_id === current.id && p.detail).map((p) => p.detail!)}
                 event={event}
                 days={days}
                 windowLabel={windowLabel}
@@ -516,6 +570,8 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                 }
                 leadOptions={leadOptions}
                 pendingInvites={(inviteData ?? []).filter((inv) => inv.station_id === current.id).map((inv) => inv.email)}
+                heldInvites={copiedLeads.filter((c) => c.station_id === current.id || (c.station_ids ?? []).includes(current.id)).map((c) => ({ name: c.name, expired: c.status === "expired" }))}
+                teamHref={`/dashboard/events/${eventId}/edit?section=team&tab=section-leads`}
                 job={
                   jobsHere
                     ? {
@@ -530,7 +586,7 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                           preview: previewHref,
                           next: published
                             ? { href: `/dashboard/events/${eventId}`, label: "Back to the event" }
-                            : bandsHere || festival
+                            : bandsHere || festival || nextPlace
                               ? nextStep
                               : { href: `/dashboard/events/${eventId}#publish`, label: "Next up: Publish your event" },
                         },

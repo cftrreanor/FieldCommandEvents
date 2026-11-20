@@ -379,6 +379,7 @@ export function emailLayout({
   paragraphs,
   rows,
   button,
+  buttonNote,
   link,
   footer,
   preheader,
@@ -387,6 +388,8 @@ export function emailLayout({
   paragraphs: string[];
   rows?: EmailRow[];
   button?: { label: string; url: string };
+  /** A short note right under the button ("Works until Sat, Mar 31, 2027"). */
+  buttonNote?: string;
   /** A quieter second choice under the button. */
   link?: { label: string; url: string };
   footer?: string;
@@ -411,7 +414,9 @@ export function emailLayout({
         )
         .join("")}</table>`
     : "";
-  const btn = button ? emailButton(button.label, button.url) : "";
+  const btn = button
+    ? `${emailButton(button.label, button.url)}${buttonNote ? `<p style="font-size:14px;line-height:20px;margin:-16px 0 24px;color:#4b5f72">${escape(buttonNote)}</p>` : ""}`
+    : "";
   const second = link ? `<p style="font-size:15px;line-height:22px;margin:-8px 0 24px">${a(link)}</p>` : "";
   const html = emailShell({
     content: `<h1 style="font-size:22px;line-height:28px;margin:0 0 16px">${escape(heading)}</h1>
@@ -427,7 +432,7 @@ ${paragraphs.map(p).join("")}${list}${btn}${second}`,
     "",
     ...(rows ?? []).flatMap((r) => [`- ${r.title}: ${r.detail}`, ...(r.links ?? []).map((l) => `  ${l.label}: ${l.url}`)]),
     "",
-    ...(button ? [`${button.label}: ${button.url}`] : []),
+    ...(button ? [`${button.label}: ${button.url}`, ...(buttonNote ? [buttonNote] : [])] : []),
     ...(link ? [`${link.label}: ${link.url}`] : []),
   ].join("\n");
   return { html, text };

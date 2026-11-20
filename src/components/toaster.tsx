@@ -39,7 +39,7 @@ export function Toaster() {
   return (
     <div
       aria-live="polite"
-      className="pointer-events-none fixed inset-x-4 top-4 z-[100] flex flex-col items-end gap-2 sm:inset-x-auto sm:right-4 sm:w-96"
+      className="pointer-events-none fixed inset-x-4 top-20 z-[100] flex flex-col items-end gap-2 sm:inset-x-auto sm:right-4 sm:w-96"
     >
       {list.map((t) => (
         <ToastCard key={t.id} toast={t} />

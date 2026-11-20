@@ -60,8 +60,15 @@ import { hasSponsorsCard, SponsorsCardBody, SponsorsSection } from "./sponsors/s
 import { festivalRegistrationMissing, festivalRoomsMissing } from "@/lib/setup-checklist";
 import { minutesPerGroup } from "@/lib/rooms";
 import { datesMoved } from "@/lib/schedule-emails";
+import { CopiedNote, CopiedStepsLine, loadCopyFacts, NewDateList, type CopyFacts } from "./copied-note";
+import { CopyPublish, PublishedNote } from "./copy-publish";
+import { NotEmailedLine } from "./team/copied-coordinators";
+import { loadCopiedPeople } from "@/lib/duplicate-event";
+import { copyStepLabel, copyStepPath, listAnd as listWords, mapsAndDocuments, newDateBlocker, newDateStepLabel, places, plural as pluralWords } from "@/lib/duplicate-words";
 
 export const metadata: Metadata = { title: "Event setup" };
+// Publishing a copy sends its Coordinators' invitations after it publishes, in small batches: room for a long list.
+export const maxDuration = 120;
 
 type Person = { full_name: string; email: string; phone: string | null } | null;
 type StaffRow = { user_id: string; role: "volunteer_director" | "section_lead"; created_at: string; profiles: Person };
@@ -142,6 +149,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
       ? supabase
           .from("invitations")
           .select("id, email, role, as_host, station_id, token, expires_at")
+          // Held for publishing (a duplicated event's Coordinators): no link yet, shown with the copy's Coordinators.
+          .not("token", "is", null)
           .eq("event_id", eventId)
           .is("accepted_at", null)
           .order("created_at")
@@ -340,6 +349,11 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   // Hosts: the setup checklist and what publishing will do (the same facts every event page's strip uses).
   const setup: SetupFacts | null = access.isHost ? await loadSetupFacts(eventId) : null;
   const checklist = setup ? setupChecklist(setup) : null;
+  // A duplicated event (Duplicate event, 2026-11-20): its "Copied from" note and publish window while a draft; once
+  // published, a line for anyone not emailed until they're sent or removed.
+  const copyFacts: CopyFacts | null = access.isHost && event.status !== "published" ? await loadCopyFacts(eventId) : null;
+  const copiedLive = access.isHost && event.status === "published" ? await loadCopiedPeople(eventId) : null;
+  const notEmailed = copiedLive?.team.coordinators_included ? copiedLive.people.filter((p) => p.status === "held" || p.status === "expired") : [];
 
   const past = today > event.ends_on;
   const published = event.status === "published";
@@ -1038,6 +1052,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         festival={fest ? { previewHref: publicUrl } : undefined}
         // A one-day meetings event's optional contact email lives here (it has no More options step: owner, 2026-11-09).
         contact={conferenceHere && access.isHost && conference?.schedule !== "weekly" ? { initial: conference?.contact_email ?? null, meeting: event.event_type === "meeting" } : undefined}
+        copy={copyFacts ? await copyPublishParts(copyFacts, conferenceHere ? `/e/${event.slug}/book` : fest ? publicUrl : `/e/${event.slug}/volunteer`, user.id, user.email ?? "") : undefined}
       /> : null;
 
   // Still setting up: the one thing to do next, in the main column too.
@@ -1162,7 +1177,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
     <div
       className={dayActions || (checklist && !(steppedSetup && !published) && !fest) ? "lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-8" : undefined}
     >
-      {justPublished && !contestLive && (
+      {justPublished && !contestLive && query.copy !== "1" && (
         <SuccessToast
           message={
             fest
@@ -1171,8 +1186,9 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           }
         />
       )}
-      {justPublished && <ScrollTo id="share" />}
-      {justCopied && <SuccessToast message="Your copy is ready. Check the dates on each step, then publish." />}
+      {/* After publishing, the links to share. A copy stays at the top: its note, the links, then anyone not emailed. */}
+      {justPublished && query.copy !== "1" && <ScrollTo id="share" />}
+      {justCopied && !copyFacts && <SuccessToast message="Your copy is ready. Check the dates on each step, then publish." />}
       {demoEnded && <SuccessToast message="You're back on your own account. The demo people and sample data are gone." />}
       {/* Meetings set up in steps: the step bar is the one tracker, so no second checklist beside it (decisions 2026-11-08). */}
       {dayActions ? <DayRail day={dayActions} /> : checklist && !(steppedSetup && !published) && !fest && <SetupGuide checklist={checklist} />}
@@ -1217,6 +1233,12 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           )}
         </div>
 
+        {/* Just published a copy: what happened, below the header and clear of its buttons, closing on its own. */}
+        {justPublished && query.copy === "1" && <PublishedNote eventId={eventId} />}
+        {/* Just duplicated: what came over, in the same place (not over the step bar). */}
+        {justCopied && copyFacts && <PublishedNote eventId={eventId} text={copiedToast(copyFacts)} tone="info" />}
+        {copyFacts && <CopiedNote facts={copyFacts} />}
+
         {contestLive && inviteable ? (
           <GetTheWordOut
             eventId={eventId}
@@ -1234,6 +1256,15 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           published &&
           access.canManage &&
           !(fest && (fest.regOpen || !fest.posted)) && <ShareLinks rows={shareRows} qrs={shareQrs} slug={event.slug} canFix={access.isHost} />
+        )}
+
+        {/* A published copy: anyone not emailed, below Links to share, until each is sent or removed. */}
+        {copiedLive && (
+          <NotEmailedLine
+            eventId={eventId}
+            people={notEmailed}
+            teamHref={`/dashboard/events/${eventId}/edit?section=team&tab=section-leads`}
+          />
         )}
 
         {/* Hosts and Volunteer Leads posted these, so one line is enough; the rest of the team sees them in full. */}
@@ -1310,7 +1341,10 @@ function PublishPanel({
   previewHref,
   contact,
   festival,
+  copy,
 }: {
+  /** A duplicated draft: its publish window in place of the buttons, what's left to look over, and any "[new date]" left. */
+  copy?: { buttons: ReactNode; readyLine: ReactNode; effect: string | null; newDates: { title: string; list: ReactNode } | null };
   /** A festival: its page, to preview before publishing. */
   festival?: { previewHref: string };
   facts: SetupFacts;
@@ -1345,11 +1379,18 @@ function PublishPanel({
   const festReg = festival ? festivalRegistrationMissing(facts) : null;
   // Doesn't stop publishing, but posting the schedule waits for it.
   const festFix = festival && !festRooms && facts.roomTwoAtOnce ? facts.roomTwoAtOnce : null;
-  const blocked = needsJob || Boolean(bandMissing) || meetingTodo.length > 0 || Boolean(festRooms || festReg);
+  const blocked = needsJob || Boolean(bandMissing) || meetingTodo.length > 0 || Boolean(festRooms || festReg) || Boolean(copy?.newDates);
   // A volunteer event says what its own button opens (it chooses when sign-up opens), as band contests do.
-  const effects = publishEffects(facts).map((line) =>
-    jobsHere && line.startsWith("Volunteer sign-up") ? "With Publish and open sign-up, volunteers can pick a shift or an item right away." : line,
-  );
+  const effects = [
+    ...publishEffects(facts).map((line) =>
+      jobsHere && line.startsWith("Volunteer sign-up")
+        ? "With Publish and open sign-up, volunteers can pick a shift or an item right away."
+        : copy?.effect && line.startsWith("Nobody is emailed")
+          ? "Volunteers aren't emailed. People only find out when you share your link."
+          : line,
+    ),
+    ...(copy?.effect ? [copy.effect] : []),
+  ];
   return (
     <Card id="publish" className="mt-8 scroll-mt-6">
       <h2 className="text-lg font-semibold">{blocked ? "Not ready to publish yet" : others.length ? "Almost ready to publish" : "Ready to publish"}</h2>
@@ -1357,6 +1398,7 @@ function PublishPanel({
         // The one thing stopping them, first.
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
           <p className="font-semibold">
+            <span aria-hidden className="text-warning">◆ </span>
             {facts.stations > 0 ? "Add a shift or a thing to bring to a job first" : "Add a job before you publish"}
           </p>
           <p className="mt-1">Publishing needs at least one job with a shift or a thing to bring.</p>
@@ -1365,10 +1407,31 @@ function PublishPanel({
           </Link>
         </div>
       )}
+      {copy?.newDates && (
+        // A copy: every date typed into its copied text was left as "[new date]". Publishing waits for each one.
+        <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
+          <p className="font-semibold">
+            <span aria-hidden className="text-warning">◆ </span>
+            {copy.newDates.title}
+          </p>
+          <p className="mt-1">Dates typed into the copied text were left as &ldquo;[new date]&rdquo;. Publishing waits until each one is filled in.</p>
+          {copy.newDates.list}
+        </div>
+      )}
       {bandMissing && (
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
-          <p className="font-semibold">{bandMissing}</p>
-          <p className="mt-1">Publishing needs a registration deadline that hasn&apos;t passed and at least one classification.</p>
+          <p className="font-semibold">
+            <span aria-hidden className="text-warning">◆ </span>
+            {bandMissing}
+          </p>
+          {/* Only what's missing (not a classification that's already there). */}
+          <p className="mt-1">
+            {/classification/.test(bandMissing) && /deadline/.test(bandMissing)
+              ? "Publishing needs a registration deadline that hasn't passed and at least one classification."
+              : /classification/.test(bandMissing)
+                ? "Publishing needs at least one classification."
+                : "Publishing needs a registration deadline that hasn't passed."}
+          </p>
           <Link href={`/dashboard/events/${facts.eventId}/bands`} className={`${BTN} mt-3`}>
             Go to band registration
           </Link>
@@ -1378,6 +1441,7 @@ function PublishPanel({
         // The first thing missing, in step order, with one button to its step.
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
           <p className="font-semibold">
+            <span aria-hidden className="text-warning">◆ </span>
             {festRooms
               ? `${festRooms} before you publish`
               : festReg === "Add a deadline"
@@ -1393,7 +1457,7 @@ function PublishPanel({
       {festFix && (
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
           <p className="font-semibold">
-            <span aria-hidden>◆ </span>Before you can post the schedule: fix {festFix} (it would have two groups at once)
+            <span aria-hidden className="text-warning">◆ </span>Before you can post the schedule: fix {festFix} (it would have two groups at once)
           </p>
           <p className="mt-1">You can still publish now. Directors register either way.</p>
           <Link href={`/dashboard/events/${facts.eventId}/rooms`} className={`${BTN_OUTLINE} mt-3`}>
@@ -1405,6 +1469,7 @@ function PublishPanel({
         // The one thing stopping them, first, with one button to it: the same box as volunteer events and band contests.
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
           <p className="font-semibold">
+            <span aria-hidden className="text-warning">◆ </span>
             {/* Everything still missing, in step order, as the band contest box does. */}
             {meetingTodo.length > 1 ? "Add your hours and where you'll meet" : `${meetingTodo[0].label.replace(/^./, (c) => c.toUpperCase())} before you publish`}
           </p>
@@ -1417,7 +1482,7 @@ function PublishPanel({
       {!needsJob && empty.length > 0 && (
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
           <p className="font-semibold">
-            <span aria-hidden>◆ </span>
+            <span aria-hidden className="text-warning">◆ </span>
             {empty.length === 1 ? "1 job won't show on the sign-up page yet" : `${empty.length} jobs won't show on the sign-up page yet`}
           </p>
           <ul className="mt-1">
@@ -1441,6 +1506,12 @@ function PublishPanel({
           </Link>
           .
         </p>
+      ) : copy?.readyLine ? (
+        // A copy: nothing is missing, but nobody has said the copied steps are right yet (no "set up" for what nobody has looked at).
+        <>
+          <p className="mt-2 text-sm">Nothing is missing.</p>
+          {copy.readyLine}
+        </>
       ) : (
         <p className="mt-2 flex items-center gap-2 text-sm font-medium text-success">
           <span aria-hidden>✓</span> Everything your event needs is set up.
@@ -1492,6 +1563,8 @@ function PublishPanel({
             </Link>
           )}
         </div>
+      ) : copy ? (
+        copy.buttons
       ) : (
         jobsHere ? (
           <div className="mt-5 space-y-3">
@@ -1831,6 +1904,8 @@ function OpenClose({
       <ActionButton
         action={action as never}
         variant={on ? "quiet-stop" : "go"}
+        // A text button on its own phone row: its words line up with the text above (the 44 px target kept).
+        className={on ? "max-sm:-ml-3" : undefined}
         confirmMessage={on ? confirm : undefined}
         confirmLabel={on ? confirmLabel : undefined}
         pendingText={on ? "Closing…" : "Opening…"}
@@ -2093,4 +2168,81 @@ async function festivalFacts(
       ) : null,
     moved: moved ? { line: moved.line } : null,
   };
+}
+
+/** A duplicated draft's publish window and Ready card lines (Duplicate event, 2026-11-20). */
+async function copyPublishParts(f: CopyFacts, previewHref: string, userId: string, userEmail: string) {
+  const { check, event } = f;
+  const supabase = await createClient();
+  const { data: me } = await supabase.from("profiles").select("full_name, email").eq("id", userId).maybeSingle();
+  const base = `/dashboard/events/${event.id}`;
+  const label = (step: string) => copyStepLabel(step, event.event_type);
+  const labels = Object.fromEntries(check.steps.map((s) => [s.step, label(s.step)]));
+  const { data: reg } = await supabase.from("events").select("band_registration_opens_on, band_registration_deadline").eq("id", event.id).maybeSingle();
+  const today = utcToZonedDate(new Date().toISOString(), event.timezone || "America/Chicago");
+  const coordinators = check.invitations.length;
+  return {
+    readyLine: <CopiedStepsLine facts={f} labels={labels} />,
+    // Every "[new date]" left: publishing waits for them (the database checks too), with a link to each.
+    newDates: check.newDates.length
+      ? {
+          title: newDateBlocker(check.newDates, event.event_type),
+          // The one full list of places, each under the page where it's fixed (Maps and documents its own line).
+          list: (
+            <NewDateList
+              base={base}
+              spots={check.newDates}
+              className="mt-2"
+              groupLabel={(step) => ({ label: newDateStepLabel(step, event.event_type), href: `${base}${copyStepPath(step)}` })}
+            />
+          ),
+        }
+      : null,
+    effect: coordinators
+      ? check.toOffer.length
+        ? `You pick which copied ${coordinators === 1 ? "Coordinator gets" : "Coordinators get"} an invitation email, in the window that opens before anything is sent.`
+        : null
+      : null,
+    buttons: (
+      <CopyPublish
+        eventId={event.id}
+        eventName={event.name}
+        kind={event.event_type}
+        previewHref={previewHref}
+        opensOn={reg?.band_registration_opens_on && reg.band_registration_opens_on > today ? reg.band_registration_opens_on : null}
+        deadline={reg?.band_registration_deadline ?? null}
+        people={check.toOffer.map((p) => ({ id: p.invitation_id, name: p.name, email: p.email, jobs: p.jobs, expired: p.status === "expired" }))}
+        blocked={check.cantSend.map((p) => ({
+          name: p.name,
+          jobs: p.jobs,
+          why: check.team.coordinators_included ? (p.why_not ?? "There's no free team spot.") : "Your plan doesn't include Volunteer Leads and Coordinators.",
+        }))}
+        alreadySent={check.invitations.filter((i) => i.status === "sent").map((i) => ({ name: i.name, sentOn: i.sent_at ? utcToZonedDate(i.sent_at, event.timezone || "America/Chicago") : null }))}
+        unopened={check.unopened.map((u) => ({ label: label(u.step), href: `${base}${copyStepPath(u.step)}` }))}
+        host={{ name: me?.full_name ?? "", email: me?.email ?? userEmail }}
+      />
+    ),
+  };
+}
+
+/**
+ * "Duplicated. Fill in the new date in 6 places, then publish." while any "[new date]" is left (the list is under
+ * "Not ready to publish yet"); otherwise "Duplicated: 3 jobs, 4 shifts, and 19 things to bring are ready on the new
+ * dates. Check what came over, then publish".
+ */
+function copiedToast(f: CopyFacts) {
+  const { summary } = f;
+  const left = f.check.newDates.reduce((n, d) => n + d.count, 0);
+  if (left > 0) return `Duplicated. Fill in the new date in ${places(left)}, then publish.`;
+  const parts = [
+    summary.rooms ? pluralWords(summary.rooms, "room", "rooms") : "",
+    summary.jobs ? pluralWords(summary.jobs, "job", "jobs") : "",
+    summary.shifts ? pluralWords(summary.shifts, "shift", "shifts") : "",
+    summary.items ? pluralWords(summary.items, "thing to bring", "things to bring") : "",
+    f.files ? mapsAndDocuments(f.files) : "",
+  ].filter(Boolean);
+  const total = (summary.rooms ?? 0) + summary.jobs + summary.shifts + summary.items + f.files;
+  return parts.length
+    ? `Duplicated: ${listWords(parts)} ${total === 1 ? "is" : "are"} ready on the new dates. Check what came over, then publish`
+    : "Duplicated: the details are ready on the new dates. Check what came over, then publish";
 }

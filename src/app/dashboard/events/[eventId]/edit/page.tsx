@@ -1,3 +1,5 @@
+import { loadNewDatePlaces } from "@/lib/duplicate-event";
+import { newDateSpotHref } from "@/lib/duplicate-words";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -23,6 +25,9 @@ import { AUDIENCES, fileHref, fileMeta, isShowing, uploadedLines, type EventFile
 import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime, zoneName } from "@/lib/time";
 import { deleteEvent, publishAndOpen, setEventPublished, setEventShowBrand, setEventType, updateEvent } from "../../../actions";
 import { DeleteEventButton } from "../delete-event";
+import { DuplicatePanel } from "./duplicate-panel";
+import { PublishCopyLink } from "../copy-publish";
+import { isUnpublishedCopy } from "@/lib/duplicate-event";
 import { reopenBandRegistration, setBandRegistrationOpen } from "../../../band-actions";
 import { ReopenRegistration } from "../bands/reopen-registration";
 import { DemoStart } from "@/components/demo-switcher";
@@ -82,7 +87,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const { data: event } = await supabase
     .from("events")
     .select(
-      "id, organization_id, name, status, event_type, created_by, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng, band_registration_open, band_registration_deadline, band_registration_opens_on",
+      "id, organization_id, name, status, event_type, created_by, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng, band_registration_open, band_registration_deadline, band_registration_opens_on, public_notes",
     )
     .eq("id", eventId)
     .maybeSingle();
@@ -101,6 +106,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const steppedSetup =
     hasConferences(event.event_type) || event.event_type === "volunteer" || event.event_type === "band_contest" || hasRooms(event.event_type);
   const stepOnly = steppedSetup && event.status !== "published" && !asked;
+  const detailsPlaces = stepOnly ? await loadNewDatePlaces(eventId, "details") : [];
   const guided = setupParam === "1" && !steppedSetup;
   const at = SETUP_STEPS.findIndex((s) => s.id === section);
   const prevStep = guided && at > 0 ? setupHref(eventId, SETUP_STEPS[at - 1].id) : undefined;
@@ -407,6 +413,8 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                       lng: event.venue_lng,
                     },
                     askChildName,
+                    // Every event has a Description box (owner, 2026-11-20).
+                    description: event.public_notes ?? "",
                   }}
                   venueSearchEnabled={isPlacesConfigured}
                   submitLabel={guided ? "Save and continue" : "Save changes"}
@@ -416,7 +424,10 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                   stickySave={!guided}
                   autosave={!guided && !published}
                   next={
-                    stepOnly
+                    stepOnly && detailsPlaces.length
+                      ? // A duplicated draft's "[new date]" left on Details: Next goes there first.
+                        { href: newDateSpotHref(`/dashboard/events/${eventId}`, detailsPlaces[0]), label: "Next up: Add the new date" }
+                      : stepOnly
                       ? event.event_type === "volunteer"
                         ? { href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Jobs and shifts" }
                         : event.event_type === "band_contest"
@@ -565,6 +576,8 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
 
           {section === "more" && (
             <>
+              {/* Near the top, well away from Delete. */}
+              {!guided && <DuplicatePanel event={{ id: eventId, name: event.name, event_type: event.event_type, organization_id: event.organization_id }} />}
               <Panel
                 title="Publishing"
                 intro={
@@ -575,7 +588,12 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                       : "Your event isn't published yet. Publish it from the event page when you're ready."
                 }
               >
-                {!published && guided ? (
+                {!published && guided && (await isUnpublishedCopy(eventId)) ? (
+                  // A copy never published: its publish window, where who gets emailed is chosen.
+                  <PublishCopyLink eventId={eventId} version={event.event_type === "volunteer" ? "now" : event.event_type === "band_contest" || event.event_type === "group_event" ? "register" : "plain"}>
+                    Publish event
+                  </PublishCopyLink>
+                ) : !published && guided ? (
                   <ActionButton action={publishAndOpen.bind(null, eventId)} variant="go" pendingText="Publishing…">
                     Publish event
                   </ActionButton>

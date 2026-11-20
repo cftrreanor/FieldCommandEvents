@@ -186,6 +186,10 @@ export default function StudentDataPrivacyPage() {
               Volunteer Leads only, never other organizers
             </li>
             <li>A Co-host of one event sees only that event, and only until 10 days after it</li>
+            <li>
+              Duplicating an event never copies volunteers, families, children, or anyone&apos;s details, and Coordinators copied with it get no access
+              until they accept their invitation
+            </li>
             <li>Visiting directors see their own registration, never other schools&apos; contact details</li>
             <li>Families never see who else registered or booked</li>
             <li>These rules are enforced inside the database, with an automated test for each one</li>

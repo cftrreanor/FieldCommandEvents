@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui";
+import { NextLabel } from "@/components/next-label";
 
 /** Where a self-saving editor stands. */
 export type SaveStatus =
@@ -71,7 +72,7 @@ export function SaveFooter({
   return (
     <div className={`${BAR} ${edge}`}>
       {/* One line on phones: the status beside the button (only an error takes its own line). */}
-      <div className={`min-w-0 flex-1 text-sm ${status.kind === "failed" ? "basis-full sm:basis-auto" : ""}`} role="status">
+      <div className={`min-w-[min(100%,9.5rem)] flex-1 text-sm ${status.kind === "failed" ? "basis-full sm:basis-auto" : ""}`} role="status">
         {status.kind === "failed" ? (
           <p className="flex flex-wrap items-center gap-x-2 font-semibold text-danger">
             <span>
@@ -113,7 +114,7 @@ export function SaveFooter({
             todo && status.kind !== "saved" ? "border border-field-border bg-surface hover:bg-background" : "bg-brand text-brand-foreground hover:bg-brand-hover"
           }`}
         >
-          Next up:&nbsp;{next.label} →
+          <NextLabel label={`Next up: ${next.label}`} />
         </Link>
       )}
     </div>

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { Badge, Card } from "@/components/ui";
+import { canDuplicateKind, duplicateHref } from "@/lib/duplicate-words";
 import { requireUser } from "@/lib/auth";
 import { registrationIsOpen } from "@/lib/bands";
 import { getMyOrganization, type Organization } from "@/lib/data";
@@ -102,6 +103,18 @@ const EVENT_COLUMNS = "id, organization_id, name, status, timezone, starts_on, e
 /** Has the event ended, in its own time zone? */
 function isPast(e: { ends_on: string; timezone: string }) {
   return e.ends_on < utcToZonedDate(new Date().toISOString(), e.timezone);
+}
+
+/**
+ * Within 4 weeks of its first day (owner decision, 2026-11-20): My events offers "Duplicate event" only on past events
+ * and these, when planning next time's is likely. 4 weeks: about a month out, when organizers start on the next
+ * one. Event settings and New event always offer it.
+ */
+const DUPLICATE_SOON_WEEKS = 4;
+function isSoon(e: { starts_on: string; timezone: string }) {
+  const today = utcToZonedDate(new Date().toISOString(), e.timezone);
+  const until = Math.round((Date.parse(`${e.starts_on}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86_400_000);
+  return until <= DUPLICATE_SOON_WEEKS * 7;
 }
 
 /** Is it on today, in its own time zone? */
@@ -206,6 +219,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     : 0;
 
   const orgs = orgRows ?? [];
+  // Who can duplicate an event (the Account Host and Co-hosts of every event): Duplicate event on its card.
+  const adminOrgs = new Set(
+    (await Promise.all(orgs.map(async (o) => ((await supabase.rpc("is_org_admin", { org: o.id })).data ? o.id : null)))).filter(Boolean) as string[],
+  );
   const hosted = orgs.length
     ? ((
         await supabase
@@ -283,6 +300,31 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // soonest few read their whole setup; every draft gets the plan check (one call).
   const upcomingDrafts = ownEvents.filter((e) => e.status === "draft" && !isPast(e));
   const passFor = (type: string | null) => (plan && type && !plan.event_types.includes(type) ? (plan.passes_unused[type] ?? 0) : 0);
+  // Drafts made by duplicating: where each came from, on its card until it's published (hosts read event_copies).
+  const draftIds = ownEvents.filter((e) => e.status === "draft").map((e) => e.id);
+  const { data: copyRows } = draftIds.length
+    ? await supabase.from("event_copies").select("event_id, source_event_id").in("event_id", draftIds).is("first_published_at", null)
+    : { data: [] as { event_id: string; source_event_id: string | null }[] };
+  // The source's name and date from the event itself (what's stored about a copy keeps ids only).
+  const sourceIds = [...new Set(((copyRows ?? []) as { source_event_id: string | null }[]).map((c) => c.source_event_id).filter(Boolean))] as string[];
+  const { data: sourceRows } = sourceIds.length
+    ? await supabase.from("events").select("id, name, starts_on").in("id", sourceIds)
+    : { data: [] as { id: string; name: string; starts_on: string }[] };
+  const copiedFrom = new Map(
+    ((copyRows ?? []) as { event_id: string; source_event_id: string | null }[])
+      .map((c) => [c.event_id, (sourceRows ?? []).find((r) => r.id === c.source_event_id)] as const)
+      .filter(([, src]) => src)
+      .map(([id, src]) => [id, `${src!.name} (${formatDate(src!.starts_on, { weekday: undefined })})`]),
+  );
+  // A copy with "[new date]" left can't publish yet: its card says so (the same fact as its event page).
+  const newDatesLeft = new Map<string, number>(
+    await Promise.all(
+      [...copiedFrom.keys()].map(async (id) => {
+        const { data } = await supabase.rpc("copy_new_date_spots", { p_event: id });
+        return [id, ((data ?? []) as { count: number }[]).reduce((n, x) => n + x.count, 0)] as [string, number];
+      }),
+    ),
+  );
   const drafts = new Map<string, DraftStatus>(
     await Promise.all(
       upcomingDrafts.map(async (e, i) => {
@@ -365,6 +407,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                 draft={drafts.get(e.id)}
                 spot={spotHolder?.id === e.id ? spotHolder.ends_on : null}
                 ask={accountHost && org ? { host: accountHost, orgName: org.name } : null}
+                duplicable={adminOrgs.has(e.organization_id) && canDuplicateKind(e.event_type) && (isPast(e) || (e.status !== "draft" && isSoon(e)))}
+                copiedFrom={e.status === "draft" ? (copiedFrom.get(e.id) ?? null) : null}
+                newDates={newDatesLeft.get(e.id) ?? 0}
               />
             ),
           }))}
@@ -556,10 +601,19 @@ function HostedCard({
   draft,
   spot,
   ask,
+  duplicable = false,
+  copiedFrom = null,
+  newDates = 0,
 }: {
+  /** A copy's "[new date]" markers left: publishing waits for them. */
+  newDates?: number;
+  /** A draft made by duplicating: "Fall Park Cleanup (Nov 7, 2026)", until it's published. */
+  copiedFrom?: string | null;
   event: EventSummary;
   showType: boolean;
   signups: number;
+  /** Published or past, on an account this person can create events on: Duplicate event (2026-11-20). */
+  duplicable?: boolean;
   /** Drafts: the setup checklist, for the next step and how far along it is. */
   draft?: DraftStatus;
   /** The last day this conference holds the one free spot (after a plan ends). */
@@ -584,7 +638,9 @@ function HostedCard({
         </Badge>
       }
     >
-      {past || e.status === "archived" ? null : today && day ? (
+      {past || e.status === "archived" ? (
+        duplicable ? <DuplicateButton event={e} /> : null
+      ) : today && day ? (
         // Above the card's own link, so it can be tapped on its own.
         <Link
           href={`${href}/${day.path}`}
@@ -593,16 +649,62 @@ function HostedCard({
           Today · {day.label} →
         </Link>
       ) : e.status === "published" ? (
-        <div className="space-y-1 text-sm">
-          <p className="font-medium">{signupLine(e.event_type, signups)}</p>
-          {spot && <p className="text-muted">Uses your one free conference spot through {formatDate(spot, { weekday: undefined, year: undefined })}</p>}
+        // The Duplicate button sits in the same place on every card: its own row, under what the card says.
+        <div className="space-y-2">
+          <div className="space-y-1 text-sm">
+            <p className="font-medium">{signupLine(e.event_type, signups)}</p>
+            {spot && <p className="text-muted">Uses your one free conference spot through {formatDate(spot, { weekday: undefined, year: undefined })}</p>}
+          </div>
+          {duplicable && <DuplicateButton event={e} />}
         </div>
       ) : draft ? (
-        <DraftNext draft={draft} href={href} ask={ask ?? null} />
+        <div className="space-y-1">
+          {/* A copy reads differently from the event it came from, until it's published. */}
+          {copiedFrom && <p className="text-sm text-muted">Copied from {copiedFrom}</p>}
+          {newDates > 0 ? (
+            <NextStep href={href} icon="needs">
+              Next: Add the new date ({newDates} {newDates === 1 ? "place" : "places"})
+            </NextStep>
+          ) : (
+            <DraftNext draft={draft} href={href} ask={ask ?? null} />
+          )}
+        </div>
       ) : (
-        <p className="text-sm font-medium">Next: finish setup and publish</p>
+        <div className="space-y-1">
+          {copiedFrom && <p className="text-sm text-muted">Copied from {copiedFrom}</p>}
+          <NextStep href={href}>Next: Finish setup and publish</NextStep>
+        </div>
       )}
     </EventCard>
+  );
+}
+
+/**
+ * A draft card's next step: one look on every card (the same place and spacing), a brand-blue link above the card's
+ * own link, with color only on its leading mark (◆ needs doing, ✓ ready).
+ */
+function NextStep({ href, icon, children }: { href: string; icon?: "needs" | "ready"; children: ReactNode }) {
+  return (
+    <Link href={href} className="relative z-10 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-brand underline underline-offset-4">
+      {icon && (
+        <span aria-hidden className={`inline-block ${icon === "needs" ? "text-warning" : "text-success"}`}>
+          {icon === "needs" ? "◆" : "✓"}
+        </span>
+      )}
+      <span>{children}</span>
+    </Link>
+  );
+}
+
+/** "Duplicate event" on a card: above the card's own link, so it can be pressed on its own, named with the event. */
+function DuplicateButton({ event: e }: { event: EventSummary }) {
+  return (
+    <Link
+      href={duplicateHref(e.id, "events")}
+      className="relative z-10 inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand"
+    >
+      Duplicate event<span className="sr-only"> {e.name}</span>
+    </Link>
   );
 }
 
@@ -614,15 +716,11 @@ function DraftNext({ draft: d, href, ask }: { draft: DraftStatus; href: string; 
   return (
     <div className="space-y-1 text-sm">
       {!c ? (
-        <p className="font-medium">Next: finish setup and publish</p>
+        <NextStep href={href}>Next: Finish setup and publish</NextStep>
       ) : c.remaining.length ? (
         <>
           {/* The next step is a link of its own, above the card's link (light check, 2026-11-08). */}
-          {c.next ? (
-            <Link href={c.next.href} className="relative z-10 inline-flex min-h-11 items-center font-medium text-brand underline underline-offset-4">
-              Next: {c.next.label}
-            </Link>
-          ) : null}
+          {c.next ? <NextStep href={c.next.href}>Next: {c.next.label}</NextStep> : null}
           <p className="text-muted">
             {left} {d.planBlock ? "setup " : ""}
             {left === 1 ? "step" : "steps"} left{d.planBlock ? "" : " before you publish"}
@@ -633,15 +731,9 @@ function DraftNext({ draft: d, href, ask }: { draft: DraftStatus; href: string; 
           <span aria-hidden>✓</span> Setup done
         </p>
       ) : (
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 font-medium text-brand">
-          <span>
-            <span aria-hidden>✓</span> Ready to publish
-          </span>
-          {/* Above the card's own link, so it can be tapped on its own. */}
-          <Link href={`${href}#publish`} className="relative z-10 underline underline-offset-4">
-            Review and publish
-          </Link>
-        </p>
+        <NextStep href={`${href}#publish`} icon="ready">
+          Ready to publish: Review and publish
+        </NextStep>
       )}
       {d.pass && <p className="text-muted">{d.pass}</p>}
       {d.planBlock && (

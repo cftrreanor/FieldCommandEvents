@@ -10,6 +10,7 @@ import { SaveFooter } from "./save-footer";
 import { planTimes, roomNameMap, type Conflict, type Snapshot } from "./schedule-plan";
 import { useSaveQueue, type RunResult } from "./use-save-queue";
 import { ConflictWindow, EmailChoice, SaveTimesWindow, Window } from "./windows";
+import { NewDateNote } from "@/components/new-date-note";
 
 type Row = { key: string; id?: string; name: string; note: string; onPath: boolean; minutes: string };
 
@@ -359,6 +360,7 @@ export function RoomsEditor({
           <label className="flex min-w-0 flex-col gap-1.5">
             <span className="text-sm font-semibold">Room name</span>
             <Input value={r.name} maxLength={80} onChange={(e) => set(r.key, { name: e.target.value })} placeholder={inPath ? "For example, Warm-up room" : "For example, Hospitality room"} className={EX} />
+            <NewDateNote value={r.name} spot="room-name" detail={r.name} />
           </label>
           {inPath && (
             <label className="flex min-w-0 flex-col gap-1.5">
@@ -369,6 +371,7 @@ export function RoomsEditor({
           <label className="flex min-w-0 flex-col gap-1.5">
             <span className="text-sm font-semibold">Where it is (optional)</span>
             <Input value={r.note} maxLength={200} onChange={(e) => set(r.key, { note: e.target.value })} placeholder={inPath ? "For example, Room 112, east hallway" : "For example, Library"} className={EX} />
+            <NewDateNote value={r.note} spot="room-note" detail={r.name} />
           </label>
         </div>
       </li>

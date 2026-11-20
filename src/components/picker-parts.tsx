@@ -11,7 +11,7 @@ export const pickerBoxClass =
 
 /** The icon button inside the right end of the box. Its focus ring sits inside the box. */
 export const pickerButtonClass =
-  "absolute top-px right-px flex h-[42px] w-[42px] items-center justify-center rounded-full text-brand hover:bg-brand-soft focus-visible:outline-offset-[-4px] disabled:cursor-not-allowed disabled:text-disabled disabled:hover:bg-transparent dark:text-foreground";
+  "absolute top-px right-px flex h-[42px] w-[42px] items-center justify-center rounded-md text-brand hover:bg-brand-soft focus-visible:outline-offset-[-3px] disabled:cursor-not-allowed disabled:text-disabled disabled:hover:bg-transparent dark:text-foreground";
 
 /** The error under the box: always there, so screen readers hear it as soon as it appears. */
 export function PickerProblem({ id, problem }: { id: string; problem: string | null }) {

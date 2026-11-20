@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { NewDateNote, useNewDatePlace } from "@/components/new-date-note";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -13,6 +14,7 @@ import type { CheckpointKind } from "@/lib/contest-day";
 import type { JobLinks } from "./job-parts";
 import { flushPending, onRetry, pendingCounts, setPending, settled, usePendingCounts } from "@/components/pending-edits";
 import { useStepEdits } from "./station-steps";
+import { NextLabel } from "@/components/next-label";
 
 type Action = (prev: ActionState, formData: FormData) => Promise<ActionState>;
 
@@ -46,15 +48,17 @@ export function JobForm({
   action: Action;
   remove: () => Promise<ActionState>;
   initial: {
+    id?: string;
     name: string;
     instructions: string | null;
+    location?: string | null;
     adults_only?: boolean;
     min_adults?: number | null;
     lead_ids?: string[];
     checkpoint_kind?: CheckpointKind | null;
     due_minutes_before_warm_up?: number | null;
   };
-  coordinators: { options: LeadOption[]; pending: string[]; invite: Action };
+  coordinators: { options: LeadOption[]; pending: string[]; held?: { name: string; expired: boolean }[]; teamHref?: string; invite: Action };
   leadLabel: string;
   links: JobLinks;
   /** Someone has signed up for it, so it can't be deleted. */
@@ -75,6 +79,12 @@ export function JobForm({
   // Only a job that takes shifts can be a check-in stop (its Coordinators work shifts there).
   const stopHere = bands && !items;
   const [why, setWhy] = useState<string | null>(null);
+  // A job's Location box shows whenever it holds anything (jobs made before the job redesign kept one) or a copy lists
+  // it as a place to add the new date, marked or too long to mark. Kept for this visit once shown, so the box doesn't
+  // vanish mid-edit when it's cleared.
+  const locationPlace = useNewDatePlace("location", initial.id);
+  const instructionsPlace = useNewDatePlace("instructions", initial.id);
+  const [showLocation] = useState(Boolean(initial.location?.trim()) || Boolean(locationPlace));
   const setEdited = useStepEdits("details");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
@@ -238,8 +248,10 @@ export function JobForm({
       <Field label="Job name" hint={bands ? "Like Spectator parking, Concessions, or the Gate" : "Like Parking, Litter pickup, or Supplies to bring"}>
         <Input name="name" required maxLength={80} defaultValue={initial.name} />
       </Field>
+      <NewDateNote value={initial.name} spot="job-name" field="name" stationId={initial.id} />
       <InSlot id="job-more">
-        <details open={openMore} className="group rounded-lg border border-border">
+        {/* Open when a copy lists the Location or instructions as a "[new date]" place (marked or too long to mark), so it's in sight. */}
+        <details open={openMore || Boolean(initial.instructions?.includes("[new date]")) || Boolean(locationPlace) || Boolean(instructionsPlace)} className="group rounded-lg border border-border">
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
             <span>
               {stopHere ? "More options: band check-in stop, Coordinators, instructions, and age rules" : "More options: Coordinators, instructions, and age rules"}
@@ -253,9 +265,21 @@ export function JobForm({
           <div className="space-y-3 border-t border-border p-3">
             {stopHere && <CheckInStopFields kind={stop} setKind={setStop} initial={initial} formId={FORM} orderHref={links.order} />}
             <CoordinatorPicker label={leadLabel} initial={initial.lead_ids ?? []} onChange={changed} formId={FORM} {...coordinators} />
-            <Field label="Instructions for volunteers" hint="Optional. What to wear, bring, and do.">
-              <Textarea name="instructions" form={FORM} defaultValue={initial.instructions ?? ""} />
-            </Field>
+            {showLocation && (
+              // Volunteers see it on the job (band contests and festivals too). Clearing it removes it.
+              <div>
+                <Field label="Location" hint="Where volunteers report for this job. Optional: clear it if the instructions say where.">
+                  <Input name="location" form={FORM} maxLength={200} defaultValue={initial.location ?? ""} />
+                </Field>
+                <NewDateNote value={initial.location} spot="location" field="location" stationId={initial.id} unmarked={Boolean(locationPlace?.unmarked)} />
+              </div>
+            )}
+            <div>
+              <Field label="Instructions for volunteers" hint="Optional. What to wear, bring, and do.">
+                <Textarea name="instructions" form={FORM} defaultValue={initial.instructions ?? ""} />
+              </Field>
+              <NewDateNote value={initial.instructions} spot="instructions" field="instructions" stationId={initial.id} />
+            </div>
             <label className="flex items-start gap-3 text-sm">
               <input
                 type="checkbox"
@@ -435,15 +459,15 @@ function JobBar({
             aria-describedby="job-bar-note"
             className="inline-flex min-h-11 cursor-not-allowed items-center rounded-md border-[1.5px] border-field-border px-3 text-sm font-semibold text-disabled"
           >
-            {links.next.label} →
+            <NextLabel label={links.next.label} />
           </span>
         ) : allReady && ready ? (
           <Link href={links.next.href} className={filled}>
-            {links.next.label} →
+            <NextLabel label={links.next.label} />
           </Link>
         ) : (
           <Link href={links.next.href} className="inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4">
-            {links.next.label} →
+            <NextLabel label={links.next.label} />
           </Link>
         )}
       </div>

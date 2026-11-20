@@ -35,7 +35,8 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
     count(supabase.from("stations").select("id", head).eq("event_id", eventId).not("checkpoint_kind", "is", null)),
     count(supabase.from("shifts").select("id", head).eq("event_id", eventId)),
     count(supabase.from("event_staff").select("user_id", head).eq("event_id", eventId)),
-    count(supabase.from("invitations").select("id", head).eq("event_id", eventId).is("accepted_at", null)),
+    // Held for publishing (a duplicated event's Coordinators) aren't waiting on anyone yet: not counted.
+    count(supabase.from("invitations").select("id", head).eq("event_id", eventId).is("accepted_at", null).not("token", "is", null)),
     count(supabase.from("organization_members").select("user_id", head).eq("organization_id", event.organization_id).eq("role", "admin")),
     count(supabase.from("event_files").select("id", head).eq("event_id", eventId)),
     type === "band_contest" ? count(supabase.from("finals_slots").select("event_id", head).eq("event_id", eventId)) : 0,

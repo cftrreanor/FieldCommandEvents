@@ -211,7 +211,7 @@ export function SetupStrip({
   // The guided setup (Event settings, ?setup=1) has its own steps along the top.
   const guided = useSearchParams().get("setup") === "1";
   const hidden =
-    guided || pathname === base || DAY_SCREENS.some((p) => pathname.startsWith(`${base}${p}`)) || skip.some((p) => pathname === `${base}${p}`);
+    guided || pathname === base || pathname === `${base}/duplicate` || DAY_SCREENS.some((p) => pathname.startsWith(`${base}${p}`)) || skip.some((p) => pathname === `${base}${p}`);
 
   // Each page change: read it again, so a step finished on the last page shows as done.
   useEffect(() => {

@@ -47,6 +47,8 @@ export async function runRetention(admin: Admin) {
   const bandDetailsRemoved = await call("purge_band_directors");
   const boothContactsRemoved = await call("purge_booth_contacts");
   const bandPrefillsRemoved = await call("purge_band_prefills");
+  // A Coordinator removed from a duplicated event: their address goes once Undo can't bring it back (10 minutes).
+  const copyRemovalsCleared = await call("purge_copy_invitation_removals");
 
   // Sponsors: rows first (closed accounts' and deleted events' went with them), then their files.
   const sponsorsPurged = await call("purge_removed_sponsors");
@@ -75,5 +77,5 @@ export async function runRetention(admin: Admin) {
     else usersDeleted++;
   }
 
-  return { accountsClosed, usersDeleted, pilotRequestsPurged, bandDetailsRemoved, boothContactsRemoved, bandPrefillsRemoved, filesDeleted, sponsorsPurged, sponsorLogosCleared, sponsorFilesRemoved };
+  return { accountsClosed, usersDeleted, pilotRequestsPurged, bandDetailsRemoved, boothContactsRemoved, bandPrefillsRemoved, copyRemovalsCleared, filesDeleted, sponsorsPurged, sponsorLogosCleared, sponsorFilesRemoved };
 }

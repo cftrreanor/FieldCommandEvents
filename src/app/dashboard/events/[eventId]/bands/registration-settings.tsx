@@ -17,6 +17,8 @@ import { ChipAdder } from "@/components/chip-adder";
 import { normalizePhone } from "@/lib/phone";
 import { formatDate } from "@/lib/time";
 import { DateField } from "@/components/date-field";
+import { Marker, NewDateNote } from "@/components/new-date-note";
+import { NextLabel } from "@/components/next-label";
 
 /** How long after the last keystroke a field saves itself. */
 const SAVE_AFTER_MS = 900;
@@ -194,6 +196,7 @@ export function marked(id: string, s: Saver, hint = true) {
  */
 export function RegistrationSettings({
   eventId,
+  unmarked = [],
   initial,
   bandsIn: initialBandsIn,
   contactSaved,
@@ -202,7 +205,10 @@ export function RegistrationSettings({
   today,
   contest,
   alreadyOpen = false,
+  datesFirst = false,
 }: {
+  /** Copied text too long to mark with "[new date]" (by field): its note says to change the dates by hand. */
+  unmarked?: string[];
   eventId: string;
   initial: {
     classifications: string[];
@@ -228,10 +234,14 @@ export function RegistrationSettings({
   /** Published with registration already open: the opening day can't move later. */
   alreadyOpen?: boolean;
   /** Contest day: the deadline falls before it. */
-  contest: { day: string; label: string; lastDeadline: string };
+  contest: { day: string; label: string; lastDeadline: string; suggested: string };
+  /** The registration dates first, deadline on top (a duplicated contest whose deadline was left blank). */
+  datesFirst?: boolean;
 }) {
   const counts = useLeaveGuard("A change to registration");
   const root = useRef<HTMLDivElement>(null);
+  // A copy with a blank deadline: Next leads with it, then the new dates (the page's order).
+  const deadlineFirstNext = (d: string) => (datesFirst && draft && !d ? { href: "#reg-deadline", label: "Next up: Add a deadline" } : next);
   const deadline = useAutosave(eventId, "deadline", initial.deadline, {
     immediate: true,
     restore: true,
@@ -242,6 +252,11 @@ export function RegistrationSettings({
           ? `Pick a date before contest day (${contest.label}).`
           : null,
   });
+  const go = deadlineFirstNext(deadline.value);
+  // Two weeks before contest day: the rule every screen names (src/lib/contest-deadline.ts). The box allows up to the
+  // day before (the database's rule) and says so when a later day is picked.
+  const deadlineHint = `Registration should close two weeks before contest day (${contest.label}): by ${formatDate(contest.suggested, { year: undefined })}. Directors get their times two weeks before contest day, so they can book buses. Registration closes at 11:59 PM that day, your time.`;
+  const lateDeadline = Boolean(deadline.value && deadline.value > contest.suggested && deadline.value <= contest.lastDeadline);
   const opensOn = useAutosave(eventId, "opensOn", initial.opensOn, {
     immediate: true,
     restore: true,
@@ -355,9 +370,119 @@ export function RegistrationSettings({
   const outline =
     "inline-flex min-h-11 items-center rounded-md border-[1.5px] border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand disabled:cursor-not-allowed disabled:text-disabled";
 
+  // A duplicated contest lands here with its deadline blank: the dates come first, deadline on top (Duplicate event).
+  const dates = datesFirst ? (
+    <>
+        <AutoField
+          id="reg-deadline"
+          label="Registration deadline"
+          required
+          hint={deadlineHint}
+          saver={deadline}
+        >
+          <DateField
+            value={deadline.value}
+            min={initial.deadline && initial.deadline < today ? initial.deadline : today}
+            max={contest.lastDeadline}
+            onChange={(e) => deadline.change(e.target.value)}
+            {...marked("reg-deadline", deadline)}
+            className="max-w-xs"
+          />
+          {lateDeadline && (
+            <span className="mt-1.5 flex gap-1.5 text-sm font-medium text-warning">
+              <span aria-hidden>◆</span> Less than two weeks before contest day: directors won&apos;t get their times two weeks ahead
+            </span>
+          )}
+          {datesFirst && !deadline.value && (
+            <span className="mt-1.5 flex gap-1.5 text-sm font-medium text-warning">
+              <span aria-hidden>◆</span> Needed before you publish
+            </span>
+          )}
+        </AutoField>
+
+        <AutoField
+          id="reg-opens"
+          label="Registration opens"
+          hint={
+            alreadyOpen
+              ? "Registration is already open, so the opening day can't move later. To pause it, close registration at the top of this page."
+              : draft
+                ? "Optional. Leave it empty to open registration when you publish. Before this day, your event page is live and the registration page says when it opens."
+                : "Optional. Before this day, the registration page says when it opens."
+          }
+          saver={opensOn}
+        >
+          <DateField
+            value={opensOn.value}
+            disabled={alreadyOpen}
+            min={initial.opensOn && initial.opensOn < today ? initial.opensOn : today}
+            max={deadline.value || contest.lastDeadline}
+            onChange={(e) => opensOn.change(e.target.value)}
+            {...marked("reg-opens", opensOn)}
+            className="max-w-xs"
+          />
+        </AutoField>
+
+    </>
+  ) : (
+    <>
+        <AutoField
+          id="reg-opens"
+          label="Registration opens"
+          hint={
+            alreadyOpen
+              ? "Registration is already open, so the opening day can't move later. To pause it, close registration at the top of this page."
+              : draft
+                ? "Optional. Leave it empty to open registration when you publish. Before this day, your event page is live and the registration page says when it opens."
+                : "Optional. Before this day, the registration page says when it opens."
+          }
+          saver={opensOn}
+        >
+          <DateField
+            value={opensOn.value}
+            disabled={alreadyOpen}
+            min={initial.opensOn && initial.opensOn < today ? initial.opensOn : today}
+            max={deadline.value || contest.lastDeadline}
+            onChange={(e) => opensOn.change(e.target.value)}
+            {...marked("reg-opens", opensOn)}
+            className="max-w-xs"
+          />
+        </AutoField>
+
+        <AutoField
+          id="reg-deadline"
+          label="Registration deadline"
+          required
+          hint={deadlineHint}
+          saver={deadline}
+        >
+          <DateField
+            value={deadline.value}
+            min={initial.deadline && initial.deadline < today ? initial.deadline : today}
+            max={contest.lastDeadline}
+            onChange={(e) => deadline.change(e.target.value)}
+            {...marked("reg-deadline", deadline)}
+            className="max-w-xs"
+          />
+          {lateDeadline && (
+            <span className="mt-1.5 flex gap-1.5 text-sm font-medium text-warning">
+              <span aria-hidden>◆</span> Less than two weeks before contest day: directors won&apos;t get their times two weeks ahead
+            </span>
+          )}
+          {datesFirst && !deadline.value && (
+            <span className="mt-1.5 flex gap-1.5 text-sm font-medium text-warning">
+              <span aria-hidden>◆</span> Needed before you publish
+            </span>
+          )}
+        </AutoField>
+
+    </>
+  );
+
   return (
     <div ref={root} className="rounded-xl border border-border bg-surface shadow-card">
       <div className="space-y-7 p-4 sm:p-6">
+        {datesFirst && dates}
         {/* Classifications */}
         <fieldset>
           <legend id="cls-label" className="text-sm font-semibold">
@@ -466,45 +591,7 @@ export function RegistrationSettings({
           )}
         </fieldset>
 
-        <AutoField
-          id="reg-opens"
-          label="Registration opens"
-          hint={
-            alreadyOpen
-              ? "Registration is already open, so the opening day can't move later. To pause it, close registration at the top of this page."
-              : draft
-                ? "Optional. Leave it empty to open registration when you publish. Before this day, your event page is live and the registration page says when it opens."
-                : "Optional. Before this day, the registration page says when it opens."
-          }
-          saver={opensOn}
-        >
-          <DateField
-            value={opensOn.value}
-            disabled={alreadyOpen}
-            min={initial.opensOn && initial.opensOn < today ? initial.opensOn : today}
-            max={deadline.value || contest.lastDeadline}
-            onChange={(e) => opensOn.change(e.target.value)}
-            {...marked("reg-opens", opensOn)}
-            className="max-w-xs"
-          />
-        </AutoField>
-
-        <AutoField
-          id="reg-deadline"
-          label="Registration deadline"
-          required
-          hint={`Pick a date at least two weeks before contest day (${contest.label}). Directors get their times two weeks before contest day, so they can book buses. Registration closes at 11:59 PM that day, your time.`}
-          saver={deadline}
-        >
-          <DateField
-            value={deadline.value}
-            min={initial.deadline && initial.deadline < today ? initial.deadline : today}
-            max={contest.lastDeadline}
-            onChange={(e) => deadline.change(e.target.value)}
-            {...marked("reg-deadline", deadline)}
-            className="max-w-xs"
-          />
-        </AutoField>
+        {!datesFirst && dates}
 
         <AutoField
           id="reg-info"
@@ -513,6 +600,8 @@ export function RegistrationSettings({
           saver={info}
         >
           <Textarea value={info.value} onChange={(e) => info.change(e.target.value)} rows={5} maxLength={3000} {...withClass(marked("reg-info", info), "w-full")} />
+          {/* A copy: a date typed into the information came over as "[new date]" (live: it goes once replaced). */}
+          <NewDateNote value={info.value} spot="director-info" unmarked={unmarked.includes("director-info")} />
         </AutoField>
 
         <AutoField
@@ -581,6 +670,9 @@ export function RegistrationSettings({
                       ))}
                     </ul>
                   )}
+                  <NewDateNote value={optionList.join(" ")} spot="meal-option">
+                    Add the new date: remove the option that says <Marker /> with its ×, then add it again with the date
+                  </NewDateNote>
                   <div className="mt-2">
                     <ChipAdder
                       suggestions={[{ names: ["Regular", "Vegetarian", "Halal", "Gluten free", "Kosher", "Dairy free"] }]}
@@ -613,6 +705,7 @@ export function RegistrationSettings({
                     placeholder="Pizza or a turkey sandwich, chips, and water, served from 11:00 AM. Pay with the entry fee."
                     {...withClass(marked("reg-meal-details", mealDetails), "w-full")}
                   />
+                  <NewDateNote value={mealDetails.value} spot="meal-details" unmarked={unmarked.includes("meal-details")} />
                 </AutoField>
               </div>
             )}
@@ -630,6 +723,7 @@ export function RegistrationSettings({
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
             <AutoField id="reg-cname" label="Name" saver={contactName}>
               <Input value={contactName.value} onChange={(e) => contactName.change(e.target.value)} autoComplete="name" {...withClass(marked("reg-cname", contactName, false), "w-full")} />
+              <NewDateNote value={contactName.value} spot="contact" />
             </AutoField>
             <AutoField id="reg-cphone" label="Mobile" saver={contactPhone}>
               <Input type="tel" inputMode="tel" value={contactPhone.value} onChange={(e) => contactPhone.change(e.target.value)} {...withClass(marked("reg-cphone", contactPhone, false), "w-full")} />
@@ -650,7 +744,8 @@ export function RegistrationSettings({
       {/* Pinned to the bottom of the screen: whether everything is saved, and the way on. */}
       <div className="sticky bottom-[var(--day-bar,0px)] z-10 rounded-b-xl border-t-2 border-border bg-surface px-4 py-3 shadow-[0_-6px_16px_rgb(0_0_0/0.10)] sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          <div className="min-w-0 flex-1 text-sm" role="status">
+          {/* Its own line above the button when the two don't fit side by side. */}
+          <div className="min-w-[min(100%,9.5rem)] flex-1 text-sm" role="status">
             {failed ? (
               <p className="flex flex-wrap items-center gap-x-2 font-semibold text-danger">
                 <span>
@@ -686,9 +781,9 @@ export function RegistrationSettings({
               <p className="text-muted">Saves as you go</p>
             )}
           </div>
-          {next && (
-            <Link href={next.href} className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover">
-              {next.label} →
+          {go && (
+            <Link href={go.href} className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover">
+              <NextLabel label={go.label} />
             </Link>
           )}
         </div>

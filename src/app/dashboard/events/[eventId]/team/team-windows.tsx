@@ -113,6 +113,8 @@ export type TeamOption = {
   now: string;
   /** Adding them takes a team spot (their event is over, so they no longer hold one). */
   takesSpot: boolean;
+  /** Already this role here through an invitation (a duplicated event's copied Coordinator): no Add button. */
+  invited?: string;
 };
 
 /**
@@ -132,6 +134,7 @@ export function AddToTeam({
   stations,
   inviteRole,
   emptyText = "Nobody else on your team yet. Invite someone new below.",
+  addNote,
 }: {
   roleName: string;
   note?: ReactNode;
@@ -150,6 +153,8 @@ export function AddToTeam({
   inviteRole?: string;
   /** Said when nobody else can be added from the team. */
   emptyText?: string;
+  /** What adding someone from the team does, when it isn't the usual ("Emails them now, before you publish"). */
+  addNote?: string;
 }) {
   const [every, setEvery] = useState(false);
   const role = scope ? (every ? "host" : "co_host") : (inviteRole ?? "");
@@ -187,7 +192,7 @@ export function AddToTeam({
           <p className="mt-1 text-sm text-muted">{emptyText}</p>
         ) : (
           <>
-            <p className="text-sm text-muted">Added right away. We&apos;ll email them that you added them.</p>
+            <p className="text-sm text-muted">{addNote ?? "Added right away. We'll email them that you added them."}</p>
             <ul className="mt-2 divide-y divide-border rounded-lg border border-border">
               {options.map((o) => {
                 const blocked = o.takesSpot && full;
@@ -197,9 +202,12 @@ export function AddToTeam({
                       <p className="text-sm font-medium [overflow-wrap:anywhere]">{o.name}</p>
                       <p className="text-sm text-muted">
                         {o.now}
-                        {o.takesSpot && " · Takes a team spot"}
+                        {o.invited ? ` · ${o.invited}` : o.takesSpot && " · Takes a team spot"}
                       </p>
                     </div>
+                    {o.invited ? (
+                      <span className="shrink-0 text-sm font-medium text-muted">Already invited</span>
+                    ) : (
                     <ActionForm
                       action={addAction}
                       resetOnSuccess={false}
@@ -224,6 +232,7 @@ export function AddToTeam({
                         Add
                       </SubmitButton>
                     </ActionForm>
+                    )}
                   </li>
                 );
               })}
@@ -257,7 +266,11 @@ export function AddToTeam({
               )}
               {spotsLine && <p className="text-sm text-muted">{spotsLine}</p>}
               <div>
-                <SubmitButton pendingText="Sending…">Send invitation</SubmitButton>
+                {/* The normal secondary look whether or not an email is in yet (data-solid: never the grey "not ready"
+                    fill); pressing it early says the email is needed. */}
+                <SubmitButton variant="secondary" pendingText="Sending…" data-solid>
+                  Send invitation
+                </SubmitButton>
               </div>
             </ActionForm>
           </>

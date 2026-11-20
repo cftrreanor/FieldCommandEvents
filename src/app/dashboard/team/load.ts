@@ -352,6 +352,8 @@ async function loadHostView(org: { id: string; name: string; timezone: string },
     supabase
       .from("invitations")
       .select("id, email, role, as_host, event_id, token, created_at, sent_at, expires_at, stations(name)")
+      // Held for publishing (a duplicated event's Coordinators): no link yet, shown with the copy's Coordinators.
+      .not("token", "is", null)
       .eq("organization_id", org.id)
       .is("accepted_at", null)
       .order("created_at"),
@@ -508,6 +510,8 @@ async function loadLeadView(ledEvents: TeamEvent[], origin: string, orgId: strin
     supabase
       .from("invitations")
       .select("id, email, role, as_host, event_id, token, created_at, sent_at, expires_at, stations(name)")
+      // Held for publishing (a duplicated event's Coordinators): no link yet, shown with the copy's Coordinators.
+      .not("token", "is", null)
       .in("event_id", ids)
       .eq("role", "section_lead")
       .is("accepted_at", null)

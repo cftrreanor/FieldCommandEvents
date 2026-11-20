@@ -118,11 +118,19 @@ export function Badge({
   );
 }
 
-export function FormMessage({ error, success }: { error?: string | null; success?: string | null }) {
+export function FormMessage({ error, success, link }: { error?: string | null; success?: string | null; link?: { href: string; label: string } }) {
   if (error) {
     return (
       <p role="alert" tabIndex={-1} data-form-message className="rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger">
         {error}
+        {link && (
+          <>
+            {" "}
+            <a href={link.href} className="font-semibold text-brand underline underline-offset-4">
+              {link.label}
+            </a>
+          </>
+        )}
       </p>
     );
   }

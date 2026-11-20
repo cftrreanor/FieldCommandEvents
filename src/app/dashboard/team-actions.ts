@@ -9,9 +9,8 @@ import { requireUser } from "@/lib/auth";
 import { getOrigin } from "@/lib/data";
 import { sendEmail } from "@/lib/email";
 import { addedEmail, cohostChangedEmail, hostOfferAnsweredEmail, hostOfferEmail, hostOfferEndedEmail, leftEventEmail, removedEmail, undoneEmail } from "@/lib/team-emails";
-import { invitationEmail, invitationEmailKey, type InvitationDetails } from "@/lib/invitation-email";
-import { loadSystemEmail } from "@/lib/system-email-overrides";
-import { hasBands, leadWords } from "@/lib/event-types";
+import { sendInvitation } from "@/lib/send-invitation";
+import { leadWords } from "@/lib/event-types";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { utcToZonedDate } from "@/lib/time";
 
@@ -80,7 +79,7 @@ async function invite(
     .select("id")
     .single();
   if (error) {
-    if (error.code === "23505") return { error: `${email} already has an invitation waiting. Use Resend on their invitation.` };
+    if (error.code === "23505") return alreadyInvited(supabase, eventId, email);
     return { error: friendlyDbError(error) };
   }
 
@@ -98,26 +97,6 @@ export async function resendInvitation(eventId: string, invitationId: string): P
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
   if (typeof sent === "string") return { error: sent };
   return sent ? { ok: true, message: "Sent again." } : { error: "The email didn't go out. Copy the link and send it yourself." };
-}
-
-/** Emails an invitation with its one-tap link. Returns false if the email failed, or an error message. */
-async function sendInvitation(invitationId: string): Promise<boolean | string> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("prepare_invitation_email", { p_id: invitationId }).single();
-  if (error) return friendlyDbError(error);
-  const details = data as InvitationDetails;
-  // The secret key is only readable with the server's private key.
-  const { data: key } = await createAdminClient()
-    .from("invitations")
-    .select("email_token, events(event_type)")
-    .eq("id", invitationId)
-    .single();
-  if (!key) return false;
-  const url = `${await getOrigin()}/invite/${details.token}?k=${key.email_token}`;
-  const eventType = (key.events as unknown as { event_type: string } | null)?.event_type;
-  const saved = await loadSystemEmail(invitationEmailKey(details));
-  const { subject, html, text } = invitationEmail(details, url, hasBands(eventType), leadWords(eventType).one, saved);
-  return sendEmail({ to: details.email, subject, html, text });
 }
 
 export async function cancelInvitation(eventId: string, invitationId: string): Promise<ActionState> {
@@ -955,4 +934,20 @@ export async function stopCohosting(eventId: string): Promise<ActionState> {
   await tellHostsSomeoneLeft(eventId, user.id, me?.full_name || user.email, "co_host", jobs);
   revalidatePath("/dashboard", "layout");
   redirect(`/dashboard?stopped=${encodeURIComponent(ev?.name ?? "that event")}`);
+}
+
+/**
+ * An address that already has an invitation waiting. A duplicated event's copied Coordinator waiting to be emailed
+ * with the copy (held) can't be resent here: a host sends it from Team setup (hosts get the link). Only the event's
+ * hosts can read a held invitation (the "invitations: managers read" policy hides it from a Volunteer Lead), so
+ * copy_invitation_is_held says it's there without showing it.
+ */
+async function alreadyInvited(supabase: Awaited<ReturnType<typeof createClient>>, eventId: string, email: string): Promise<ActionState> {
+  const { data: held } = await supabase.rpc("copy_invitation_is_held", { p_event: eventId, p_email: email });
+  if (!held) return { error: `${email} already has an invitation waiting. Use Resend on their invitation.` };
+  const { data: host } = await supabase.rpc("is_event_admin", { ev: eventId });
+  return {
+    error: `${email} is waiting to be emailed with this copy. A host sends it from Team setup.`,
+    ...(host ? { link: { href: `/dashboard/events/${eventId}/edit?section=team&tab=section-leads`, label: "Go to Team setup" } } : {}),
+  };
 }

@@ -37,6 +37,30 @@ publishing, and words).
 
 Volunteers can be added to band contests and festivals too (the "Jobs and shifts" or "Volunteers" area).
 
+**Duplicate event** (every kind with jobs; the Account Host and Co-hosts of every event): a new draft on new dates
+from New event ("Start from one of your events"), Event settings, Publishing and more, or a card on My events (only past
+events and those within 4 weeks of their day). Meetings and visitor events can't be duplicated. Details, jobs, shifts,
+things to bring, maps and documents, and contest or festival registration setup come over, every date moved by the
+same number of days; never volunteers, bands, groups, or anyone's details. Every screen counts what comes over the same
+way ("2 Coordinators (1 asked again)", "1 map or document"). A contest close to its day is warned before copying by
+the two-week rule (registration should close two weeks before contest day), the same rule Band registration's deadline
+box names. Dates typed into copied text (descriptions, job names, locations, and instructions, shifts, things to bring,
+map and document names, information for directors, meal details and options, the contact for directors, rooms, zones)
+are left as "[new date]"; grades, scores, times, links, numbers after "ages", "size", "table", "room", or "#", and a
+piece called "March" after a grade or a count stay. Each box holding one has an amber border with its note under it. Each place is counted under the page where it's fixed
+(map and document names under Maps and documents), with a ◆ on each Jobs and shifts tab that has one; the publish card
+lists every place once, each step's Next goes to the next place, and publishing waits until none is left (checked in
+the database too). Text that "[new date]" would push past its limit comes over whole and is listed to change by hand (its box always
+shows, a job's Location included).
+Copied steps say "Copied: check it" until opened. Coordinators come over as invitations in Team setup's Pending list,
+emailed when the organizer publishes (checked in the publish window, which every Publish button on a never-published
+copy opens) or with "Send invitation now" ("Not emailed yet · sent when you publish" waits with a neutral clock);
+after publishing, the banner says only what happened to the event, and the amber card below Links to share names anyone
+not emailed and lets the organizer send, change the email of, or remove each one ("Ana Silva removed. Undo", also at the top of Team
+setup's Coordinators tab). Changing an email gives the invitation new link keys, so the old email's links stop working. People already
+on the team who led a job are put straight on it. Drafts made by duplicating say "Copied from [event]" on My events
+until published. Every event has a Description box on Details. Decisions: `docs/design-decisions/2026-11-20-duplicate-event.md`
+
 ## Add-ons and packages
 
 - **Packages** (names and prices are set on the admin Packages page, so check the app for current ones): Free,
@@ -95,6 +119,7 @@ Sample people are never emailed, and "Back to me" or "Remove demo people" takes 
 
 Keep the last ten or so; older ones are in git history and `docs/design-decisions/`.
 
+- 2026-11-20 (PR pending): Duplicate event: a new draft from any event with jobs, on new dates, from New event, My events (past and soon events), or Event settings; dates typed into copied text become "[new date]" and hold back publishing until filled in; Coordinators come over as invitations sent when you publish (or Send now); replaces "Start from a previous contest" and the festival copy. Also across the app: a Description box on every event's Details, confirm windows start on "Never mind" with one phone layout, capitals after "Now ·" and "Next:", and a Co-host of one event sees the real reason on Event settings' Publishing card
 - 2026-11-19 (PR pending): Event details: on a multi-day event the times read "Daily start time" and "Daily end time" (the hours each day, which is how shifts and the event page use them), not first-day start and last-day end
 - 2026-11-14 (PR pending): Visitor check-in follow-up fixes: one deletion date everywhere, kept totals after deletion, "Our school has a copy" can be undone, "Saved:" left where a checked name was, the safe choice first in the download warning, and "Let Ben check in" as a button
 - 2026-11-14 (PR pending): Visitor check-in fixes from the built-page check: name choices with particles kept in the last name, one download button that follows what's changed, a soft amber door note with Let Ben check in for Hosts, report groups with the front office first, and "Our school has a copy"

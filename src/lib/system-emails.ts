@@ -194,7 +194,7 @@ export const SYSTEM_EMAILS: SystemEmail[] = [
     starting: {
       subject: "Lead {{station}} at {{event_name}}",
       heading: "You're invited to be a {{lead_title}}",
-      body: "{{inviter}} asked you to lead {{station}} at {{event_name}} ({{event_when}}).\n\nYou'll see who's on your sign-up's shifts, and their phone numbers unlock on {{event_day}}.",
+      body: "{{inviter}} asked you to lead {{station}} at {{event_name}} ({{event_when}}).\n\nYou'll see who signs up for {{station}}, and their phone numbers unlock on {{event_day}}.",
       button_label: "Accept invitation",
     },
     locked: inviteLocked,
