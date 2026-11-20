@@ -302,6 +302,23 @@ on the printout) until it's final, keeps practice runs out, and doesn't lead wit
 - **Seen in:** conference Meeting summary (printed before the day, it showed "Not marked" on every row; now a sheet to
   work from), visitor check-in report mock-ups 2026-11-14 (Print as the main button during check-in, 5 of 8).
 
+## L29. One list in one place; one error per problem
+A list of things to do (places to fix, steps to check) appears once, where it's acted on; other spots get one line
+pointing to it. One problem shows one error, next to its field. A success banner never sits above unfinished work.
+- **Why:** the same list twice reads as two jobs; a doubled error reads as two problems; green on top reads as "done".
+- **Seen in:** Duplicate event built pages 2026-11-20: "[new date]" places listed in the copied note and the publish
+  card (5 of 8), then three times with a green "Duplicated" banner on top (consultant, UI); a past date showing the
+  field's and the form's errors (7 of 8).
+- **Check:** on each screen, every list item and every error appears once; nothing green sits above an amber blocker.
+
+## L30. Every marker or blocker leads to a box someone can edit
+Anything that blocks publishing, or asks someone to fill something in, links to a visible, editable box with the thing
+selected, counted under the page where that box lives.
+- **Why:** a blocker with no reachable box is a dead end that only deleting things can clear.
+- **Seen in:** Duplicate event 2026-11-20: a description with no edit box anywhere, a job Location hidden by a redesign,
+  a map's name counted under Details, a long Location never shown (four rounds, Software Engineer and Product Owner).
+- **Check:** for every blocker, follow its link at phone and desktop; the box is on screen, editable, and named the same.
+
 ## Self-check before a review
 
 Go through every screen, in light **and dark**, at phone **and** desktop. Fix anything that fails
@@ -330,6 +347,8 @@ before the panel sees it.
 - [ ] **L19** Every date-based state (opens later, scheduled) shows on every badge, button, and job; a timer that ends refreshes the page
 - [ ] **L26** Every number on a board is worked out from the sample data; screens of the same moment agree
 - [ ] **L27** Empty boxes look empty in light and dark
+- [ ] **L29** Each list once, where it's acted on; one error per problem; no green above a blocker
+- [ ] **L30** Every blocker links to a visible, editable box, counted under its own page
 - [ ] **L28** A printable record says when it's still changing, and is final only when the app says so
 - [ ] **L25** Every screenshot matches its words, is seen as its people see it, and is cropped on white space
 - [ ] `npm run lint` passes (includes the automatic checks)
