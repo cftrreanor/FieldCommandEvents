@@ -324,11 +324,16 @@ function EventDates({
         // One day: it ends the day it starts.
         <input type="hidden" name="endsOn" value={start} />
       )}
-      {/* Always on a row of their own, under the dates. */}
-      <Field label={multi ? "Start time (first day)" : "Start time"} className="sm:col-start-1">
+      {/* Always on a row of their own, under the dates. Several days: the hours each day, which is how
+          shifts, the event page, and calendar invites read them (not the first day's start and the last day's end). */}
+      <Field
+        label={multi ? "Daily start time" : "Start time"}
+        hint={multi ? "The hours each day. A job's shifts can use different hours." : undefined}
+        className="sm:col-start-1"
+      >
         <TimeField name="startTime" value={startT} onChange={(e) => setStartT(e.target.value)} required />
       </Field>
-      <Field label={multi ? "End time (last day)" : "End time"}>
+      <Field label={multi ? "Daily end time" : "End time"}>
         <TimeField name="endTime" defaultValue={endTime ?? ""} after={multi ? undefined : startT} required />
       </Field>
     </>

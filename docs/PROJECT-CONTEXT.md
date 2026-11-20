@@ -95,6 +95,7 @@ Sample people are never emailed, and "Back to me" or "Remove demo people" takes 
 
 Keep the last ten or so; older ones are in git history and `docs/design-decisions/`.
 
+- 2026-11-19 (PR pending): Event details: on a multi-day event the times read "Daily start time" and "Daily end time" (the hours each day, which is how shifts and the event page use them), not first-day start and last-day end
 - 2026-11-14 (PR pending): Visitor check-in follow-up fixes: one deletion date everywhere, kept totals after deletion, "Our school has a copy" can be undone, "Saved:" left where a checked name was, the safe choice first in the download warning, and "Let Ben check in" as a button
 - 2026-11-14 (PR pending): Visitor check-in fixes from the built-page check: name choices with particles kept in the last name, one download button that follows what's changed, a soft amber door note with Let Ben check in for Hosts, report groups with the front office first, and "Our school has a copy"
 - 2026-11-14 (PR pending): Visitor check-in report, visitor list, and front-office mark
