@@ -82,3 +82,26 @@ Review: docs/design-reviews/2026-11-20-duplicate-event-built-2.md (all seven rol
 | — | Duplicate event on every My events card | 2 | Owner: **past and soon** | On past events and events within a few weeks of their day; always in Event settings and on New event |
 | — | Description box on Details | 2 | Owner: **every event** | Details always has a Description box (it was missing for every event) |
 | — | All other severity 2 and 1 findings | 2/1 | Take the advice | As written in the report: one list of "[new date]" places, each under the page where it's fixed; ◆ on Jobs tabs; "place" not "spot"; date patterns fixed (grades, scores, "march", names, links) and widened ("7 November", ISO dates, job and room names); the privacy promise made true (counts only in the summary, removals cleared daily); Remove on the "wasn't emailed" card; re-adding a removed Coordinator says it emails them now (and isn't offered while Undo works); a same-day date allowed with a warning; the smaller items |
+
+### Built as decided (follow-up fixes, 2026-11-20)
+
+- **A job's old Location:** the job form shows the Location box whenever it holds "[new date]" (kept for that visit),
+  so every marker sits in a box the organizer can reach. Location is still marked and counted (band contests and
+  festivals show it to volunteers).
+- **Length limits:** "[new date]" never pushes text past its limit. When it would, the text comes over whole (nothing
+  cut) and is listed as a place to change by hand, until that field changes.
+- **My events:** "Duplicate event" on past events and those within 4 weeks of their first day.
+- **Can't be duplicated:** meetings (and parent-teacher conferences) and visitor events. They have no jobs to copy;
+  the Duplicate page says so if reached, and they have no Duplicate panel or card.
+- **The old copy functions** (copy_band_contest_setup, copy_group_event_setup) can't be called by anyone signed in;
+  nothing in the app calls them.
+
+### Success measures
+
+Checked a month and a season after launch (from event_copies and events; no personal details needed):
+
+- The share of new events (of kinds with jobs) started as copies
+- The median time from duplicating to publishing the copy
+- The share of copies deleted with "Delete and start over"
+- The copied-Coordinator acceptance rate: invitations that came over with a copy and were accepted, of those sent
+

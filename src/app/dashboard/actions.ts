@@ -156,6 +156,11 @@ export async function createEvent(_prev: ActionState, formData: FormData): Promi
   if (!parsed.success) return { error: firstIssue(parsed.error) };
   const v = parsed.data;
   const eventType = formData.get("eventType");
+  const newDescription = String(formData.get("description") ?? "").trim();
+  if (newDescription.length > 4000) {
+    const words = `Keep the description to 4,000 characters. It has ${newDescription.length.toLocaleString("en-US")}.`;
+    return { error: words, fieldErrors: { description: words } };
+  }
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -179,6 +184,7 @@ export async function createEvent(_prev: ActionState, formData: FormData): Promi
       venue_lat: v.venuePlaceId ? (v.venueLat ?? null) : null,
       venue_lng: v.venuePlaceId ? (v.venueLng ?? null) : null,
       created_by: user.id,
+      ...(newDescription ? { public_notes: newDescription } : {}),
       // Only when off, so new conferences still save before the 20261219000000 update.
       ...(v.askChildNameField && v.askChildName !== "on" ? { ask_child_name: false } : {}),
     })
@@ -228,8 +234,13 @@ export async function updateEvent(eventId: string, _prev: ActionState, formData:
   // A conference's school is set in Conference Setup, not here.
   const conference = hasConferences(before?.event_type);
   if (!conference && !v.venueAddress) return { error: "Venue: Required" };
-  // The description box shows once there is one (a duplicated event brings its source's).
-  const description = formData.get("descriptionField") === "1" ? String(formData.get("description") ?? "").trim().slice(0, 4000) : undefined;
+  // Every event has a Description box. Longer than the box allows (4,000 characters) is never cut: it's refused, saying
+  // how long it is, so nothing typed is lost. (The database has no limit; this is the app's.)
+  const description = formData.get("descriptionField") === "1" ? String(formData.get("description") ?? "").trim() : undefined;
+  if (description && description.length > 4000) {
+    const words = `Keep the description to 4,000 characters. It has ${description.length.toLocaleString("en-US")}.`;
+    return { error: words, fieldErrors: { description: words } };
+  }
   const details = await supabase
     .from("events")
     .update({

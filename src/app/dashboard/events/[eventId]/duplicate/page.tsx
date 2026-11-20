@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { Card } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { getEventAccess } from "@/lib/data";
-import { canDuplicateKind, duplicateBack, listAnd, longRange, plural } from "@/lib/duplicate-words";
+import { duplicateCounts } from "@/lib/duplicate-event";
+import { canDuplicateKind, comesOverParts, coordinatorWords, duplicateBack, listAnd, longRange, mapsAndDocuments, plural } from "@/lib/duplicate-words";
 import { eventTypeLabel } from "@/lib/event-types";
 import { loadAccountHost } from "@/lib/plan";
 import { missing } from "@/lib/schema-check";
@@ -65,7 +66,7 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
         {header}
         <Card className="mt-6 space-y-3 text-sm leading-6">
           <p className="font-semibold">{host.name ? `${host.name} can duplicate this event for you.` : "Your Account Host can duplicate this event for you."}</p>
-          <p className="text-muted">Only the Account Host and Co-hosts of every event can create events. You&apos;re a Co-host of {ev.name} only.</p>
+          <p className="text-muted">Only the Account Host and Co-hosts of every event can duplicate events. You&apos;re a Co-host of {ev.name} only.</p>
           {host.email && (
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <a
@@ -83,14 +84,13 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
   }
 
   const tz = ev.timezone || "America/Chicago";
-  const [{ data: stationRows }, { data: shiftRows }, { count: itemCount }, { data: fileRows }, { data: leadRows }, { data: staffRows }, { data: memberRows }, { data: pendingRows }, { count: volunteers }, { count: bands }, { count: rooms }] =
+  const [{ data: stationRows }, { data: shiftRows }, { data: fileRows }, { data: leadRows }, { data: staffRows }, { data: memberRows }, { data: pendingRows }, { count: volunteers }, { count: bands }, { count: rooms }] =
     await Promise.all([
       supabase.from("stations").select("id, name, checkpoint_kind").eq("event_id", eventId).order("sort_order").order("created_at"),
       supabase.from("shifts").select("station_id, starts_at, ends_at").eq("event_id", eventId).order("starts_at"),
-      supabase.from("station_items").select("id", { count: "exact", head: true }).eq("event_id", eventId),
       supabase.from("event_files").select("label, file_name").eq("event_id", eventId).order("created_at"),
       supabase.from("station_leads").select("station_id, user_id").eq("event_id", eventId).order("created_at"),
-      supabase.from("event_staff").select("user_id, profiles(full_name, email)").eq("event_id", eventId),
+      supabase.from("event_staff").select("user_id, role, profiles(full_name, email)").eq("event_id", eventId),
       supabase.from("organization_members").select("user_id, profiles(full_name, email)").eq("organization_id", ev.organization_id),
       // Invitations to lead a job that nobody accepted: they don't come over (held ones belong to a copy, never a source).
       supabase.from("invitations").select("email, station_id").eq("event_id", eventId).eq("role", "section_lead").is("accepted_at", null).not("token", "is", null),
@@ -113,6 +113,12 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
     leads.set(l.user_id, entry);
   }
   const coordinators = [...leads.values()];
+  // The same counts as Event settings' panel and New event (duplicateCounts), so every screen agrees.
+  const counts = (await duplicateCounts([eventId], ev.organization_id)).get(eventId)!;
+  // Co-hosts and Volunteer Leads of this event only don't come over: named.
+  const notAdded = ((staffRows ?? []) as unknown as { user_id: string; role: string; profiles: P }[])
+    .filter((r) => (r.role === "co_host" || r.role === "volunteer_director") && !people.get(r.user_id)?.member)
+    .map((r) => `${r.profiles?.full_name || r.profiles?.email || "A team member"} (${r.role === "co_host" ? "Co-host" : "Volunteer Lead"} of ${ev.name} only)`);
 
   const source: DuplicateSource = {
     id: ev.id,
@@ -129,13 +135,8 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
     })),
     deadline: ev.band_registration_deadline,
     opensOn: ev.band_registration_opens_on,
-    counts: {
-      jobs: stations.length,
-      shifts: (shiftRows ?? []).length,
-      items: itemCount ?? 0,
-      files: (fileRows ?? []).length,
-      coordinators: coordinators.length,
-    },
+    counts,
+    copying: comesOverParts(ev.event_type, counts, false),
   };
 
   const jobs = plural(stations.length, "job", "jobs");
@@ -143,7 +144,7 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
   const files = (fileRows ?? []).map((f) => f.label || f.file_name);
   const mapsLine = files.length ? (
     <li>
-      {files.length === 1 ? "1 map or document" : `${files.length} maps and documents`} ({listAnd(files)}), hidden until you publish
+      {mapsAndDocuments(files.length)} ({listAnd(files)}), hidden until you publish
     </li>
   ) : null;
   const pending = ((pendingRows ?? []) as { email: string; station_id: string | null }[]).map((p) => `${p.email}'s invitation for ${jobName(p.station_id)}`);
@@ -222,7 +223,11 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
       <li>Volunteers{volunteers ? `: the ${plural(volunteers, "volunteer who signed up stays", "volunteers who signed up stay")} on ${ev.name}` : " aren't copied"}</li>
       <li>{ev.event_type === "band_contest" || ev.event_type === "group_event" ? "Sponsors, check-ins, and announcements" : "Check-ins and announcements"}</li>
       <li>Where replies go, and who gets notified</li>
-      <li>Co-hosts and Volunteer Leads of {ev.name} only</li>
+      {notAdded.length > 0 ? (
+        notAdded.map((n) => <li key={n}>{n} isn&apos;t added</li>)
+      ) : (
+        <li>Co-hosts and Volunteer Leads of {ev.name} only</li>
+      )}
       {pending.length > 0 && <li>{listAnd(pending)}, never accepted</li>}
     </>
   );
@@ -233,13 +238,15 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
   const coordinatorLine =
     coordinators.length === 0 ? null : (
       <>
+        <p className="font-semibold">{coordinatorWords(counts.coordinators, counts.invited)}</p>
         {invited.length > 0 && (
           <>
             <p>
               <span className="font-semibold">
-                {plural(invited.length, "Coordinator comes", "Coordinators come")} over as {invited.length === 1 ? "an invitation" : "invitations"}.
+                {invited.length === 1 ? "1 comes over as an invitation." : `${invited.length} come over as invitations.`}
               </span>{" "}
-              You choose who&apos;s emailed when you publish. Each is asked again, so they can say yes for the new dates.
+              You choose who&apos;s emailed when you publish.{" "}
+              {invited.length === 1 ? "They're asked again, so they can say yes for the new dates." : "Each is asked again, so they can say yes for the new dates."}
             </p>
             <p className="text-muted">{who(invited)}</p>
           </>

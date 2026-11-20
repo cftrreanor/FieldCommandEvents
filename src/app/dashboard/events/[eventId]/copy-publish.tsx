@@ -59,6 +59,7 @@ export function CopyPublish({
   const [ticked, setTicked] = useState<string[]>(people.map((p) => p.id));
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [dropped, setDropped] = useState(false);
   const registers = kind === "band_contest" || kind === "group_event";
   const contestWord = kind === "band_contest" ? "band" : "group";
   const page = kind === "band_contest" ? "The contest page" : kind === "group_event" ? "The festival page" : "Your public page";
@@ -67,6 +68,7 @@ export function CopyPublish({
     setVersion(v);
     setTicked(people.map((p) => p.id));
     setFailure(null);
+    setDropped(false);
     if (!dialog.current?.open) dialog.current?.showModal();
   };
   // Another Publish button (Jobs and shifts, Band registration, Event settings) sent them here to choose.
@@ -110,7 +112,7 @@ export function CopyPublish({
       : version === "later"
         ? "Your public page goes online. Sign-up stays closed until you open it, so people can see the event but can't sign up yet. Volunteers aren't emailed."
         : version === "register"
-          ? `${page} goes online. ${contestWord === "band" ? "Band" : "Group"} registration opens ${opensOn ? formatDate(opensOn) : "right away"}${deadline ? ` and closes ${formatDate(deadline)}` : ""}. Directors aren't emailed: share the registration link or invite directors from ${kind === "band_contest" ? "Band registration" : "Registration"} when you're ready. Volunteer sign-up stays closed until you open it.`
+          ? `${page} goes online. ${contestWord === "band" ? "Band" : "Group"} registration opens ${opensOn ? `${formatDate(opensOn)}${deadline ? "," : ""}` : "right away"}${deadline ? ` and closes ${formatDate(deadline)}` : ""}. Directors aren't emailed: share the registration link or invite directors from ${kind === "band_contest" ? "Band registration" : "Registration"} when you're ready. Volunteer sign-up stays closed until you open it.`
           : "Your public page goes online. Volunteer sign-up stays closed until you open it. Volunteers aren't emailed.";
 
   const submit = async () => {
@@ -125,14 +127,19 @@ export function CopyPublish({
         setFailure(`Couldn't publish: ${r.error.replace(/\.$/, "")}. ${eventName} is still a draft, and nobody was emailed.`);
         return;
       }
-      if (r.message) toast(r.message);
+      // Shown on the event page, below its header (PublishedNote), not over its buttons.
+      try {
+        if (r.message) sessionStorage.setItem(NOTE_KEY(eventId), r.message);
+      } catch {
+        toast(r.message ?? "Published.");
+      }
       dialog.current?.close();
       router.push(`/dashboard/events/${eventId}?published=1&copy=1`);
     } catch {
-      // No answer: it may have published. Say so, and show the event as it is now.
+      // No answer: it may have published. Say so, and offer only what the page can then do: see it as it is now.
       setBusy(false);
-      setFailure(`We didn't hear back, so ${eventName} may have published. Close this to see it as it is now. Trying again never emails anyone twice.`);
-      router.refresh();
+      setDropped(true);
+      setFailure(`We didn't hear back, so ${eventName} may have published. See the event as it is now: if it published, anyone not emailed is listed there to send. If not, Publish is still there, and it never emails anyone twice.`);
     }
   };
 
@@ -253,7 +260,7 @@ export function CopyPublish({
                 )}
                 {people.length > 0 && (
                   <p className="mt-2 text-sm leading-6 text-muted">
-                    Anyone unticked stays in Team setup as &ldquo;Not emailed yet&rdquo;, to send later. They can&apos;t help run it until they accept. Your public
+                    Anyone left unchecked stays in Team setup as &ldquo;Not emailed yet&rdquo;, to send later. They can&apos;t help run it until they accept. Your public
                     page isn&apos;t affected. The email names you{host.name ? `, ${host.name},` : ""} and gives your address ({host.email}) for replies.
                   </p>
                 )}
@@ -279,13 +286,26 @@ export function CopyPublish({
                 {going.length ? "Publishing and sending…" : "Publishing…"}
               </button>
             ) : (
-              <button type="button" onClick={submit} className={`${go} max-sm:w-full`}>
-                {failure ? "Try again" : label}
+              <button
+                type="button"
+                onClick={
+                  dropped
+                    ? () => {
+                        dialog.current?.close();
+                        router.refresh();
+                      }
+                    : submit
+                }
+                className={`${go} max-sm:w-full`}
+              >
+                {dropped ? "See the event" : failure ? "Try again" : label}
               </button>
             )}
-            <Button type="button" variant="secondary" disabled={busy} onClick={() => dialog.current?.close()} className="shrink-0 whitespace-nowrap max-sm:w-full">
-              Keep it a draft
-            </Button>
+            {!dropped && (
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => dialog.current?.close()} className="shrink-0 whitespace-nowrap max-sm:w-full">
+                Keep it a draft
+              </Button>
+            )}
           </div>
         </div>
       </dialog>
@@ -305,5 +325,59 @@ export function PublishCopyLink({ eventId, version, className = "", children }: 
     >
       {children}
     </Link>
+  );
+}
+
+const NOTE_KEY = (eventId: string) => `published-note:${eventId}`;
+
+/**
+ * After publishing a copy: what happened ("Published, and sign-up is open. Ana Silva wasn't emailed"), as a note
+ * below the event's header, clear of its buttons. It closes on its own after a little while, or with its ×. The
+ * not-emailed card below Links to share has the details and the buttons.
+ */
+export function PublishedNote({ eventId, text: given }: { eventId: string; text?: string }) {
+  const [message, setMessage] = useState<string | null>(null);
+  const close = () => {
+    setMessage(null);
+    try {
+      sessionStorage.removeItem(NOTE_KEY(eventId));
+    } catch {
+      // Nothing stored.
+    }
+  };
+  useEffect(() => {
+    let text: string | null = given ?? null;
+    if (!given) {
+      try {
+        // Read, not removed yet: removed once it closes (a second render reads the same note).
+        text = sessionStorage.getItem(NOTE_KEY(eventId));
+      } catch {
+        // No storage: the event page still shows everything below.
+      }
+    }
+    const show = setTimeout(() => setMessage(text), 0);
+    const hide = text ? setTimeout(() => close(), 12_000) : undefined;
+    return () => {
+      clearTimeout(show);
+      clearTimeout(hide);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventId, given]);
+  if (!message) return null;
+  return (
+    <div role="status" className="mt-4 flex items-start gap-3 rounded-lg border border-success/40 bg-success-soft px-4 py-3 text-sm leading-6">
+      <span aria-hidden className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-success text-xs font-bold text-success-foreground">
+        ✓
+      </span>
+      <p className="min-w-0 flex-1">{message}</p>
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={() => close()}
+        className="-my-1 -mr-2 grid size-11 shrink-0 place-items-center rounded-md text-lg leading-none text-muted hover:bg-background hover:text-foreground"
+      >
+        ×
+      </button>
+    </div>
   );
 }

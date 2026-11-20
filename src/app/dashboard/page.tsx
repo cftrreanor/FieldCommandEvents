@@ -105,6 +105,18 @@ function isPast(e: { ends_on: string; timezone: string }) {
   return e.ends_on < utcToZonedDate(new Date().toISOString(), e.timezone);
 }
 
+/**
+ * Within 4 weeks of its first day (owner decision, 2026-11-20): My events offers "Duplicate event" only on past events
+ * and these, when planning next time's is likely. 4 weeks: about a month out, when organizers start on the next
+ * one. Event settings and New event always offer it.
+ */
+const DUPLICATE_SOON_WEEKS = 4;
+function isSoon(e: { starts_on: string; timezone: string }) {
+  const today = utcToZonedDate(new Date().toISOString(), e.timezone);
+  const until = Math.round((Date.parse(`${e.starts_on}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86_400_000);
+  return until <= DUPLICATE_SOON_WEEKS * 7;
+}
+
 /** Is it on today, in its own time zone? */
 function isToday(e: { starts_on: string; ends_on: string; timezone: string }) {
   const today = utcToZonedDate(new Date().toISOString(), e.timezone);
@@ -291,12 +303,18 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Drafts made by duplicating: where each came from, on its card until it's published (hosts read event_copies).
   const draftIds = ownEvents.filter((e) => e.status === "draft").map((e) => e.id);
   const { data: copyRows } = draftIds.length
-    ? await supabase.from("event_copies").select("event_id, summary").in("event_id", draftIds).is("first_published_at", null)
-    : { data: [] as { event_id: string; summary: unknown }[] };
+    ? await supabase.from("event_copies").select("event_id, source_event_id").in("event_id", draftIds).is("first_published_at", null)
+    : { data: [] as { event_id: string; source_event_id: string | null }[] };
+  // The source's name and date from the event itself (what's stored about a copy keeps ids only).
+  const sourceIds = [...new Set(((copyRows ?? []) as { source_event_id: string | null }[]).map((c) => c.source_event_id).filter(Boolean))] as string[];
+  const { data: sourceRows } = sourceIds.length
+    ? await supabase.from("events").select("id, name, starts_on").in("id", sourceIds)
+    : { data: [] as { id: string; name: string; starts_on: string }[] };
   const copiedFrom = new Map(
-    ((copyRows ?? []) as { event_id: string; summary: { source?: { name?: string; starts_on?: string } } | null }[])
-      .filter((c) => c.summary?.source?.name)
-      .map((c) => [c.event_id, `${c.summary!.source!.name}${c.summary!.source!.starts_on ? ` (${formatDate(c.summary!.source!.starts_on, { weekday: undefined })})` : ""}`]),
+    ((copyRows ?? []) as { event_id: string; source_event_id: string | null }[])
+      .map((c) => [c.event_id, (sourceRows ?? []).find((r) => r.id === c.source_event_id)] as const)
+      .filter(([, src]) => src)
+      .map(([id, src]) => [id, `${src!.name} (${formatDate(src!.starts_on, { weekday: undefined })})`]),
   );
   // A copy with "[new date]" left can't publish yet: its card says so (the same fact as its event page).
   const newDatesLeft = new Map<string, number>(
@@ -389,7 +407,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                 draft={drafts.get(e.id)}
                 spot={spotHolder?.id === e.id ? spotHolder.ends_on : null}
                 ask={accountHost && org ? { host: accountHost, orgName: org.name } : null}
-                duplicable={adminOrgs.has(e.organization_id) && canDuplicateKind(e.event_type) && (e.status !== "draft" || isPast(e))}
+                duplicable={adminOrgs.has(e.organization_id) && canDuplicateKind(e.event_type) && (isPast(e) || (e.status !== "draft" && isSoon(e)))}
                 copiedFrom={e.status === "draft" ? (copiedFrom.get(e.id) ?? null) : null}
                 newDates={newDatesLeft.get(e.id) ?? 0}
               />
@@ -645,7 +663,7 @@ function HostedCard({
           {copiedFrom && <p className="text-sm text-muted">Copied from {copiedFrom}</p>}
           {newDates > 0 ? (
             <Link href={href} className="relative z-10 inline-flex min-h-11 items-center text-sm font-medium text-warning underline underline-offset-4">
-              <span aria-hidden>◆&nbsp;</span>Next: add the new date ({newDates} {newDates === 1 ? "spot" : "spots"})
+              <span aria-hidden>◆&nbsp;</span>Next: Add the new date ({newDates} {newDates === 1 ? "place" : "places"})
             </Link>
           ) : (
             <DraftNext draft={draft} href={href} ask={ask ?? null} />
@@ -654,7 +672,7 @@ function HostedCard({
       ) : (
         <div className="space-y-1">
           {copiedFrom && <p className="text-sm text-muted">Copied from {copiedFrom}</p>}
-          <p className="text-sm font-medium">Next: finish setup and publish</p>
+          <p className="text-sm font-medium">Next: Finish setup and publish</p>
         </div>
       )}
     </EventCard>
@@ -681,7 +699,7 @@ function DraftNext({ draft: d, href, ask }: { draft: DraftStatus; href: string; 
   return (
     <div className="space-y-1 text-sm">
       {!c ? (
-        <p className="font-medium">Next: finish setup and publish</p>
+        <p className="font-medium">Next: Finish setup and publish</p>
       ) : c.remaining.length ? (
         <>
           {/* The next step is a link of its own, above the card's link (light check, 2026-11-08). */}

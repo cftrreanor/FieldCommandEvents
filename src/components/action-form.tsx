@@ -137,7 +137,7 @@ export function ActionForm({
     >
       <ActionPendingContext value={pending}>
         {/* Success shows as a toast (top right); errors stay with the form. */}
-        {!quiet && <FormMessage error={shown.error} />}
+        {!quiet && <FormMessage error={shown.error} link={shown.link} />}
         <FieldErrorsContext value={shown.fieldErrors ?? {}}>{children}</FieldErrorsContext>
       </ActionPendingContext>
     </form>

@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { getOrigin } from "@/lib/data";
-import { addDays, coordinatorStatus, newDateSpotHref, type NewDateSpot } from "@/lib/duplicate-words";
+import { addDays, coordinatorStatus, newDateSpotHref, type DuplicateCounts, type NewDateSpot } from "@/lib/duplicate-words";
 import { FILES_BUCKET } from "@/lib/event-files";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
@@ -11,11 +11,14 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 export type CopiedFile = { id: string; label: string; file_name: string; from: string; to: string };
 
-/** What duplicate_event returns (and returns again for a retry with the same request id). */
+/**
+ * What's kept about a copy (event_copies.summary), returned again for a retry with the same request id: counts and
+ * ids only, no names, addresses, or file names (the privacy promise, docs/DATA-PRIVACY.md).
+ */
 export type DuplicateSummary = {
   kind: "volunteer" | "fair" | "band_contest" | "group_event";
-  source: { id: string; name: string; starts_on: string; ends_on: string; status: string };
-  name: string;
+  /** The source's name isn't kept: the publish check reads it from the event (null once it's deleted). */
+  source: { id: string; name?: string | null; starts_on: string; ends_on: string; status: string };
   starts_on: string;
   ends_on: string;
   days_moved: number;
@@ -33,24 +36,20 @@ export type DuplicateSummary = {
     opens_on_was: string | null;
     opens_on_left_blank: boolean;
   } | null;
-  coordinators: {
-    /** Held invitations: "Not emailed yet · sent when you publish". */
-    held: { invitation_id: string; name: string; email: string; jobs: string[] }[];
-    /** Account members, straight onto their jobs. */
-    added: { user_id: string; name: string; job: string }[];
-    /** Couldn't be copied (named, never failing the copy). */
-    skipped: { name: string; email: string; job: string }[];
-  };
+  /** How many: held invitations ("Not emailed yet"), account members straight onto their jobs, and any skipped. */
+  coordinators: { held: number; added: number; skipped: number };
   /** How many invitations on the source nobody accepted (not copied; no addresses are kept). */
   not_copied_invitations: number;
   volunteers_on_source: number;
   bands_on_source: number;
-  files: CopiedFile[];
+  /** Each copied map or document's row and its source's, by id. */
+  files: { id: string; source_id: string }[];
   /** The copied steps, each "Copied: check it" until opened. */
   steps: string[];
 };
 
-export type DuplicateResult = { event_id: string; existing: boolean; summary: DuplicateSummary };
+/** duplicate_event's answer: what's kept, plus (in this answer only) the files to copy in storage. */
+export type DuplicateResult = { event_id: string; existing: boolean; summary: DuplicateSummary; files: CopiedFile[] };
 
 /** One copied Coordinator's invitation and where it is on the ladder. */
 export type CopyCoordinator = {
@@ -68,6 +67,8 @@ export type CopyCoordinator = {
   can_send: boolean;
   /** Why it can't be sent now (the plan doesn't include Coordinators, or the team is full). */
   why_not: string | null;
+  /** Every job it covers, by id. */
+  station_ids?: string[];
 };
 
 /** A copied step: "Copied: check it" until opened; opening it checks it off. */
@@ -207,6 +208,8 @@ export type CopiedPersonView = {
   name: string;
   email: string;
   jobs: string[];
+  /** The jobs it covers, by id (matched by id, never by name). */
+  stationIds: string[];
   status: CopyCoordinator["status"];
   statusText: string;
   dot: boolean;
@@ -241,6 +244,7 @@ export async function loadCopiedPeople(eventId: string): Promise<{ people: Copie
       name: c.name,
       email: c.email,
       jobs: c.jobs.length ? c.jobs : ["a job"],
+      stationIds: c.station_ids ?? (c.station_id ? [c.station_id] : []),
       status: c.status,
       statusText: s.text,
       dot: s.dot,
@@ -251,4 +255,47 @@ export async function loadCopiedPeople(eventId: string): Promise<{ people: Copie
     };
   });
   return { people, team: check.team, published, source: check.source?.name ?? null };
+}
+
+/**
+ * What duplicating each event brings, counted once for every screen that names it (the Event settings panel, New
+ * event's "Start from one of your events", and the Duplicate page): jobs, shifts, things to bring, maps and
+ * documents, rooms, and Coordinators (and how many of them are invited again, not already on the account's team).
+ */
+export async function duplicateCounts(eventIds: string[], orgId: string): Promise<Map<string, DuplicateCounts>> {
+  const out = new Map<string, DuplicateCounts>();
+  if (!eventIds.length) return out;
+  const supabase = await createClient();
+  const [{ data: stations }, { data: shifts }, { data: items }, { data: files }, { data: leads }, { data: rooms }, { data: members }] = await Promise.all([
+    supabase.from("stations").select("event_id").in("event_id", eventIds),
+    supabase.from("shifts").select("event_id").in("event_id", eventIds),
+    supabase.from("station_items").select("event_id").in("event_id", eventIds),
+    supabase.from("event_files").select("event_id").in("event_id", eventIds),
+    supabase.from("station_leads").select("event_id, user_id").in("event_id", eventIds),
+    supabase.from("rooms").select("event_id").in("event_id", eventIds),
+    supabase.from("organization_members").select("user_id").eq("organization_id", orgId),
+  ]);
+  const member = new Set((members ?? []).map((m) => m.user_id as string));
+  const n = (rows: { event_id: string }[] | null, id: string) => (rows ?? []).filter((r) => r.event_id === id).length;
+  for (const id of eventIds) {
+    const people = new Set((leads ?? []).filter((l) => l.event_id === id).map((l) => l.user_id as string));
+    out.set(id, {
+      jobs: n(stations, id),
+      shifts: n(shifts, id),
+      items: n(items, id),
+      files: n(files, id),
+      rooms: n(rooms, id),
+      coordinators: people.size,
+      invited: [...people].filter((u) => !member.has(u)).length,
+    });
+  }
+  return out;
+}
+
+/** A duplicated draft's "[new date]" places, all or one step's (empty for any other event, or before the update). */
+export async function loadNewDatePlaces(eventId: string, step?: string): Promise<NewDateSpot[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("copy_new_date_spots", { p_event: eventId });
+  if (error || !data) return [];
+  return (data as NewDateSpot[]).filter((s) => !step || s.step === step);
 }

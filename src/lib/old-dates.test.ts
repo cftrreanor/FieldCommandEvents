@@ -21,6 +21,27 @@ test("the copy's own days stay, with a weekday only when it matches", () => {
   assert.equal(blank("Nov 7, 2026"), NEW_DATE, "the right day in another year is old");
 });
 
+test("things that aren't dates stay: grades, scores, words, names, links", () => {
+  assert.equal(blank("Grades 4/5 and 6/7/8 meet at 9. Grade 3/4 too."), "Grades 4/5 and 6/7/8 meet at 9. Grade 3/4 too.");
+  assert.equal(blank("Scored 10/10 and 9/10 last year"), "Scored 10/10 and 9/10 last year");
+  assert.equal(blank("We march 8 to 5. You may 2 shifts."), "We march 8 to 5. You may 2 shifts.");
+  assert.equal(blank("Ask Jan 2 hours before"), "Ask Jan 2 hours before");
+  assert.equal(
+    blank("See https://example.org/2026/11/1 or [Nov 1 map](https://x.org/nov-1) or www.site.com/11/1 or parks.org/11/1"),
+    "See https://example.org/2026/11/1 or [Nov 1 map](https://x.org/nov-1) or www.site.com/11/1 or parks.org/11/1",
+  );
+  assert.equal(blank("Nov 1 at https://x.org/a and Nov 2"), "[new date] at https://x.org/a and [new date]");
+});
+
+test("more ways of writing a date are caught", () => {
+  assert.equal(
+    blank("On 8 November, the 8th of November, 2026-11-08, 11-8-2026, and Saturday the 8th."),
+    "On [new date], [new date], [new date], [new date], and [new date].",
+  );
+  assert.equal(blank("Saturday the 6th, Sunday 7 November 2027, 2027-11-07"), "Saturday the 6th, Sunday 7 November 2027, 2027-11-07");
+  assert.equal(blank("Sunday the 6th"), NEW_DATE, "the 6th is a Saturday");
+});
+
 test("counts", () => {
   assert.equal(blankOldDates("Nov 1 and 11/2", keep).count, 2);
   assert.equal(blankOldDates(null, keep).count, 0);

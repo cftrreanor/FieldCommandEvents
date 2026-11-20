@@ -136,12 +136,12 @@ export function invitationEmail(
         ...body.slice(0, 1),
         ...copied,
         ...body.slice(1),
-        `Use the button to accept. There's no password: it signs you in as ${inv.email}, and sets up your account if you don't have one yet.`,
+        `Use the button to accept. For ${EMAIL_LINK_DAYS} days it also signs you in as ${inv.email}, with no password, and sets up your account if you don't have one yet.`,
       ],
       button: { label: custom?.button || "Accept invitation", url: acceptUrl },
       // When it stops working, next to the button; the footer keeps the sign-in limit.
       // One date, next to the button, and the sign-in limit in plain words beside it.
-      buttonNote: `Works until ${formatDate(inv.expires_at.slice(0, 10))}. For the first ${EMAIL_LINK_DAYS} days, the button signs you in too. After that, sign in with ${inv.email} first, then accept.`,
+      buttonNote: `Works until ${formatDate(inv.expires_at.slice(0, 10))}. After its first ${EMAIL_LINK_DAYS} days, the page it opens offers to email you a sign-in link.`,
       footer: `This invitation is for ${inv.email}. Please don't forward it. If you weren't expecting it, you can ignore this email.`,
     }),
   };

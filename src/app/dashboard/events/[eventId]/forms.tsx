@@ -108,6 +108,7 @@ export function StationForm({
         className={signupKind ? "sm:col-span-2" : undefined}
       >
         <Input name="name" required maxLength={80} defaultValue={initial?.name} />
+        <NewDateNote value={initial?.name} spot="job-name" />
       </Field>
       {signupKind && (
         <div className="sm:col-span-2">
@@ -129,7 +130,7 @@ export function StationForm({
           <ZoneInput zones={zones} defaultValue={initial?.zone} />
         </Field>
       )}
-      <NewDateNote value={initial?.location} spot="instructions" className="sm:col-span-2" />
+      <NewDateNote value={initial?.location} spot="location" className="sm:col-span-2" />
       <Field label="Location" hint="Optional. Where volunteers should report." className="sm:col-span-2">
         <Input
           name="location"
@@ -954,12 +955,12 @@ export function CoordinatorPicker({
               href={teamHref}
               className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-surface px-3 text-sm hover:border-brand"
             >
-              <span aria-hidden className="inline-block size-2.5 rounded-full bg-warning" />
+              <span aria-hidden className="font-medium text-warning">◆</span>
               {h.name} · {h.expired ? "invitation expired" : "not emailed yet"}
             </a>
           ) : (
             <span key={h.name} className="inline-flex min-h-9 items-center gap-2 rounded-full border border-border px-3 text-sm">
-              <span aria-hidden className="inline-block size-2.5 rounded-full bg-warning" />
+              <span aria-hidden className="font-medium text-warning">◆</span>
               {h.name} · {h.expired ? "invitation expired" : "not emailed yet"}
             </span>
           ),

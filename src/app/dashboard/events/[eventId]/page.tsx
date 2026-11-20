@@ -61,10 +61,10 @@ import { festivalRegistrationMissing, festivalRoomsMissing } from "@/lib/setup-c
 import { minutesPerGroup } from "@/lib/rooms";
 import { datesMoved } from "@/lib/schedule-emails";
 import { CopiedNote, CopiedStepsLine, loadCopyFacts, NewDateList, type CopyFacts } from "./copied-note";
-import { CopyPublish } from "./copy-publish";
+import { CopyPublish, PublishedNote } from "./copy-publish";
 import { NotEmailedLine } from "./team/copied-coordinators";
 import { loadCopiedPeople } from "@/lib/duplicate-event";
-import { copyStepLabel, copyStepPath, newDateBlocker } from "@/lib/duplicate-words";
+import { copyStepLabel, copyStepPath, listAnd as listWords, mapsAndDocuments, newDateBlocker, newDateStepLabel, plural as pluralWords } from "@/lib/duplicate-words";
 
 export const metadata: Metadata = { title: "Event setup" };
 // Publishing a copy sends its Coordinators' invitations after it publishes, in small batches: room for a long list.
@@ -1186,9 +1186,9 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           }
         />
       )}
-      {/* After publishing a copy with someone not emailed, stay at the top: that line sits right under the name, above the links to share. */}
-      {justPublished && !notEmailed.length && <ScrollTo id="share" />}
-      {justCopied && <SuccessToast message={copyFacts ? "Duplicated. Check what came over, then publish." : "Your copy is ready. Check the dates on each step, then publish."} />}
+      {/* After publishing, the links to share. A copy stays at the top: its note, the links, then anyone not emailed. */}
+      {justPublished && query.copy !== "1" && <ScrollTo id="share" />}
+      {justCopied && !copyFacts && <SuccessToast message="Your copy is ready. Check the dates on each step, then publish." />}
       {demoEnded && <SuccessToast message="You're back on your own account. The demo people and sample data are gone." />}
       {/* Meetings set up in steps: the step bar is the one tracker, so no second checklist beside it (decisions 2026-11-08). */}
       {dayActions ? <DayRail day={dayActions} /> : checklist && !(steppedSetup && !published) && !fest && <SetupGuide checklist={checklist} />}
@@ -1233,14 +1233,11 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           )}
         </div>
 
+        {/* Just published a copy: what happened, below the header and clear of its buttons, closing on its own. */}
+        {justPublished && query.copy === "1" && <PublishedNote eventId={eventId} />}
+        {/* Just duplicated: what came over, in the same place (not over the step bar). */}
+        {justCopied && copyFacts && <PublishedNote eventId={eventId} text={copiedToast(copyFacts)} />}
         {copyFacts && <CopiedNote facts={copyFacts} />}
-        {copiedLive && (
-          <NotEmailedLine
-            eventId={eventId}
-            people={notEmailed}
-            teamHref={`/dashboard/events/${eventId}/edit?section=team&tab=section-leads`}
-          />
-        )}
 
         {contestLive && inviteable ? (
           <GetTheWordOut
@@ -1259,6 +1256,15 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           published &&
           access.canManage &&
           !(fest && (fest.regOpen || !fest.posted)) && <ShareLinks rows={shareRows} qrs={shareQrs} slug={event.slug} canFix={access.isHost} />
+        )}
+
+        {/* A published copy: anyone not emailed, below Links to share, until each is sent or removed. */}
+        {copiedLive && (
+          <NotEmailedLine
+            eventId={eventId}
+            people={notEmailed}
+            teamHref={`/dashboard/events/${eventId}/edit?section=team&tab=section-leads`}
+          />
         )}
 
         {/* Hosts and Volunteer Leads posted these, so one line is enough; the rest of the team sees them in full. */}
@@ -1392,6 +1398,7 @@ function PublishPanel({
         // The one thing stopping them, first.
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
           <p className="font-semibold">
+            <span aria-hidden className="text-warning">◆ </span>
             {facts.stations > 0 ? "Add a shift or a thing to bring to a job first" : "Add a job before you publish"}
           </p>
           <p className="mt-1">Publishing needs at least one job with a shift or a thing to bring.</p>
@@ -1404,7 +1411,7 @@ function PublishPanel({
         // A copy: every date typed into its copied text was left as "[new date]". Publishing waits for each one.
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
           <p className="font-semibold">
-            <span aria-hidden>◆ </span>
+            <span aria-hidden className="text-warning">◆ </span>
             {copy.newDates.title}
           </p>
           <p className="mt-1">Dates typed into the copied text were left as &ldquo;[new date]&rdquo;. Publishing waits until each one is filled in.</p>
@@ -1413,7 +1420,10 @@ function PublishPanel({
       )}
       {bandMissing && (
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
-          <p className="font-semibold">{bandMissing}</p>
+          <p className="font-semibold">
+            <span aria-hidden className="text-warning">◆ </span>
+            {bandMissing}
+          </p>
           {/* Only what's missing (not a classification that's already there). */}
           <p className="mt-1">
             {/classification/.test(bandMissing) && /deadline/.test(bandMissing)
@@ -1431,6 +1441,7 @@ function PublishPanel({
         // The first thing missing, in step order, with one button to its step.
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
           <p className="font-semibold">
+            <span aria-hidden className="text-warning">◆ </span>
             {festRooms
               ? `${festRooms} before you publish`
               : festReg === "Add a deadline"
@@ -1446,7 +1457,7 @@ function PublishPanel({
       {festFix && (
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
           <p className="font-semibold">
-            <span aria-hidden>◆ </span>Before you can post the schedule: fix {festFix} (it would have two groups at once)
+            <span aria-hidden className="text-warning">◆ </span>Before you can post the schedule: fix {festFix} (it would have two groups at once)
           </p>
           <p className="mt-1">You can still publish now. Directors register either way.</p>
           <Link href={`/dashboard/events/${facts.eventId}/rooms`} className={`${BTN_OUTLINE} mt-3`}>
@@ -1458,6 +1469,7 @@ function PublishPanel({
         // The one thing stopping them, first, with one button to it: the same box as volunteer events and band contests.
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
           <p className="font-semibold">
+            <span aria-hidden className="text-warning">◆ </span>
             {/* Everything still missing, in step order, as the band contest box does. */}
             {meetingTodo.length > 1 ? "Add your hours and where you'll meet" : `${meetingTodo[0].label.replace(/^./, (c) => c.toUpperCase())} before you publish`}
           </p>
@@ -1470,7 +1482,7 @@ function PublishPanel({
       {!needsJob && empty.length > 0 && (
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-4 text-sm leading-6">
           <p className="font-semibold">
-            <span aria-hidden>◆ </span>
+            <span aria-hidden className="text-warning">◆ </span>
             {empty.length === 1 ? "1 job won't show on the sign-up page yet" : `${empty.length} jobs won't show on the sign-up page yet`}
           </p>
           <ul className="mt-1">
@@ -2171,7 +2183,18 @@ async function copyPublishParts(f: CopyFacts, previewHref: string, userId: strin
     readyLine: <CopiedStepsLine facts={f} labels={labels} />,
     // Every "[new date]" left: publishing waits for them (the database checks too), with a link to each.
     newDates: check.newDates.length
-      ? { title: newDateBlocker(check.newDates, event.event_type), list: <NewDateList base={base} spots={check.newDates} className="mt-2" /> }
+      ? {
+          title: newDateBlocker(check.newDates, event.event_type),
+          // The one full list of places, each under the page where it's fixed (Maps and documents its own line).
+          list: (
+            <NewDateList
+              base={base}
+              spots={check.newDates}
+              className="mt-2"
+              groupLabel={(step) => ({ label: newDateStepLabel(step, event.event_type), href: `${base}${copyStepPath(step)}` })}
+            />
+          ),
+        }
       : null,
     effect: coordinators
       ? check.toOffer.length
@@ -2198,4 +2221,20 @@ async function copyPublishParts(f: CopyFacts, previewHref: string, userId: strin
       />
     ),
   };
+}
+
+/** "Duplicated: 3 jobs, 4 shifts, and 19 things to bring are ready on the new dates. Check what came over, then publish" */
+function copiedToast(f: CopyFacts) {
+  const { summary } = f;
+  const parts = [
+    summary.rooms ? pluralWords(summary.rooms, "room", "rooms") : "",
+    summary.jobs ? pluralWords(summary.jobs, "job", "jobs") : "",
+    summary.shifts ? pluralWords(summary.shifts, "shift", "shifts") : "",
+    summary.items ? pluralWords(summary.items, "thing to bring", "things to bring") : "",
+    f.files ? mapsAndDocuments(f.files) : "",
+  ].filter(Boolean);
+  const total = (summary.rooms ?? 0) + summary.jobs + summary.shifts + summary.items + f.files;
+  return parts.length
+    ? `Duplicated: ${listWords(parts)} ${total === 1 ? "is" : "are"} ready on the new dates. Check what came over, then publish`
+    : "Duplicated: the details are ready on the new dates. Check what came over, then publish";
 }

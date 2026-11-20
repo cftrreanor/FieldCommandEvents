@@ -47,6 +47,7 @@ export function DateField({
   "aria-describedby": describedBy,
   "aria-label": ariaLabel,
   "aria-invalid": ariaInvalid,
+  rangeMessage,
 }: {
   name?: string;
   value?: string;
@@ -64,6 +65,8 @@ export function DateField({
   "aria-describedby"?: string;
   "aria-label"?: string;
   "aria-invalid"?: boolean | "true" | "false";
+  /** The page's own words for a date outside min/max, so there's one message, not two. */
+  rangeMessage?: string;
 }) {
   const controlled = value !== undefined;
   const [own, setOwn] = useState(defaultValue);
@@ -105,7 +108,7 @@ export function DateField({
 
   const outOfRange = useCallback((iso: string) => !!((min && iso < min) || (max && iso > max)), [min, max]);
   const rangeWords = min && max ? `from ${formatDay(min)} to ${formatDay(max)}` : min ? `on or after ${formatDay(min)}` : `on or before ${formatDay(max ?? "")}`;
-  const problem = typedProblem ?? (current && outOfRange(current) && !locked ? `Pick a date ${rangeWords}.` : null);
+  const problem = typedProblem ?? (current && outOfRange(current) && !locked ? (rangeMessage ?? `Pick a date ${rangeWords}.`) : null);
 
   // A form reset (after a save) puts the box back to where it started.
   useEffect(() => {
@@ -152,11 +155,14 @@ export function DateField({
       if (thisYears && !outOfRange(thisYears)) iso = thisYears;
     }
     commit(iso);
+    // A typed date is the answer: the calendar closes so it doesn't cover what the page says about it below.
+    setAnchor(null);
   };
 
   const show = (inBox = false) => {
     if (locked || !wrap.current) return;
-    makeRoom(wrap.current, 400);
+    // The calendar is about 440 px tall: room for all of it below, so it opens downward when the page can scroll.
+    makeRoom(wrap.current, 460);
     setFromBox(inBox);
     setAnchor(wrap.current);
   };

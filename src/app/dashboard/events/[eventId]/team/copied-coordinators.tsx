@@ -18,6 +18,7 @@ export type CopiedPerson = {
   name: string;
   email: string;
   jobs: string[];
+  stationIds?: string[];
   status: "held" | "sent" | "expired" | "accepted";
   /** The ladder's words ("Not emailed yet · sent when you publish"). */
   statusText: string;
@@ -181,7 +182,7 @@ export function CopiedCoordinators({
                       Send a new invitation
                     </Button>
                   )}
-                  {p.status === "held" && (
+                  {(p.status === "held" || p.status === "expired") && (
                     <button type="button" className={QUIET_LINK} onClick={() => setFixing(p.id)} aria-label={`Change email for ${p.name}`}>
                       Change email
                     </button>
@@ -201,9 +202,12 @@ export function CopiedCoordinators({
                       </SubmitButton>
                     </ActionForm>
                   ) : (
-                    <Button type="button" variant="quiet-danger" className={ROW_BUTTON} disabled={pending} onClick={() => remove(p)} aria-label={`Remove ${p.name}`}>
-                      Remove
-                    </Button>
+                    // Its own row on phones, apart from the send buttons.
+                    <span className="max-sm:basis-full">
+                      <Button type="button" variant="quiet-danger" className={ROW_BUTTON} disabled={pending} onClick={() => remove(p)} aria-label={`Remove ${p.name}`}>
+                        Remove
+                      </Button>
+                    </span>
                   )}
                 </div>
               )}
@@ -217,32 +221,65 @@ export function CopiedCoordinators({
 }
 
 /**
- * On a published copy's event page, until each is sent or removed: who wasn't emailed, with the same buttons in the
- * same order as Team setup (Send invitation, then Change email). After sending, the card says so.
+ * On a published copy's event page, below Links to share, until each is sent or removed: who wasn't emailed, with
+ * the same buttons in the same order as Team setup (Send invitation, Change email, then Remove, with Undo). After
+ * sending, the card says so.
  */
 export function NotEmailedLine({ eventId, people, teamHref }: { eventId: string; people: CopiedPerson[]; teamHref: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [fixing, setFixing] = useState<string | null>(null);
   const [sent, setSent] = useState<string[]>([]);
-  if (!people.length && !sent.length) return null;
+  const [undo, setUndo] = useState<Undo | null>(null);
+  if (!people.length && !sent.length && !undo) return null;
+  const remove = (p: CopiedPerson) =>
+    start(async () => {
+      const r = await removeCopyCoordinator(eventId, p.id);
+      if (r.error || !r.undoId) {
+        toast(r.error ?? "Couldn't remove them. Try again.");
+        return;
+      }
+      setUndo({ removalId: r.undoId, name: p.name, message: r.message ?? `Removed ${p.name}.`, until: new Date(Date.now() + 10 * 60_000).toISOString() });
+      router.refresh();
+    });
   return (
-    <section id="not-emailed" aria-label="Not emailed yet" className={`mt-6 scroll-mt-6 rounded-lg border px-4 py-3 text-sm leading-6 ${people.length ? "border-warning/50 bg-warning-soft" : "border-success/40 bg-success-soft"}`}>
+    <section
+      id="not-emailed"
+      aria-label="Not emailed yet"
+      className={`mt-6 scroll-mt-6 rounded-lg border px-4 py-3 text-sm leading-6 ${people.length ? "border-warning/50 bg-warning-soft" : "border-success/40 bg-success-soft"}`}
+    >
       {people.length > 0 ? (
         <>
           <p className="font-semibold">
-            <span aria-hidden>◆ </span>
+            <span aria-hidden className="text-warning">◆ </span>
             {people.length === 1 ? `${people[0].name} wasn't emailed` : `${people.length} Coordinators weren't emailed`}
           </p>
           <p>
-            They can&apos;t help run it until they&apos;re invited and accept. Your public page isn&apos;t affected. They show as Not emailed yet in{" "}
+            They can&apos;t help run it until they&apos;re invited and accept. Your public page isn&apos;t affected. Send{" "}
+            {people.length === 1 ? "the invitation" : "each invitation"} here or from{" "}
             <a href={teamHref} className="font-semibold text-brand underline underline-offset-4">
               Team setup
             </a>
-            .
+            , or remove anyone you left out on purpose.
           </p>
         </>
       ) : null}
+      {undo && (
+        <div className="mt-2">
+          <UndoNote
+            until={undo.until}
+            minutes={10}
+            name={undo.name}
+            action={async () => {
+              const r = await undoRemoveCopyCoordinator(eventId, undo.removalId);
+              if (r.ok) setUndo(null);
+              return r;
+            }}
+          >
+            <p>{undo.message}</p>
+          </UndoNote>
+        </div>
+      )}
       {sent.length > 0 && (
         <p className={people.length ? "mt-2" : "font-semibold text-success"} role="status">
           <span aria-hidden>✓ </span>
@@ -250,13 +287,18 @@ export function NotEmailedLine({ eventId, people, teamHref }: { eventId: string;
         </p>
       )}
       {people.length > 0 && (
-        <ul className="mt-2 space-y-2">
+        <ul className="mt-2 space-y-3">
           {people.map((p) => (
             <li key={p.id} className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <span className="min-w-0">
                 <span className="font-medium">{p.name}</span> · {listAnd(p.jobs)}
                 {p.name !== p.email && <span className="block text-muted [overflow-wrap:anywhere]">{p.email}</span>}
-                {!p.canSend && <span className="block text-muted">{p.statusText}</span>}
+                {(!p.canSend || p.status === "expired") && (
+                  <span className={`block ${p.dot ? "font-medium text-warning" : "text-muted"}`}>
+                    {p.dot && <span aria-hidden>◆ </span>}
+                    {p.statusText}
+                  </span>
+                )}
               </span>
               {fixing !== p.id && (
                 <span className="flex flex-wrap items-center gap-1">
@@ -279,11 +321,17 @@ export function NotEmailedLine({ eventId, people, teamHref }: { eventId: string;
                       {sendLabel(p.status, true)}
                     </Button>
                   )}
-                  {p.status === "held" && (
+                  {(p.status === "held" || p.status === "expired") && (
                     <button type="button" className={QUIET_LINK} onClick={() => setFixing(p.id)} aria-label={`Change email for ${p.name}`}>
                       Change email
                     </button>
                   )}
+                  {/* Its own row on phones, apart from the send buttons. */}
+                  <span className="max-sm:basis-full">
+                    <Button type="button" variant="quiet-danger" className={ROW_BUTTON} disabled={pending} onClick={() => remove(p)} aria-label={`Remove ${p.name}`}>
+                      Remove
+                    </Button>
+                  </span>
                 </span>
               )}
               {fixing === p.id && <ChangeEmail eventId={eventId} person={p} send onDone={() => setFixing(null)} />}

@@ -27,8 +27,10 @@
 -- don't hold a team spot, start their 30 days when sent (prepare_invitation_email, which then needs a free spot
 -- and a plan with Coordinators like any new invitation), and are deleted with their job.
 --
--- copy_band_contest_setup and copy_group_event_setup (today's "start from a previous contest" and festival copy)
--- now run the same copy body (copy_event_setup), so the column lists can't drift.
+-- copy_band_contest_setup and copy_group_event_setup (the old "start from a previous contest" and festival copy) run
+-- the same copy body (copy_event_setup). Duplicate event replaced them in the app, so nobody signed in can call them.
+--
+-- What's stored about a copy keeps counts and ids only (event_copies.summary): no names, addresses, or file names.
 --
 -- Safe to run twice.
 -- =============================================================================
@@ -43,6 +45,9 @@ alter table public.invitations add column if not exists copied_from_event_id uui
 alter table public.invitations drop constraint if exists invitations_copied_from_event_id_fkey;
 -- A Coordinator of more than one job on the source: one invitation, every job.
 alter table public.invitations add column if not exists extra_station_ids uuid[] not null default '{}';
+-- When the email was accepted for delivery (the server sets it after sending). A copied Coordinator's invitation
+-- that was "sent" but never delivered (the send was cut off) reads as "Not emailed yet".
+alter table public.invitations add column if not exists delivered_at timestamptz;
 -- A held invitation has no token at all, so nobody (managers included) can see or use one.
 alter table public.invitations alter column token drop not null;
 do $$ begin
@@ -59,7 +64,7 @@ do $$ begin
   end if;
 end $$;
 -- Managers read the new columns (only functions write them).
-grant select (held_for_publish, copied_from_event_id, extra_station_ids) on public.invitations to authenticated;
+grant select (held_for_publish, copied_from_event_id, extra_station_ids, delivered_at) on public.invitations to authenticated;
 grant select, insert, update, delete on public.invitations to service_role;
 -- A held invitation is the hosts' to send or remove: a Volunteer Lead can't delete one (they still cancel the
 -- Coordinator invitations they can see and send).
@@ -245,12 +250,14 @@ begin
            token = gen_random_uuid(),
            email_token = gen_random_uuid(),
            sent_at = now(),
+           delivered_at = null,
            expires_at = now() + interval '30 days'
      where i.id = inv.id;
   else
     update invitations i
        set email_token = gen_random_uuid(),
            sent_at = now(),
+           delivered_at = null,
            expires_at = greatest(i.expires_at, now() + interval '30 days')
      where i.id = inv.id;
   end if;
@@ -307,6 +314,9 @@ create table if not exists public.event_copies (
   created_at         timestamptz not null default now(),
   first_published_at timestamptz
 );
+-- Copied text whose old dates were too long to mark (copy_fit): each field's table, column, row, and fingerprint.
+-- Ids and fingerprints only (no text): listed as a place to change by hand until the field changes.
+alter table public.event_copies add column if not exists unmarked jsonb not null default '[]';
 create unique index if not exists event_copies_request on public.event_copies (created_by, request_id);
 create index if not exists event_copies_source on public.event_copies (source_event_id);
 alter table public.event_copies enable row level security;
@@ -362,80 +372,201 @@ create trigger event_copies_note_publish after update of status on public.events
 
 -- ---------------------------------------------------------------------------
 -- 2b. Old dates typed into copied text (owner decision, built-pages light check): everything comes over except
---     volunteers, personal details, and dates. A date written in copied text (a description, job instructions, a
---     shift note, a thing to bring, the information for directors, a room's note, a file's name) that isn't one of
---     the copy's own days is replaced with "[new date]" in the same transaction, so a retry or a dropped
---     connection never leaves last year's date unmarked. Publishing waits until no "[new date]" is left.
+--     volunteers, personal details, and dates. A date written in copied text (a description, a job's name, location,
+--     or instructions, a shift, a thing to bring, a map or document's name, the information for directors, the meal
+--     details and options, the contact for directors, a room's name or note, a fair zone) that isn't one of the
+--     copy's own days or registration dates (one keep-list for all of it) is replaced with "[new date]" in the same
+--     transaction, so a retry or a dropped connection never leaves last year's date unmarked. Publishing waits until
+--     no "[new date]" is left.
 --
---     The same detection as src/lib/old-dates.ts (blankOldDates); keep the two in step (both are tested):
---       * "Nov 7", "November 7th", "Nov. 7, 2026", "Nov 7-8", each with an optional weekday before it
---         ("Saturday, Nov 7", "Sat Nov 7"); "11/7", "11/7/26", "11/7/2026" (with an optional weekday too).
---       * A date is kept when it's one of p_keep (the copy's days and registration dates): without a year, when
---         its month and day match one; with a weekday, only when the weekday matches that day too.
---       * Never a time ("7:45"), a year on its own, a number that can't be a date ("13/40"), or a fraction
---         ("1/2", "3/4", "1/8").
+--     The same detection as src/lib/old-dates.ts (blankOldDates); keep the two in step (both are tested, with the
+--     same cases: npm test and "dup: blank" in supabase/tests/security_test.sql):
+--       * Dates: "Nov 7", "November 7th", "Nov. 7, 2026", "Nov 7-8"; "7 November", "7th of November";
+--         "2026-11-07"; "11/7", "11/7/26", "11/7/2026"; "11-7-2026"; each with an optional weekday before it
+--         ("Saturday, Nov 7", "Sat 11/7"); and "Saturday the 7th".
+--       * Kept: one of p_keep (without a year, when the month and day match one; with a weekday, only when it's
+--         that day's weekday too); a time ("7:45"); a year on its own; a number that can't be a date ("13/40");
+--         a fraction ("1/2", "3/4"); grades ("Grades 4/5", "6/7/8"); a score out of 10 ("10/10", "9/10");
+--         lowercase "march" or "may" ("march 8 to 5", "you may 2"); a month name used as a name before a count
+--         ("Ask Jan 2 hours before"); and anything inside a web address or a link.
 -- ---------------------------------------------------------------------------
-create or replace function public.copy_blank_dates(p_text text, p_keep date[])
+-- One stretch of text with no web address in it.
+create or replace function public.copy_blank_dates_part(p_text text, p_keep date[])
 returns text
 language plpgsql immutable set search_path = public
 as $$
 declare
-  pat  constant text :=
-    '\y(?:(sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tues|tue|wed|thurs|thur|thu|fri|sat)\.?,?\s+)?'
-    || '(?:(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)'
-    || '\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*[-–]\s*\d{1,2}(?:st|nd|rd|th)?)?(?:,?\s+(\d{4}))?'
-    || '|(\d{1,2})/(\d{1,2})(?:/(\d{4}|\d{2}))?)\y';
+  wd    constant text := '(sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tues|tue|wed|thurs|thur|thu|fri|sat)';
+  mo    constant text := '(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)';
+  pre   constant text := '(?:' || wd || '\.?,?\s+)?';
+  -- 1 month day [year] · 2 day month [year] · 3 ISO · 4 m/d[/y] · 5 m-d-yyyy · 6 weekday the Nth
+  pats  constant text[] := array[
+    '\y' || pre || mo || '\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*[-–]\s*\d{1,2}(?:st|nd|rd|th)?)?(?:,?\s+(\d{4})(?![-/]))?\y',
+    '\y' || pre || '(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?' || mo || '\.?(?:,?\s+(\d{4})(?![-/]))?\y',
+    '\y' || pre || '(\d{4})-(\d{1,2})-(\d{1,2})\y',
+    '\y' || pre || '(\d{1,2})/(\d{1,2})(?:/(\d{4}|\d{2}))?\y',
+    '\y' || pre || '(\d{1,2})-(\d{1,2})-(\d{4})\y',
+    '\y' || wd || ',?\s+the\s+(\d{1,2})(?:st|nd|rd|th)\y'];
+  counted constant text := '^\s+(hours?|hrs?|minutes?|mins?|days?|weeks?|months?|years?|people|persons|volunteers?|kids|children|adults|parents|students|times|spots?|shifts?|tables?|chairs?|tents?|boxes|bags|cases|cups|pounds|lbs|feet|ft|miles|laps|more|or\s+more)\y';
+  months constant text := 'janfebmaraprmayjunjulaugsepoctnovdec';
   rest  text := p_text;
   outp  text := '';
+  k     int;
+  p     int;
+  w     text;
   pos   int;
   whole text;
+  kind  int;
   m     text[];
+  wday  text;
+  mtxt  text;
   mon   int;
   dy    int;
   yr    int;
   hit   date;
   keep  boolean;
+  after text;
+  chain text;
 begin
   if p_text is null or p_text = '' then
     return p_text;
   end if;
   loop
-    pos := regexp_instr(rest, pat, 1, 1, 0, 'i');
+    -- The earliest date of any form (the longest when two start together).
+    pos := 0;
+    for k in 1 .. array_length(pats, 1) loop
+      p := regexp_instr(rest, pats[k], 1, 1, 0, 'i');
+      if p > 0 then
+        w := regexp_substr(rest, pats[k], 1, 1, 'i');
+        if pos = 0 or p < pos or (p = pos and length(w) > length(whole)) then
+          pos := p; whole := w; kind := k;
+        end if;
+      end if;
+    end loop;
     exit when pos = 0;
-    whole := regexp_substr(rest, pat, 1, 1, 'i');
-    m := regexp_match(whole, '^' || pat || '$', 'i');
+    m := regexp_match(whole, '^' || pats[kind] || '$', 'i');
+    after := substr(rest, pos + length(whole));
+    wday := m[1];
+    mtxt := null;
     yr := null;
-    if m[2] is not null then
-      mon := (strpos('janfebmaraprmayjunjulaugsepoctnovdec', lower(left(m[2], 3))) + 2) / 3;
-      dy := m[3]::int;
-      yr := m[4]::int;
+    keep := false;
+    if kind = 1 then
+      mtxt := m[2]; dy := m[3]::int; yr := m[4]::int;
+      mon := (strpos(months, lower(left(mtxt, 3))) + 2) / 3;
+      -- A name before a count ("Ask Jan 2 hours before"), not a date.
+      if yr is null and after ~* counted then keep := true; end if;
+    elsif kind = 2 then
+      dy := m[2]::int; mtxt := m[3]; yr := m[4]::int;
+      mon := (strpos(months, lower(left(mtxt, 3))) + 2) / 3;
+    elsif kind = 3 then
+      yr := m[2]::int; mon := m[3]::int; dy := m[4]::int;
+    elsif kind = 4 then
+      mon := m[2]::int; dy := m[3]::int;
+      if m[4] is not null then
+        yr := case when length(m[4]) = 2 then 2000 + m[4]::int else m[4]::int end;
+      end if;
+      -- Grades ("6/7/8", "Grades 4/5") and part of a longer run of numbers: not a date, and kept whole.
+      chain := substring(after from '^((?:/\d+)+)');
+      if chain is not null then
+        whole := whole || chain;
+        after := substr(after, length(chain) + 1);
+        keep := true;
+      elsif left(rest, pos - 1) ~* '(\ygrades?|\ygr\.?)\s*$' or left(rest, pos - 1) ~ '\d/$' then
+        keep := true;
+      elsif yr is null and (dy = 10                                          -- a score out of 10 ("9/10")
+                             or (dy in (2, 3, 4, 8, 16) and mon < dy)) then   -- a fraction ("1/2", "3/4")
+        keep := true;
+      end if;
+    elsif kind = 5 then
+      mon := m[2]::int; dy := m[3]::int; yr := m[4]::int;
     else
-      mon := m[5]::int;
-      dy := m[6]::int;
-      if m[7] is not null then
-        yr := case when length(m[7]) = 2 then 2000 + m[7]::int else m[7]::int end;
+      dy := m[2]::int; mon := null;
+    end if;
+    -- Lowercase "march" and "may" are words ("march 8 to 5", "you may 2").
+    if mtxt is not null and mtxt in ('march', 'may') then
+      keep := true;
+    end if;
+    if not keep then
+      if kind = 6 then
+        -- "Saturday the 7th": kept when one of the copy's days is a Saturday the 7th.
+        select x into hit from unnest(p_keep) x
+         where extract(day from x)::int = dy and lower(to_char(x, 'Dy')) = lower(left(wday, 3))
+         order by x limit 1;
+        keep := hit is not null;
+      elsif mon < 1 or mon > 12 or dy < 1 or dy > 31 then
+        keep := true;                                  -- not a date ("13/40")
+      else
+        select x into hit from unnest(p_keep) x
+         where extract(month from x)::int = mon and extract(day from x)::int = dy
+           and (yr is null or extract(year from x)::int = yr)
+         order by x limit 1;
+        keep := hit is not null and (wday is null or lower(left(wday, 3)) = lower(to_char(hit, 'Dy')));
       end if;
     end if;
-    if mon < 1 or mon > 12 or dy < 1 or dy > 31 then
-      keep := true;                                    -- not a date ("13/40")
-    elsif m[2] is null and yr is null and dy in (2, 3, 4, 8, 16) and mon < dy then
-      keep := true;                                    -- a fraction ("1/2", "3/4")
-    else
-      select k into hit from unnest(p_keep) k
-       where to_char(k, 'MM-DD') = lpad(mon::text, 2, '0') || '-' || lpad(dy::text, 2, '0')
-         and (yr is null or extract(year from k)::int = yr)
-       order by k limit 1;
-      keep := hit is not null
-              and (m[1] is null or lower(left(m[1], 3)) = lower(to_char(hit, 'Dy')));
-    end if;
     outp := outp || left(rest, pos - 1) || case when keep then whole else '[new date]' end;
-    rest := substr(rest, pos + length(whole));
+    rest := after;
   end loop;
   return outp || rest;
 end;
 $$;
+revoke execute on function public.copy_blank_dates_part(text, date[]) from public, anon;
+grant execute on function public.copy_blank_dates_part(text, date[]) to authenticated, service_role;
+
+-- The whole text: web addresses and links ("https://…", "www.…", "example.org/…", "[text](url)") are left as they are.
+create or replace function public.copy_blank_dates(p_text text, p_keep date[])
+returns text
+language plpgsql immutable set search_path = public
+as $$
+declare
+  link constant text := '\[[^]\n]*\]\([^)\s]*\)|(?:https?://|www\.)[^\s<>"'']+|\y[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|edu|gov|us|io|co|info)(?:/[^\s<>"'']*)?';
+  rest text := p_text;
+  outp text := '';
+  pos  int;
+  w    text;
+begin
+  if p_text is null or p_text = '' then
+    return p_text;
+  end if;
+  loop
+    pos := regexp_instr(rest, link, 1, 1, 0, 'i');
+    exit when pos = 0;
+    w := regexp_substr(rest, link, 1, 1, 'i');
+    outp := outp || public.copy_blank_dates_part(left(rest, pos - 1), p_keep) || w;
+    rest := substr(rest, pos + length(w));
+  end loop;
+  return outp || public.copy_blank_dates_part(rest, p_keep);
+end;
+$$;
 revoke execute on function public.copy_blank_dates(text, date[]) from public, anon;
 grant execute on function public.copy_blank_dates(text, date[]) to authenticated, service_role;
+
+-- Copied text with its old dates marked, kept within the field's limit (p_max). When "[new date]" (longer than
+-- "11/7") would push it over, nothing is cut: the text comes over as it was, and the copy remembers the field
+-- (event_copies.unmarked, by its fingerprint) so it's listed as a place to change the dates by hand.
+create or replace function public.copy_fit(p_text text, p_keep date[], p_max integer)
+returns text
+language plpgsql immutable set search_path = public
+as $$
+declare
+  b text := public.copy_blank_dates(p_text, p_keep);
+begin
+  if b is null or char_length(b) <= p_max or char_length(b) <= char_length(p_text) then
+    return b;
+  end if;
+  return p_text;
+end;
+$$;
+revoke execute on function public.copy_fit(text, date[], integer) from public, anon;
+grant execute on function public.copy_fit(text, date[], integer) to authenticated, service_role;
+
+-- Text that still holds an old date (one copy_fit couldn't mark): its fingerprint, or null.
+create or replace function public.copy_unmarked_hash(p_text text, p_keep date[])
+returns text
+language sql immutable set search_path = public
+as $$
+  select case when p_text is not null and public.copy_blank_dates(p_text, p_keep) <> p_text then md5(p_text) end;
+$$;
+revoke execute on function public.copy_unmarked_hash(text, date[]) from public, anon, authenticated;
 
 -- How many "[new date]" markers a text holds.
 create or replace function public.copy_marker_count(p_text text)
@@ -447,50 +578,87 @@ $$;
 revoke execute on function public.copy_marker_count(text) from public, anon;
 grant execute on function public.copy_marker_count(text) to authenticated, service_role;
 
--- Every spot on a copy that still holds "[new date]": its step (the step bar's key), what it is, the job it's on,
--- and how many. Empty for an event that wasn't duplicated. Not for people to call (copy_new_date_spots checks who).
+-- Every place on a copy that still holds "[new date]" (or an old date too long to mark: copy_fit), counted under
+-- the page where it's fixed: its step (the step bar's key; "files" for a map or document's name, fixed in Event
+-- settings' Maps and documents), what it is (the field: newDateSpotHref's #new-date-[what]), the job it's on,
+-- a detail (a shift's start time, a file's name, a room's name), and how many. Empty for an event that wasn't
+-- duplicated. Not for people to call (copy_new_date_spots checks who).
 create or replace function public.copy_new_date_spots_any(p_event uuid)
 returns jsonb
 language sql stable security definer set search_path = public
 as $$
   with ev as (
-    select e.id, e.event_type::text as kind,
-           case when e.event_type::text in ('band_contest', 'group_event') then 'volunteers' else 'jobs' end as jobs_step
+    select e.id, e.event_type::text as kind, e.timezone,
+           case when e.event_type::text in ('band_contest', 'group_event') then 'volunteers' else 'jobs' end as jobs_step,
+           c.unmarked
       from events e join event_copies c on c.event_id = e.id where e.id = p_event
-  ), spots as (
-    select 'details' as step, 'The description' as what, null::uuid as station_id, null::text as job, 1 as ord,
-           public.copy_marker_count(e.public_notes) as n
+  ), um as (
+    -- Old dates copy_fit couldn't mark, until the field is changed (its fingerprint no longer matches).
+    select x ->> 't' as t, x ->> 'c' as c, (x ->> 'id')::uuid as id, (x ->> 'i')::int as i, x ->> 'h' as h
+      from ev, jsonb_array_elements(ev.unmarked) x
+  ), fields as (
+    select 'details' as step, 'description' as what, null::uuid as station_id, null::text as job, null::text as detail,
+           1 as ord, e.public_notes as v, exists (select 1 from um where t = 'events' and c = 'public_notes' and h = md5(e.public_notes)) as old
       from events e join ev on ev.id = e.id
     union all
-    select 'details', 'A map or document''s name', null, f.label, 2, public.copy_marker_count(f.label)
+    select 'files', case when f.content_type like 'image/%' or f.label ~* 'map' then 'file' else 'document' end, null, null, f.label,
+           2, f.label, exists (select 1 from um where t = 'event_files' and id = f.id and h = md5(f.label))
       from event_files f join ev on ev.id = f.event_id
     union all
-    select 'registration', 'The information for directors', null, null, 3, public.copy_marker_count(e.director_info)
+    select 'registration', 'director-info', null, null, null, 3, e.director_info,
+           exists (select 1 from um where t = 'events' and c = 'director_info' and h = md5(e.director_info))
       from events e join ev on ev.id = e.id
     union all
-    -- Only a band contest offering meals: otherwise there's no box for it (and directors never see it).
-    select 'registration', 'The meal details', null, null, 4, public.copy_marker_count(e.meal_details)
+    -- Meals only on a band contest offering them: otherwise there's no box for them (and directors never see them).
+    select 'registration', 'meal-details', null, null, null, 4, e.meal_details,
+           exists (select 1 from um where t = 'events' and c = 'meal_details' and h = md5(e.meal_details))
       from events e join ev on ev.id = e.id where coalesce(e.meals_offered, false) and e.event_type::text = 'band_contest'
     union all
-    select 'rooms', 'A room''s note', null, r.name, 5, public.copy_marker_count(r.note)
+    select 'registration', 'meal-option', null, null, o, 5, o,
+           exists (select 1 from um where t = 'meal_options' and h = md5(o))
+      from events e join ev on ev.id = e.id, unnest(e.meal_options) o
+     where coalesce(e.meals_offered, false) and e.event_type::text = 'band_contest'
+    union all
+    select 'registration', 'contact', null, null, null, 6, d.name,
+           exists (select 1 from um where t = 'event_director_contacts' and h = md5(d.name))
+      from event_director_contacts d join ev on ev.id = d.event_id
+    union all
+    select 'rooms', 'room-name', null, r.name, null, 7 + r.path_order, r.name,
+           exists (select 1 from um where t = 'rooms' and c = 'name' and id = r.id and h = md5(r.name))
       from rooms r join ev on ev.id = r.event_id
     union all
-    select ev.jobs_step, 'Instructions', st.id, st.name, 6 + st.sort_order * 10,
-           public.copy_marker_count(st.instructions) + public.copy_marker_count(st.location)
-      from stations st join ev on ev.id = st.event_id
+    select 'rooms', 'room-note', null, r.name, null, 7 + r.path_order, r.note,
+           exists (select 1 from um where t = 'rooms' and c = 'note' and id = r.id and h = md5(r.note))
+      from rooms r join ev on ev.id = r.event_id
     union all
-    select ev.jobs_step, 'A shift', st.id, st.name, 7 + st.sort_order * 10,
-           sum(public.copy_marker_count(sh.title) + public.copy_marker_count(sh.description))::int
+    select ev.jobs_step, 'zone', null, null, z.name, 1000, z.name,
+           exists (select 1 from um where t = 'fair_zones' and id = z.id and h = md5(z.name))
+      from fair_zones z join ev on ev.id = z.event_id
+    union all
+    select ev.jobs_step, x.what, st.id, st.name, null, 2000 + st.sort_order * 10 + x.n, x.v,
+           exists (select 1 from um where t = 'stations' and c = x.c and id = st.id and h = md5(x.v))
+      from stations st join ev on ev.id = st.event_id,
+           lateral (values ('job-name', 'name', st.name, 1), ('location', 'location', st.location, 2),
+                           ('instructions', 'instructions', st.instructions, 3)) x(what, c, v, n)
+    union all
+    -- Each shift on its own ("A Litter pickup shift (10:30 AM)").
+    select ev.jobs_step, 'shift', st.id, st.name, to_char(sh.starts_at at time zone ev.timezone, 'FMHH12:MI AM'),
+           2000 + st.sort_order * 10 + 4, concat_ws(' ', sh.title, sh.description),
+           exists (select 1 from um where t = 'shifts' and id = sh.id and (h = md5(sh.title) or h = md5(sh.description)))
       from shifts sh join stations st on st.id = sh.station_id join ev on ev.id = sh.event_id
-     group by ev.jobs_step, st.id, st.name, st.sort_order
     union all
-    select ev.jobs_step, 'A thing to bring', st.id, st.name, 8 + st.sort_order * 10,
-           sum(public.copy_marker_count(i.name))::int
+    select ev.jobs_step, 'item', st.id, st.name, null, 2000 + st.sort_order * 10 + 5, i.name,
+           exists (select 1 from um where t = 'station_items' and id = i.id and h = md5(i.name))
       from station_items i join stations st on st.id = i.station_id join ev on ev.id = i.event_id
-     group by ev.jobs_step, st.id, st.name, st.sort_order
+  ), spots as (
+    select step, what, station_id, job, detail, min(ord) as ord,
+           sum(public.copy_marker_count(v) + case when old then 1 else 0 end)::int as n, bool_or(old) as old
+      from fields
+     group by step, what, station_id, job, detail
   )
-  select coalesce(jsonb_agg(jsonb_build_object('step', step, 'what', what, 'station_id', station_id, 'job', job, 'count', n)
-                            order by ord, job), '[]')
+  select coalesce(jsonb_agg(jsonb_build_object('step', step, 'what', what, 'station_id', station_id, 'job', job,
+                                               'detail', detail, 'count', n, 'unmarked', old)
+                            order by ord, job, detail), '[]')
     from spots where n > 0;
 $$;
 revoke execute on function public.copy_new_date_spots_any(uuid) from public, anon, authenticated;
@@ -522,14 +690,15 @@ begin
      and exists (select 1 from event_copies c where c.event_id = new.id) then
     spots := public.copy_new_date_spots_any(new.id);
     if jsonb_array_length(spots) > 0 then
-      select string_agg(format('%s (%s %s)', s.label, s.n, case when s.n = 1 then 'spot' else 'spots' end), ', ' order by s.ord)
+      select string_agg(format('%s (%s %s)', s.label, s.n, case when s.n = 1 then 'place' else 'places' end), ', ' order by s.ord)
         into words
         from (select case x ->> 'step' when 'details' then 'Details' when 'rooms' then 'Rooms and schedule'
+                                       when 'files' then 'Maps and documents'
                                        when 'registration' then case when new.event_type::text = 'group_event' then 'Registration' else 'Band registration' end
                                        when 'volunteers' then case when new.event_type::text = 'group_event' then 'Volunteers' else 'Jobs and shifts' end
                                        else 'Jobs and shifts' end as label,
                      sum((x ->> 'count')::int) as n,
-                     min(array_position(array['details', 'rooms', 'registration', 'jobs', 'volunteers'], x ->> 'step')) as ord
+                     min(array_position(array['details', 'files', 'rooms', 'registration', 'jobs', 'volunteers'], x ->> 'step')) as ord
                 from jsonb_array_elements(spots) x group by 1) s;
       raise exception 'Add the new date first. "[new date]" is still in %.', words using errcode = 'P0001';
     end if;
@@ -555,6 +724,24 @@ as $$
    limit 1;
 $$;
 revoke execute on function public.team_member_name(uuid, text) from public, anon, authenticated;
+
+-- The same, for a copy's hosts: the Account Host and Co-hosts of every event see names from the account's team; a
+-- Co-host of only this event sees names only for this event's team (the account's hosts and this event's people).
+create or replace function public.team_member_name_for(p_event uuid, p_email text)
+returns text
+language sql stable security definer set search_path = public
+as $$
+  select case
+    when public.is_org_admin(e.organization_id) then public.team_member_name(e.organization_id, p_email)
+    else (select nullif(p.full_name, '') from profiles p
+           where lower(p.email::text) = lower(btrim(p_email))
+             and (exists (select 1 from organization_members m where m.organization_id = e.organization_id and m.user_id = p.id)
+                  or exists (select 1 from event_staff s where s.event_id = e.id and s.user_id = p.id))
+           limit 1)
+  end
+  from events e where e.id = p_event;
+$$;
+revoke execute on function public.team_member_name_for(uuid, text) from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 3. The copy body: one list of what comes over, used by duplicate_event and the two older copy functions.
@@ -606,9 +793,10 @@ begin
     end if;
     keep := keep || array_remove(array[deadline, opens], null);
 
+    -- Each copied text within its limit (copy_fit: a marker never pushes it over).
     update events set
       classifications             = src.classifications,
-      director_info               = public.copy_blank_dates(src.director_info, keep),
+      director_info               = public.copy_fit(src.director_info, keep, 3000),
       payment_link                = src.payment_link,
       chaperone_limit             = src.chaperone_limit,
       ready_minutes_before        = src.ready_minutes_before,
@@ -616,8 +804,8 @@ begin
       equipment_spots             = src.equipment_spots,
       meals_offered               = src.meals_offered,
       meal_price_cents            = src.meal_price_cents,
-      meal_details                = public.copy_blank_dates(src.meal_details, keep),
-      meal_options                = src.meal_options,
+      meal_details                = public.copy_fit(src.meal_details, keep, 1000),
+      meal_options                = array(select public.copy_fit(o, keep, 30) from unnest(src.meal_options) with ordinality u(o, ord) order by u.ord),
       room_interval_minutes       = src.room_interval_minutes,
       room_passing_minutes        = src.room_passing_minutes,
       max_groups                  = src.max_groups,
@@ -629,19 +817,19 @@ begin
     where id = p_to;
 
     insert into event_director_contacts (event_id, name, phone, email)
-    select p_to, name, phone, email from event_director_contacts where event_id = p_from
+    select p_to, public.copy_fit(name, keep, 150), phone, email from event_director_contacts where event_id = p_from
     on conflict (event_id) do nothing;
   end if;
 
   if kind = 'group_event' then
     insert into rooms (event_id, name, note, path_order, minutes)
-    select p_to, name, public.copy_blank_dates(note, keep), path_order, minutes from rooms where event_id = p_from;
+    select p_to, public.copy_fit(name, keep, 80), public.copy_fit(note, keep, 200), path_order, minutes from rooms where event_id = p_from;
     get diagnostics rooms_n = row_count;
   end if;
 
   if kind = 'fair' then
     insert into fair_zones (event_id, name)
-    select p_to, name from fair_zones where event_id = p_from order by created_at
+    select p_to, public.copy_fit(name, keep, 60) from fair_zones where event_id = p_from order by created_at
     on conflict (event_id, name) do nothing;
     get diagnostics zones_n = row_count;
   end if;
@@ -652,15 +840,18 @@ begin
     insert into stations (event_id, name, station_type, location, instructions, sort_order, checkpoint_kind,
                           checkpoint_order, due_minutes_before_warm_up, adults_only, zone, details_saved_at,
                           signup_kind, showing, min_adults)
-    values (p_to, st.name, st.station_type, public.copy_blank_dates(st.location, keep), public.copy_blank_dates(st.instructions, keep),
+    -- A job's Location comes over too (jobs made before the job redesign can have one): the job form shows the
+    -- box whenever it holds "[new date]", so every marker sits in a box the organizer can reach.
+    values (p_to, public.copy_fit(st.name, keep, 80), st.station_type, public.copy_fit(st.location, keep, 200),
+            public.copy_fit(st.instructions, keep, 2000),
             st.sort_order, st.checkpoint_kind,
-            st.checkpoint_order, st.due_minutes_before_warm_up, st.adults_only, st.zone,
+            st.checkpoint_order, st.due_minutes_before_warm_up, st.adults_only, public.copy_fit(st.zone, keep, 60),
             case when st.details_saved_at is not null then now() end, st.signup_kind, st.showing, st.min_adults)
     returning id into new_id;
     jobs_n := jobs_n + 1;
     map := map || jsonb_build_object(st.id::text, new_id);
     insert into shifts (station_id, event_id, title, description, starts_at, ends_at, max_capacity, adults_only, min_age)
-    select new_id, p_to, public.copy_blank_dates(title, keep), public.copy_blank_dates(description, keep),
+    select new_id, p_to, public.copy_fit(title, keep, 120), public.copy_fit(description, keep, 2000),
            ((starts_at at time zone src.timezone) + make_interval(days => p_days)) at time zone dst.timezone,
            ((ends_at   at time zone src.timezone) + make_interval(days => p_days)) at time zone dst.timezone,
            max_capacity, adults_only, min_age
@@ -668,7 +859,7 @@ begin
     get diagnostics n = row_count;
     shifts_n := shifts_n + n;
     insert into station_items (station_id, event_id, name, needed, sort_order)
-    select new_id, p_to, public.copy_blank_dates(name, keep), needed, sort_order from station_items where station_id = st.id;
+    select new_id, p_to, public.copy_fit(name, keep, 100), needed, sort_order from station_items where station_id = st.id;
     get diagnostics n = row_count;
     items_n := items_n + n;
   end loop;
@@ -679,7 +870,9 @@ begin
     'deadline_was', src.band_registration_deadline, 'opens_on_was', src.band_registration_opens_on,
     'deadline_left_blank', src.band_registration_deadline is not null and deadline is null,
     'opens_on_left_blank', src.band_registration_opens_on is not null and opens is null,
-    'station_map', map);
+    'station_map', map,
+    -- The one keep-list (the copy's days and registration dates), for the rest of the copied text.
+    'keep', to_jsonb(keep));
 end;
 $$;
 revoke execute on function public.copy_event_setup(uuid, uuid, integer) from public, anon, authenticated;
@@ -717,8 +910,8 @@ begin
   return jsonb_build_object('jobs', r -> 'jobs', 'deadline', r -> 'deadline');
 end;
 $$;
-revoke execute on function public.copy_band_contest_setup(uuid, uuid) from public, anon;
-grant execute on function public.copy_band_contest_setup(uuid, uuid) to authenticated;
+-- Duplicate event replaced it in the app (nothing calls it): nobody signed in can call it either.
+revoke execute on function public.copy_band_contest_setup(uuid, uuid) from public, anon, authenticated;
 
 create or replace function public.copy_group_event_setup(p_from uuid, p_to uuid)
 returns jsonb
@@ -752,8 +945,8 @@ begin
   return jsonb_build_object('rooms', r -> 'rooms', 'jobs', r -> 'jobs', 'deadline', r -> 'deadline');
 end;
 $$;
-revoke execute on function public.copy_group_event_setup(uuid, uuid) from public, anon;
-grant execute on function public.copy_group_event_setup(uuid, uuid) to authenticated;
+-- Duplicate event replaced it in the app (nothing calls it): nobody signed in can call it either.
+revoke execute on function public.copy_group_event_setup(uuid, uuid) from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 4. duplicate_event
@@ -787,6 +980,9 @@ declare
   pending  jsonb;
   steps    text[];
   summary  jsonb;
+  keep     date[];
+  unmarked jsonb;
+  file_ids jsonb := '[]';
 begin
   if me is null then
     raise exception 'Please sign in first' using errcode = '42501';
@@ -798,7 +994,15 @@ begin
   perform pg_advisory_xact_lock(hashtext('duplicate_event:' || me::text || ':' || p_request_id::text));
   select * into existing from event_copies c where c.created_by = me and c.request_id = p_request_id;
   if existing.event_id is not null then
-    return jsonb_build_object('event_id', existing.event_id, 'existing', true, 'summary', existing.summary);
+    -- The stored summary keeps counts and ids only: the files to copy again come from their rows.
+    return jsonb_build_object('event_id', existing.event_id, 'existing', true, 'summary', existing.summary,
+      'files', (select coalesce(jsonb_agg(jsonb_build_object('id', ef.id, 'label', ef.label, 'file_name', ef.file_name,
+                                                             'from', sf.path, 'to', ef.path)), '[]')
+                  from jsonb_array_elements(existing.summary -> 'files') x
+                  join event_files ef on ef.id = (x ->> 'id')::uuid
+                  join event_files sf on sf.id = (x ->> 'source_id')::uuid),
+      'coordinators', (select coalesce(jsonb_agg(jsonb_build_object('invitation_id', i.id)), '[]')
+                         from invitations i where i.event_id = existing.event_id and i.held_for_publish));
   end if;
 
   select * into src from events where id = p_from;
@@ -819,7 +1023,7 @@ begin
     raise exception 'Pick the new first day.' using errcode = 'P0001';
   end if;
   if p_new_first_day < today then
-    raise exception 'Pick today or a later date for the new first day.' using errcode = 'P0001';
+    raise exception 'Pick today or a later date (% or after).', to_char(today, 'Mon FMDD, YYYY') using errcode = 'P0001';
   end if;
   d := p_new_first_day - src.starts_on;
 
@@ -842,13 +1046,15 @@ begin
           ((src.window_start at time zone src.timezone) + make_interval(days => d)) at time zone src.timezone,
           ((src.window_end   at time zone src.timezone) + make_interval(days => d)) at time zone src.timezone,
           src.venue_name, src.venue_address, src.venue_place_id, src.venue_lat, src.venue_lng,
-          public.copy_blank_dates(src.public_notes, array(select x::date from generate_series(p_new_first_day, src.ends_on + d, interval '1 day') x)),
-          src.show_brand,
+          null, src.show_brand,
           src.classifications, false, false, me)
   returning id into new_id;
 
   setup := public.copy_event_setup(p_from, new_id, d);
   map := setup -> 'station_map';
+  -- One keep-list for all copied text: the copy's days and its registration dates.
+  keep := array(select x::date from jsonb_array_elements_text(setup -> 'keep') x);
+  update events set public_notes = public.copy_fit(src.public_notes, keep, 4000) where id = new_id;
 
   -- Coordinators: account members go straight onto their jobs; everyone else gets one held invitation (all their
   -- jobs). Invitations nobody accepted on the source don't come over. A Coordinator who can't be copied is
@@ -912,11 +1118,11 @@ begin
       vis := null;
     end if;
     insert into event_files (event_id, label, path, file_name, content_type, size_bytes, audiences, visible_from, created_by)
-    values (new_id, public.copy_blank_dates(f.label, array(select x::date from generate_series(p_new_first_day, src.ends_on + d, interval '1 day') x)),
-            new_path, f.file_name, f.content_type, f.size_bytes, f.audiences, vis, me)
+    values (new_id, public.copy_fit(f.label, keep, 120), new_path, f.file_name, f.content_type, f.size_bytes, f.audiences, vis, me)
     returning id into fid;
     files := files || jsonb_build_array(jsonb_build_object('id', fid, 'label', f.label, 'file_name', f.file_name,
                                                              'from', f.path, 'to', new_path));
+    file_ids := file_ids || jsonb_build_array(jsonb_build_object('id', fid, 'source_id', f.id));
   end loop;
 
   -- The copied steps, each "Copied: check it" until opened.
@@ -929,11 +1135,49 @@ begin
   -- A new event has no "saved by" history: copying isn't a save.
   delete from event_saves where event_id = new_id;
 
+  -- Old dates too long to mark (copy_fit): each field, by row and fingerprint, listed as a place until it changes.
+  select coalesce(jsonb_agg(u), '[]') into unmarked from (
+    select jsonb_build_object('t', 'events', 'c', x.c, 'h', x.h) as u
+      from events e, lateral (values ('public_notes', public.copy_unmarked_hash(e.public_notes, keep)),
+                                     ('director_info', public.copy_unmarked_hash(e.director_info, keep)),
+                                     ('meal_details', public.copy_unmarked_hash(e.meal_details, keep))) x(c, h)
+     where e.id = new_id and x.h is not null
+    union all
+    select jsonb_build_object('t', 'meal_options', 'h', public.copy_unmarked_hash(o, keep))
+      from events e, unnest(e.meal_options) o where e.id = new_id and public.copy_unmarked_hash(o, keep) is not null
+    union all
+    select jsonb_build_object('t', 'event_director_contacts', 'h', public.copy_unmarked_hash(dc.name, keep))
+      from event_director_contacts dc where dc.event_id = new_id and public.copy_unmarked_hash(dc.name, keep) is not null
+    union all
+    select jsonb_build_object('t', 'rooms', 'c', x.c, 'id', rm.id, 'h', x.h)
+      from rooms rm, lateral (values ('name', public.copy_unmarked_hash(rm.name, keep)), ('note', public.copy_unmarked_hash(rm.note, keep))) x(c, h)
+     where rm.event_id = new_id and x.h is not null
+    union all
+    select jsonb_build_object('t', 'fair_zones', 'id', z.id, 'h', public.copy_unmarked_hash(z.name, keep))
+      from fair_zones z where z.event_id = new_id and public.copy_unmarked_hash(z.name, keep) is not null
+    union all
+    select jsonb_build_object('t', 'stations', 'c', x.c, 'id', st.id, 'h', x.h)
+      from stations st, lateral (values ('name', public.copy_unmarked_hash(st.name, keep)),
+                                        ('location', public.copy_unmarked_hash(st.location, keep)),
+                                        ('instructions', public.copy_unmarked_hash(st.instructions, keep))) x(c, h)
+     where st.event_id = new_id and x.h is not null
+    union all
+    select jsonb_build_object('t', 'shifts', 'id', sh.id, 'h', x.h)
+      from shifts sh, lateral (values (public.copy_unmarked_hash(sh.title, keep)), (public.copy_unmarked_hash(sh.description, keep))) x(h)
+     where sh.event_id = new_id and x.h is not null
+    union all
+    select jsonb_build_object('t', 'station_items', 'id', i.id, 'h', public.copy_unmarked_hash(i.name, keep))
+      from station_items i where i.event_id = new_id and public.copy_unmarked_hash(i.name, keep) is not null
+    union all
+    select jsonb_build_object('t', 'event_files', 'id', ef.id, 'h', public.copy_unmarked_hash(ef.label, keep))
+      from event_files ef where ef.event_id = new_id and public.copy_unmarked_hash(ef.label, keep) is not null
+  ) all_unmarked;
+
+  -- What's kept: counts and ids only (no names, addresses, or file names), so a retry returns the same counts.
+  -- The full lists (who's held, which files to copy) come back with this answer only.
   summary := jsonb_build_object(
     'kind', src.event_type::text,
-    'source', jsonb_build_object('id', src.id, 'name', src.name, 'starts_on', src.starts_on, 'ends_on', src.ends_on,
-                                 'status', src.status::text),
-    'name', nm,
+    'source', jsonb_build_object('id', src.id, 'starts_on', src.starts_on, 'ends_on', src.ends_on, 'status', src.status::text),
     'starts_on', p_new_first_day,
     'ends_on', src.ends_on + d,
     'days_moved', d,
@@ -947,17 +1191,19 @@ begin
                        'deadline_left_blank', setup -> 'deadline_left_blank',
                        'opens_on', setup -> 'opens_on', 'opens_on_was', setup -> 'opens_on_was',
                        'opens_on_left_blank', setup -> 'opens_on_left_blank') end,
-    'coordinators', jsonb_build_object('held', held, 'added', added, 'skipped', skipped),
+    'coordinators', jsonb_build_object('held', jsonb_array_length(held), 'added', jsonb_array_length(added),
+                                       'skipped', jsonb_array_length(skipped)),
     'not_copied_invitations', pending,
     'volunteers_on_source', (select count(*) from volunteers v where v.event_id = p_from),
     'bands_on_source', (select count(*) from bands b where b.event_id = p_from),
-    'files', files,
+    'files', file_ids,
     'steps', to_jsonb(steps));
 
-  insert into event_copies (event_id, source_event_id, organization_id, created_by, request_id, days_moved, summary)
-  values (new_id, p_from, src.organization_id, me, p_request_id, d, summary);
+  insert into event_copies (event_id, source_event_id, organization_id, created_by, request_id, days_moved, summary, unmarked)
+  values (new_id, p_from, src.organization_id, me, p_request_id, d, summary, unmarked);
 
-  return jsonb_build_object('event_id', new_id, 'existing', false, 'summary', summary);
+  return jsonb_build_object('event_id', new_id, 'existing', false, 'summary', summary, 'files', files,
+                            'coordinators', jsonb_build_object('held', held, 'skipped', skipped));
 end;
 $$;
 revoke execute on function public.duplicate_event(uuid, date, text, uuid) from public, anon;
@@ -990,9 +1236,11 @@ grant execute on function public.drop_uncopied_event_files(uuid, uuid[]) to auth
 -- ---------------------------------------------------------------------------
 -- Every invitation that came over with the copy, in job order: not emailed yet (held), sent, expired, or
 -- accepted; for one not sent (or expired), whether it can be sent now and, if not, why (the plan or a full team).
+drop function if exists public.copy_coordinators(uuid);
 create or replace function public.copy_coordinators(p_event uuid)
 returns table (invitation_id uuid, name text, email text, station_id uuid, jobs text[], status text,
-               sent_at timestamptz, expires_at timestamptz, accepted_at timestamptz, can_send boolean, why_not text)
+               sent_at timestamptz, expires_at timestamptz, accepted_at timestamptz, can_send boolean, why_not text,
+               station_ids uuid[])
 language plpgsql stable security definer set search_path = public
 as $$
 #variable_conflict use_column
@@ -1005,7 +1253,7 @@ begin
            -- A name once they accept, or when they're already on this account's team; otherwise the address
            -- (so changing the address to anyone's never shows whose it is).
            coalesce((select nullif(p.full_name, '') from profiles p where p.id = i.accepted_by),
-                    public.team_member_name(i.organization_id, i.email::text),
+                    public.team_member_name_for(p_event, i.email::text),
                     i.email::text),
            i.email::text,
            i.station_id,
@@ -1016,7 +1264,9 @@ begin
            case when i.held_for_publish then null else i.expires_at end,
            i.accepted_at,
            x.status in ('held', 'expired') and x.why is null,
-           x.why
+           x.why,
+           -- Every job it covers, by id (jobs are matched by id, never by name).
+           array_remove(array[i.station_id] || i.extra_station_ids, null)
       from invitations i
       cross join lateral (
         select s.status,
@@ -1025,6 +1275,8 @@ begin
           from (select case when i.accepted_at is not null then 'accepted'
                             when i.held_for_publish then 'held'
                             when i.expires_at < now() then 'expired'
+                            -- Sent, but the email was never accepted for delivery (cut off partway): not emailed yet.
+                            when i.delivered_at is null and i.sent_at < now() - interval '2 minutes' then 'held'
                             else 'sent' end as status) s
       ) x
      where i.event_id = p_event and i.copied_from_event_id is not null
@@ -1079,7 +1331,8 @@ begin
   if inv.accepted_at is not null then
     raise exception 'They''ve accepted, so they''re on the team: remove them in Team setup.' using errcode = 'P0001';
   end if;
-  if not inv.held_for_publish and inv.expires_at >= now() then
+  if not inv.held_for_publish and inv.expires_at >= now()
+     and not (inv.delivered_at is null and inv.sent_at < now() - interval '2 minutes') then
     raise exception 'This invitation was sent. Use Cancel invitation instead.' using errcode = 'P0001';
   end if;
   -- Kept only while Undo works (10 minutes): a removed person's address isn't kept longer than that.
@@ -1102,6 +1355,8 @@ declare
   rem copy_invitation_removals;
   inv invitations;
 begin
+  -- Never older than Undo allows: cleared whenever it's read (and daily, purge_copy_invitation_removals).
+  delete from copy_invitation_removals where removed_at < now() - interval '10 minutes';
   select * into rem from copy_invitation_removals where id = p_removal for update;
   if rem.id is null then
     raise exception 'That can''t be undone anymore.' using errcode = 'P0001';
@@ -1132,7 +1387,57 @@ $$;
 revoke execute on function public.undo_remove_copy_invitation(uuid) from public, anon;
 grant execute on function public.undo_remove_copy_invitation(uuid) to authenticated;
 
--- "Fix the address" on a Coordinator who hasn't been emailed yet.
+-- Who was removed from this copy in the last 10 minutes (Undo still works): Team setup doesn't offer them under
+-- "From your team" until then. Clears older removals as it reads.
+create or replace function public.copy_recent_removals(p_event uuid)
+returns setof text
+language plpgsql volatile security definer set search_path = public
+as $$
+begin
+  if not public.is_event_admin(p_event) then
+    raise exception 'You don''t have permission to do that.' using errcode = '42501';
+  end if;
+  delete from copy_invitation_removals where removed_at < now() - interval '10 minutes';
+  return query select distinct lower(r.invitation ->> 'email') from copy_invitation_removals r where r.event_id = p_event;
+end;
+$$;
+revoke execute on function public.copy_recent_removals(uuid) from public, anon;
+grant execute on function public.copy_recent_removals(uuid) to authenticated;
+
+-- The daily clean-up (src/lib/retention.ts): a removed Coordinator's address is gone once Undo can't bring it back.
+create or replace function public.purge_copy_invitation_removals()
+returns integer
+language plpgsql security definer set search_path = public
+as $$
+declare
+  n int;
+begin
+  delete from copy_invitation_removals where removed_at < now() - interval '10 minutes';
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+revoke execute on function public.purge_copy_invitation_removals() from public, anon, authenticated;
+grant execute on function public.purge_copy_invitation_removals() to service_role;
+
+-- Inviting an address that's waiting to be emailed with this copy (held): say so, instead of "use Resend" on an
+-- invitation a Volunteer Lead can't see. For anyone who manages the event's volunteers.
+create or replace function public.copy_invitation_is_held(p_event uuid, p_email text)
+returns boolean
+language plpgsql stable security definer set search_path = public
+as $$
+begin
+  if not public.can_manage_volunteers(p_event) then
+    return false;
+  end if;
+  return exists (select 1 from invitations i where i.event_id = p_event and i.held_for_publish
+                  and lower(i.email::text) = lower(btrim(p_email)));
+end;
+$$;
+revoke execute on function public.copy_invitation_is_held(uuid, text) from public, anon;
+grant execute on function public.copy_invitation_is_held(uuid, text) to authenticated;
+
+-- "Change email" on a Coordinator who hasn't been emailed yet, or whose invitation expired.
 create or replace function public.fix_copy_invitation_email(p_id uuid, p_email text)
 returns void
 language plpgsql security definer set search_path = public
@@ -1145,8 +1450,10 @@ begin
   if inv.id is null or inv.copied_from_event_id is null or not public.is_event_admin(inv.event_id) then
     raise exception 'You don''t have permission to do that.' using errcode = '42501';
   end if;
-  if not inv.held_for_publish then
-    raise exception 'Only an invitation that hasn''t been emailed can have its address changed.' using errcode = 'P0001';
+  -- Not emailed yet (held, or a send that never went out), or expired: a new address before sending (again).
+  if not (inv.held_for_publish or inv.expires_at < now() or (inv.delivered_at is null and inv.sent_at < now() - interval '2 minutes'))
+     or inv.accepted_at is not null then
+    raise exception 'Only an invitation that hasn''t been emailed, or has expired, can have its address changed.' using errcode = 'P0001';
   end if;
   if addr !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' or char_length(addr) > 254 then
     raise exception 'Please enter a valid email address.' using errcode = 'P0001';
@@ -1278,7 +1585,7 @@ begin
   tier := public.package_tier(ev.organization_id);
   used := (select count(*) from public.org_team(ev.organization_id));
   return jsonb_build_object(
-    'source', c.summary -> 'source',
+    'source', (c.summary -> 'source') || jsonb_build_object('name', (select se.name from events se where se.id = c.source_event_id)),
     'days_moved', c.days_moved,
     'created_at', c.created_at,
     'first_published_at', c.first_published_at,

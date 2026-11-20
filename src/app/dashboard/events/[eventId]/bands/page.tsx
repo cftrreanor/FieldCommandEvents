@@ -1,3 +1,5 @@
+import { suggestedDeadline } from "@/lib/contest-deadline";
+import { newDateSpotHref } from "@/lib/duplicate-words";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -184,9 +186,10 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
     loadMealSettings(supabase, eventId),
     loadMealOrders(supabase, ((bandData ?? []) as { id: string }[]).map((b) => b.id)),
   ]);
-  const registrationForm = (next?: { href: string; label: string }, datesFirst = false) => (
+  const registrationForm = (next?: { href: string; label: string }, datesFirst = false, unmarked: string[] = []) => (
     <RegistrationSettings
       eventId={eventId}
+      unmarked={unmarked}
       initial={{
         classifications: event.classifications ?? [],
         deadline: event.band_registration_deadline ?? "",
@@ -205,7 +208,13 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
       draft={!published}
       today={today}
       alreadyOpen={regOpen}
-      contest={{ day: event.starts_on, label: formatDate(event.starts_on, { weekday: undefined, year: undefined }), lastDeadline: dayBefore(event.starts_on) }}
+      contest={{
+        day: event.starts_on,
+        label: formatDate(event.starts_on, { weekday: undefined, year: undefined }),
+        lastDeadline: dayBefore(event.starts_on),
+        // Two weeks before contest day (the same rule as the Duplicate page's warning).
+        suggested: suggestedDeadline("band_contest", event.starts_on),
+      }}
       datesFirst={datesFirst}
     />
   );
@@ -219,9 +228,10 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
         ask_availability: boolean;
       } | null)
     : null;
-  const festivalForm = (next?: { href: string; label: string }) => (
+  const festivalForm = (next?: { href: string; label: string }, unmarked: string[] = []) => (
     <FestivalRegistration
       eventId={eventId}
+      unmarked={unmarked}
       initial={{
         deadline: event.band_registration_deadline ?? "",
         maxGroups: festival?.max_groups ?? null,
@@ -261,7 +271,12 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
           Preview the form <span className="sr-only">(opens in a new tab)</span>
         </a>
         {copyFacts && <CopiedNote facts={copyFacts} place="registration" />}
-        <div className="mt-6">{festivalForm({ href: `/dashboard/events/${eventId}/volunteering`, label: "Volunteers" })}</div>
+        <div className="mt-6">
+          {festivalForm(
+            { href: `/dashboard/events/${eventId}/volunteering`, label: "Volunteers" },
+            (copyFacts?.check.newDates ?? []).filter((d) => d.unmarked).map((d) => d.what),
+          )}
+        </div>
       </div>
     );
   }
@@ -270,6 +285,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
   if (contest && !published) {
     // Duplicated: where it came from and what to look over; a blank deadline puts the dates first (Duplicate event).
     const copyFacts = await loadCopyFacts(eventId);
+    const regPlace = copyFacts?.check.newDates.find((d) => d.step === "registration") ?? null;
     return (
       <div data-required-marks>
         {/* No "Back to" link while setting up: it would jump ahead to Publish. The step bar is the way around. */}
@@ -282,7 +298,15 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
         </a>
         {copyFacts && <CopiedNote facts={copyFacts} place="registration" />}
         <div className="mt-6">
-          {registrationForm({ href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Jobs and shifts" }, Boolean(copyFacts && !event.band_registration_deadline))}
+          {registrationForm(
+            // "[new date]" left on this step: Next goes to it first.
+            regPlace
+              ? { href: newDateSpotHref(`/dashboard/events/${eventId}`, regPlace), label: "Next up: Add the new date" }
+              : { href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Jobs and shifts" },
+            Boolean(copyFacts && !event.band_registration_deadline),
+            // Text too long to mark: its note says to change the dates by hand.
+            (copyFacts?.check.newDates ?? []).filter((d) => d.unmarked).map((d) => d.what),
+          )}
         </div>
       </div>
     );

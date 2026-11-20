@@ -79,7 +79,7 @@ async function invite(
     .select("id")
     .single();
   if (error) {
-    if (error.code === "23505") return { error: `${email} already has an invitation waiting. Use Resend on their invitation.` };
+    if (error.code === "23505") return alreadyInvited(supabase, eventId, email);
     return { error: friendlyDbError(error) };
   }
 
@@ -934,4 +934,18 @@ export async function stopCohosting(eventId: string): Promise<ActionState> {
   await tellHostsSomeoneLeft(eventId, user.id, me?.full_name || user.email, "co_host", jobs);
   revalidatePath("/dashboard", "layout");
   redirect(`/dashboard?stopped=${encodeURIComponent(ev?.name ?? "that event")}`);
+}
+
+/**
+ * An address that already has an invitation waiting. A duplicated event's copied Coordinator waiting to be emailed
+ * with the copy (held) can't be resent here: a host sends it from Team setup (hosts get the link).
+ */
+async function alreadyInvited(supabase: Awaited<ReturnType<typeof createClient>>, eventId: string, email: string): Promise<ActionState> {
+  const { data: held } = await supabase.rpc("copy_invitation_is_held", { p_event: eventId, p_email: email });
+  if (!held) return { error: `${email} already has an invitation waiting. Use Resend on their invitation.` };
+  const { data: host } = await supabase.rpc("is_event_admin", { ev: eventId });
+  return {
+    error: `${email} is waiting to be emailed with this copy. A host sends it from Team setup.`,
+    ...(host ? { link: { href: `/dashboard/events/${eventId}/edit?section=team&tab=section-leads`, label: "Go to Team setup" } } : {}),
+  };
 }

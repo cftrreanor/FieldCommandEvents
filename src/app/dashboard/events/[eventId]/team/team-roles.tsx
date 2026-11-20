@@ -114,6 +114,8 @@ export async function TeamRoles({
   const copied = access.isHost && roles.includes("section-leads") ? await loadCopiedPeople(eventId) : null;
   const copiedIds = new Set((copied?.people ?? []).map((p) => p.id));
   const notEmailed = (copied?.people ?? []).filter((p) => p.status === "held" || p.status === "expired");
+  // Removed from the copy in the last 10 minutes (Undo still works): not offered again under "From your team" yet.
+  const recentlyRemoved: string[] = copied ? (((await supabase.rpc("copy_recent_removals", { p_event: eventId })).data ?? []) as string[]) : [];
   // Still waiting (not emailed yet, sent, or expired): Pending, one row each.
   const copiedWaiting = (copied?.people ?? []).filter((p) => p.status !== "accepted");
   // A Volunteer Lead sees that a copy's held invitations are waiting for a host (they can't send or remove them).
@@ -136,8 +138,8 @@ export async function TeamRoles({
     lead_ids: (leadRows ?? []).filter((l) => l.station_id === st.id).map((l) => l.user_id),
   }));
   // A job with a copied Coordinator not accepted yet isn't "No Coordinator yet": they show in their own list above.
-  const heldJobs = new Set((copied?.people ?? []).filter((p) => p.status !== "accepted").flatMap((p) => p.jobs));
-  const unled = stations.filter((s) => s.lead_ids.length === 0 && !heldJobs.has(s.name));
+  const heldJobs = new Set((copied?.people ?? []).filter((p) => p.status !== "accepted").flatMap((p) => p.stationIds));
+  const unled = stations.filter((s) => s.lead_ids.length === 0 && !heldJobs.has(s.id));
   // People on the account (its hosts) who lead a job here with no Coordinator role of their own: a duplicated
   // event puts them straight on their jobs. They're current Coordinators too.
   const hostLeads = hosts.filter((h) => !leads.some((l) => l.user_id === h.user_id) && stations.some((s) => s.lead_ids.includes(h.user_id)));
@@ -220,7 +222,10 @@ export async function TeamRoles({
     if (tab === "volunteer-leads") [...hosts.map((h) => h.user_id), ...directors.map((d) => d.user_id)].forEach((id) => skip.add(id));
     if (tab === "section-leads") [...hosts.map((h) => h.user_id), ...leads.map((l) => l.user_id)].forEach((id) => skip.add(id));
     // Copied Coordinators already invited here (held, sent, or expired) are in Pending: one row per person, so not here too.
-    const invitedHere = new Set(tab === "section-leads" ? (copied?.people ?? []).filter((c) => c.status !== "accepted").map((c) => c.email.toLowerCase()) : []);
+    // Nor anyone removed from the copy while Undo still works (Undo puts them back).
+    const invitedHere = new Set(
+      tab === "section-leads" ? [...(copied?.people ?? []).filter((c) => c.status !== "accepted").map((c) => c.email.toLowerCase()), ...recentlyRemoved] : [],
+    );
     const byPerson = new Map<string, { name: string; roles: string[]; holds: boolean }>();
     for (const o of options) {
       if (skip.has(o.user_id) || invitedHere.has(o.email.toLowerCase())) continue;
@@ -632,7 +637,10 @@ export async function TeamRoles({
                           name={h.full_name || h.email}
                           isYou={h.user_id === user.id}
                           badge={lead.one}
-                          reach={`Leads ${jobsLed(h.user_id).join(", ")} · ${h.kind === "owner" ? "Account Host" : h.kind === "every" ? "Co-host of every event" : `Co-host of ${event.name}`}`}
+                          reach={`Leads ${jobsLed(h.user_id).join(", ")} · ${h.kind === "owner" ? "Account Host" : h.kind === "every" ? "Co-host of every event" : `Co-host of ${event.name}`}${
+                            // On a copy: why they had no invitation (said on their row, not in the Pending text).
+                            copied && h.kind !== "event" ? " · Kept from the copy, no invitation needed" : ""
+                          }`}
                           details={[h.email, formatPhone(h.phone)]}
                         />
                       ))}
@@ -703,8 +711,7 @@ export async function TeamRoles({
                   <div className="mt-2 space-y-2">
                     {copiedWaiting.length > 0 && (
                       <p className="text-sm leading-6 text-muted">
-                        Copied from {copied.source ?? "the event you duplicated"}, for the same jobs. They can&apos;t help run it until they accept. Your
-                        public page isn&apos;t affected. Your Account Host and Co-hosts of every event skip the invitation and keep leading their jobs.
+                        Copied from {copied.source ?? "the event you duplicated"}, for the same jobs. They can&apos;t help run it until they accept.
                       </p>
                     )}
                     <CopiedCoordinators eventId={eventId} eventName={event.name} people={copied.people} published={copied.published} leadTitle={lead.one} />
@@ -770,6 +777,8 @@ export async function TeamRoles({
                   scope={tab === "hosts" ? { eventName: event.name, events: allEvents } : undefined}
                   options={optionsFor(tab)}
                   addAction={addTeamMember.bind(null, eventId)}
+                  // A copy that was never published: adding a Coordinator from the team emails them now.
+                  addNote={tab === "section-leads" && copied && !copied.published ? "Added right away. Emails them now, before you publish." : undefined}
                   inviteAction={inviteMember.bind(null, eventId)}
                   inviteRole={tab === "volunteer-leads" ? "volunteer_director" : tab === "section-leads" ? "section_lead" : undefined}
                   stations={tab === "section-leads" ? stations.map((s) => ({ id: s.id, name: s.name })) : undefined}

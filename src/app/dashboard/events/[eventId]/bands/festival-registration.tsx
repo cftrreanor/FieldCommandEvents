@@ -30,6 +30,7 @@ type Failure = { message: string; retry: boolean } | null;
  */
 export function FestivalRegistration({
   eventId,
+  unmarked = [],
   initial,
   groupsIn: initialGroupsIn,
   next,
@@ -37,6 +38,8 @@ export function FestivalRegistration({
   today,
   festival,
 }: {
+  /** Copied text too long to mark with "[new date]" (by field): its note says to change the dates by hand. */
+  unmarked?: string[];
   eventId: string;
   initial: {
     deadline: string;
@@ -276,7 +279,7 @@ export function FestivalRegistration({
           </div>
         </fieldset>
 
-        <NewDateNote value={info.value} spot="director-info" />
+        <NewDateNote value={info.value} spot="director-info" unmarked={unmarked.includes("director-info")} />
         <AutoField
           id="reg-info"
           label="Information for directors (optional)"

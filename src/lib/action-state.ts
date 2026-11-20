@@ -11,6 +11,8 @@ export type ActionState = {
   goTo?: string;
   /** Something just went public: show its link to share (in place of the toast). */
   share?: Share;
+  /** A way to fix an error, shown as a link after it ("Go to Team setup"). */
+  link?: { href: string; label: string };
 };
 
 /** A link a host can share right away (shareLink in src/lib/share.ts adds the QR code). */

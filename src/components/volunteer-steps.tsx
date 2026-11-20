@@ -101,26 +101,26 @@ export function SetupSteps({
               // One wording for the copied state everywhere: "Copied: check it" (after "Optional · " too).
               const copiedNote = copied === "copied" ? "Copied: check it" : null;
               const optionalNote = s.optional && !done[i] ? (copiedNote ? `Optional · ${copiedNote}` : ((s.key === "volunteers" ? facts.volunteersNote : facts.notes?.[s.key]) ?? "Optional")) : null;
-              // The step you're on says "Now", "Now · ready" once it has everything it needs, or "Now · not saved".
+              // The step you're on says "Now", "Now · All set" once it has everything it needs, or "Now · Not saved".
               const note =
                 done[i] && !now
                   ? copied === "opened"
                     ? "Opened"
                     : "Done"
                   : now && unsaved
-                    ? "Now · not saved"
+                    ? "Now · Not saved"
                     : needs
                       ? // "Now" first under the step you're on, then what it needs.
                         now
-                        ? `Now · ${lowerFirst(stepNote(s.key, i) ?? "")}`
+                        ? `Now · ${stepNote(s.key, i) ?? ""}`
                         : stepNote(s.key, i)
                       : now
                         ? copied === "copied"
-                          ? `Now · ${s.optional ? "optional · " : ""}Copied: check it`
+                          ? `Now · ${s.optional ? "Optional · " : ""}Copied: check it`
                           : done[i] && i < last
-                            ? "Now · all set"
+                            ? "Now · All set"
                             : optionalNote
-                              ? `Now · ${optionalNote.charAt(0).toLowerCase()}${optionalNote.slice(1)}`
+                              ? `Now · ${optionalNote}`
                               : "Now"
                         : (optionalNote ?? copiedNote ?? "Not yet");
               return (
@@ -131,11 +131,11 @@ export function SetupSteps({
                       {s.label}
                     </span>
                   ) : (
-                    <Link href={facts.newDateHrefs?.[s.key] ?? `${base}${s.path}`} className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4 hover:text-brand">
+                    <Link href={facts.newDateHrefs?.[s.key] ?? `${base}${s.path}`} className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4 [text-wrap:balance] hover:text-brand">
                       {s.label}
                     </Link>
                   )}
-                  <span className={`block text-xs leading-5 ${done[i] && !now ? "text-success" : needs ? "font-medium text-warning" : copied === "copied" ? "font-medium text-foreground" : "text-muted"}`}>
+                  <span className={`block text-xs leading-5 [text-wrap:balance] ${done[i] && !now ? "text-success" : needs ? "font-medium text-warning" : copied === "copied" ? "font-medium text-foreground" : "text-muted"}`}>
                     {done[i] && !now && <span aria-hidden>✓ </span>}
                     {needs && <span aria-hidden>◆ </span>}
                     {note}
@@ -172,10 +172,10 @@ export function SetupSteps({
           <li key={s.key} className={`flex-1 rounded-full ${strip(s, i)}`} />
         ))}
       </ol>
-      {/* Phones: the step you're on first ("Now · add a job"), then any other step that needs something. */}
+      {/* Phones: the step you're on first ("Now · Add a job"), then any other step that needs something. */}
       {needsWork.includes(steps[here]) && (
         <p className="mt-2 text-sm font-medium text-warning sm:hidden">
-          <span aria-hidden>◆ </span>Now · {lowerFirst(stepNote(steps[here].key, here) ?? "")}
+          <span aria-hidden>◆ </span>Now · {stepNote(steps[here].key, here) ?? ""}
         </p>
       )}
       {needsWork.some((s) => s !== steps[here]) && (
@@ -206,9 +206,4 @@ export function SetupSteps({
       {stepList(`mt-2 hidden gap-x-3 gap-y-1 sm:grid ${steps.length >= 6 ? "sm:grid-cols-6" : steps.length === 5 ? "sm:grid-cols-5" : steps.length === 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`)}
     </nav>
   );
-}
-
-/** "Add a job" → "add a job"; a note that starts with a name ("BBQ crew needs a shift") keeps its capitals. */
-function lowerFirst(text: string) {
-  return /^(Add|Choose|Fix|Pick|Put|Tick)\b/.test(text) ? text.charAt(0).toLowerCase() + text.slice(1) : text;
 }

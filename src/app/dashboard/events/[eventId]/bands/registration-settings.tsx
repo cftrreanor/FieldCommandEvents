@@ -195,6 +195,7 @@ export function marked(id: string, s: Saver, hint = true) {
  */
 export function RegistrationSettings({
   eventId,
+  unmarked = [],
   initial,
   bandsIn: initialBandsIn,
   contactSaved,
@@ -205,6 +206,8 @@ export function RegistrationSettings({
   alreadyOpen = false,
   datesFirst = false,
 }: {
+  /** Copied text too long to mark with "[new date]" (by field): its note says to change the dates by hand. */
+  unmarked?: string[];
   eventId: string;
   initial: {
     classifications: string[];
@@ -230,7 +233,7 @@ export function RegistrationSettings({
   /** Published with registration already open: the opening day can't move later. */
   alreadyOpen?: boolean;
   /** Contest day: the deadline falls before it. */
-  contest: { day: string; label: string; lastDeadline: string };
+  contest: { day: string; label: string; lastDeadline: string; suggested: string };
   /** The registration dates first, deadline on top (a duplicated contest whose deadline was left blank). */
   datesFirst?: boolean;
 }) {
@@ -246,6 +249,10 @@ export function RegistrationSettings({
           ? `Pick a date before contest day (${contest.label}).`
           : null,
   });
+  // Two weeks before contest day: the rule every screen names (src/lib/contest-deadline.ts). The box allows up to the
+  // day before (the database's rule) and says so when a later day is picked.
+  const deadlineHint = `Registration should close two weeks before contest day (${contest.label}): by ${formatDate(contest.suggested, { year: undefined })}. Directors get their times two weeks before contest day, so they can book buses. Registration closes at 11:59 PM that day, your time.`;
+  const lateDeadline = Boolean(deadline.value && deadline.value > contest.suggested && deadline.value <= contest.lastDeadline);
   const opensOn = useAutosave(eventId, "opensOn", initial.opensOn, {
     immediate: true,
     restore: true,
@@ -366,7 +373,7 @@ export function RegistrationSettings({
           id="reg-deadline"
           label="Registration deadline"
           required
-          hint={`Pick a date at least two weeks before contest day (${contest.label}). Directors get their times two weeks before contest day, so they can book buses. Registration closes at 11:59 PM that day, your time.`}
+          hint={deadlineHint}
           saver={deadline}
         >
           <DateField
@@ -377,6 +384,11 @@ export function RegistrationSettings({
             {...marked("reg-deadline", deadline)}
             className="max-w-xs"
           />
+          {lateDeadline && (
+            <span className="mt-1.5 flex gap-1.5 text-sm font-medium text-warning">
+              <span aria-hidden>◆</span> Less than two weeks before contest day: directors won&apos;t get their times two weeks ahead
+            </span>
+          )}
           {datesFirst && !deadline.value && (
             <span className="mt-1.5 flex gap-1.5 text-sm font-medium text-warning">
               <span aria-hidden>◆</span> Needed before you publish
@@ -437,7 +449,7 @@ export function RegistrationSettings({
           id="reg-deadline"
           label="Registration deadline"
           required
-          hint={`Pick a date at least two weeks before contest day (${contest.label}). Directors get their times two weeks before contest day, so they can book buses. Registration closes at 11:59 PM that day, your time.`}
+          hint={deadlineHint}
           saver={deadline}
         >
           <DateField
@@ -448,6 +460,11 @@ export function RegistrationSettings({
             {...marked("reg-deadline", deadline)}
             className="max-w-xs"
           />
+          {lateDeadline && (
+            <span className="mt-1.5 flex gap-1.5 text-sm font-medium text-warning">
+              <span aria-hidden>◆</span> Less than two weeks before contest day: directors won&apos;t get their times two weeks ahead
+            </span>
+          )}
           {datesFirst && !deadline.value && (
             <span className="mt-1.5 flex gap-1.5 text-sm font-medium text-warning">
               <span aria-hidden>◆</span> Needed before you publish
@@ -573,7 +590,7 @@ export function RegistrationSettings({
         {!datesFirst && dates}
 
         {/* A copy: a date typed into the information came over as "[new date]" (live: it goes once replaced). */}
-        <NewDateNote value={info.value} spot="director-info" />
+        <NewDateNote value={info.value} spot="director-info" unmarked={unmarked.includes("director-info")} />
         <AutoField
           id="reg-info"
           label="Information for directors"
@@ -632,6 +649,9 @@ export function RegistrationSettings({
                 <fieldset>
                   <legend className="text-sm font-semibold">Meal options</legend>
                   <p className="mt-1 text-sm text-muted">What bands can order. Directors enter how many of each.</p>
+                  <NewDateNote value={optionList.join(" ")} spot="meal-option" className="mt-1">
+                    Add the new date: remove the option that says &ldquo;[new date]&rdquo; with its ×, then add it again with the date
+                  </NewDateNote>
                   {optionList.length > 0 && (
                     <ul className="mt-2 flex flex-wrap gap-2" aria-label="Meal options">
                       {optionList.map((o) => (
@@ -667,7 +687,7 @@ export function RegistrationSettings({
                     </p>
                   )}
                 </fieldset>
-                <NewDateNote value={mealDetails.value} spot="meal-details" />
+                <NewDateNote value={mealDetails.value} spot="meal-details" unmarked={unmarked.includes("meal-details")} />
                 <AutoField
                   id="reg-meal-details"
                   label="Meal details"
@@ -697,6 +717,7 @@ export function RegistrationSettings({
           </p>
           {/* Name and mobile side by side; the email gets a row of its own, so a long address shows in full. */}
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
+            <NewDateNote value={contactName.value} spot="contact" className="sm:col-span-2" />
             <AutoField id="reg-cname" label="Name" saver={contactName}>
               <Input value={contactName.value} onChange={(e) => contactName.change(e.target.value)} autoComplete="name" {...withClass(marked("reg-cname", contactName, false), "w-full")} />
             </AutoField>

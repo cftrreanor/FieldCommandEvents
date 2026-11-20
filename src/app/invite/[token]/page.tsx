@@ -1,3 +1,4 @@
+import { EmailSignInLink } from "./sign-in-link";
 import type { Metadata } from "next";
 import { emailLinkCutoff } from "@/lib/email-link-age";
 import { HeaderBar } from "@/components/logo";
@@ -120,14 +121,14 @@ export default async function InvitePage({ params, searchParams }: PageProps<"/i
                 ) : !user ? (
                   <>
                     <p className="mb-4 text-sm text-muted">
-                      Sign in with <strong className="text-foreground">{invite.email}</strong> to accept. No
-                      password needed.
+                      Sign in with <strong className="text-foreground">{invite.email}</strong> to accept. No password needed: we email you a link.
                     </p>
+                    <EmailSignInLink email={invite.email} next={`/invite/${token}`} />
                     <Link
                       href={`/login?next=${encodeURIComponent(`/invite/${token}`)}&email=${encodeURIComponent(invite.email)}`}
-                      className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-brand px-4 text-sm font-medium text-brand-foreground hover:bg-brand-hover"
+                      className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-brand underline-offset-4 hover:underline"
                     >
-                      Sign in to accept
+                      Sign in another way
                     </Link>
                   </>
                 ) : user.email.toLowerCase() !== invite.email.toLowerCase() ? (

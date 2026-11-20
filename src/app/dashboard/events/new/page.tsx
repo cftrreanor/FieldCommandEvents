@@ -13,7 +13,8 @@ import { sponsorsEnabled } from "@/lib/sponsors-data";
 import type { StepsKind } from "@/lib/setup-steps";
 import { SetupLogo } from "../_components/setup-logo";
 import { StartFromEvent, type PastEvent } from "../_components/start-from-event";
-import { canDuplicateKind, listAnd, longRange, plural } from "@/lib/duplicate-words";
+import { duplicateCounts } from "@/lib/duplicate-event";
+import { canDuplicateKind, comesOverParts, listAnd, longRange } from "@/lib/duplicate-words";
 import { loadBrand } from "@/lib/badges";
 import { EventTypeChoices } from "@/components/event-type-picker";
 import { hasConferences, isEventType } from "@/lib/event-types";
@@ -114,7 +115,7 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
             action={createEvent}
             organizationId={org.id}
             eventType={type}
-            initial={{ timezone: org.default_timezone, startsOn: day, endsOn: day }}
+            initial={{ timezone: org.default_timezone, startsOn: day, endsOn: day, description: "" }}
             venueSearchEnabled={isPlacesConfigured}
             submitLabel="Save and continue"
             setup={{}}
@@ -167,7 +168,7 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
             action={createEvent}
             organizationId={org.id}
             eventType={type}
-            initial={{ timezone: org.default_timezone }}
+            initial={{ timezone: org.default_timezone, description: "" }}
             venueSearchEnabled={isPlacesConfigured}
             submitLabel="Save and continue"
             setup={{}}
@@ -216,28 +217,12 @@ async function pastEvents(supabase: Awaited<ReturnType<typeof createClient>>, or
     .limit(30);
   const events = (data ?? []) as { id: string; name: string; status: string; starts_on: string; ends_on: string; venue_name: string | null }[];
   if (!events.length) return [];
-  const ids = events.map((e) => e.id);
-  const [{ data: stations }, { data: shifts }, { data: items }, { data: files }, { data: leads }] = await Promise.all([
-    supabase.from("stations").select("event_id").in("event_id", ids),
-    supabase.from("shifts").select("event_id").in("event_id", ids),
-    supabase.from("station_items").select("event_id").in("event_id", ids),
-    supabase.from("event_files").select("event_id").in("event_id", ids),
-    supabase.from("station_leads").select("event_id, user_id").in("event_id", ids),
-  ]);
-  const n = (rows: { event_id: string }[] | null, id: string) => (rows ?? []).filter((r) => r.event_id === id).length;
+  // The same counts and words as Event settings' panel and the Duplicate page.
+  const counts = await duplicateCounts(events.map((e) => e.id), orgId);
   return events
     .map((e) => {
-      const jobs = n(stations, e.id);
-      const coordinators = new Set((leads ?? []).filter((l) => l.event_id === e.id).map((l) => l.user_id)).size;
-      const parts = [
-        type === "band_contest" || type === "group_event" ? "registration setup" : "",
-        jobs ? plural(jobs, "job", "jobs") : "",
-        n(shifts, e.id) ? plural(n(shifts, e.id), "shift", "shifts") : "",
-        n(items, e.id) ? plural(n(items, e.id), "thing to bring", "things to bring") : "",
-        n(files, e.id) ? plural(n(files, e.id), "file", "files") : "",
-        coordinators ? plural(coordinators, "Coordinator", "Coordinators") : "",
-      ].filter(Boolean);
-      return { e, jobs, parts };
+      const c = counts.get(e.id)!;
+      return { e, jobs: c.jobs, parts: comesOverParts(type, c, false) };
     })
     .filter(({ e, jobs }) => e.status !== "draft" || jobs > 0)
     .map(({ e, parts }) => ({

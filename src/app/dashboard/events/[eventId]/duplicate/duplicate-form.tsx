@@ -8,7 +8,8 @@ import { DateField } from "@/components/date-field";
 import { IconTile, LineIcon } from "@/components/line-icon";
 import { toast } from "@/components/toaster";
 import { Button, Card, Field, FieldError, Input } from "@/components/ui";
-import { addDays, dayShort, daysBetween, listAnd, longRange, longWeekday, offsetWords, plural, weekdays } from "@/lib/duplicate-words";
+import { addDays, dayShort, daysBetween, listAnd, longRange, longWeekday, offsetWords, weekdays, type DuplicateCounts } from "@/lib/duplicate-words";
+import { contestDeadlineWarning } from "@/lib/contest-deadline";
 import { formatDate } from "@/lib/time";
 
 export type DuplicateSource = {
@@ -25,7 +26,9 @@ export type DuplicateSource = {
   shifts: { job: string; day: string; time: string }[];
   deadline: string | null;
   opensOn: string | null;
-  counts: { jobs: number; shifts: number; items: number; files: number; coordinators: number };
+  counts: DuplicateCounts;
+  /** What's copied, in the same words as Event settings and New event ("3 jobs, 4 shifts, and 1 map or document"). */
+  copying: string[];
 };
 
 type Problem = { kind: "missing" } | { kind: "field"; text: string } | { kind: "failed"; text: string } | { kind: "dropped" };
@@ -75,10 +78,10 @@ export function DuplicateForm({
   const dayLabel = length === 0 ? (source.kind === "band_contest" ? "New contest day" : "New date") : "New first day";
   // Changing the name or date is a new request: a retry only reuses the id for the same name and date.
   const changed = () => {
-    if (problem?.kind !== "dropped") requestId.current = null;
+    requestId.current = null;
   };
   const newName = name.trim() || source.name;
-  const { counts } = source;
+  const pastWords = `Pick today or a later date (${formatDate(source.today, { weekday: undefined })} or after)`;
 
   const submit = async () => {
     if (busy) return;
@@ -92,10 +95,8 @@ export function DuplicateForm({
       setProblem({ kind: "missing" });
       return;
     }
-    if (day < source.today) {
-      setProblem({ kind: "field", text: "Pick today or a later date" });
-      return;
-    }
+    // A past day: the box already says so, once (its own message, in the page's words).
+    if (day < source.today) return;
     // Made once and kept: a retry with the same id returns the copy the first try made.
     requestId.current ??= crypto.randomUUID();
     setBusy(true);
@@ -166,6 +167,7 @@ export function DuplicateForm({
               name="startsOn"
               required
               min={source.today}
+              rangeMessage={pastWords}
               value={day}
               onChange={(e) => {
                 setDay(e.target.value);
@@ -186,7 +188,18 @@ export function DuplicateForm({
               </span>
             )}
           </label>
-          {end && <DatePreview source={source} start={day} end={end} offset={offset} />}
+          {end && (
+            <DatePreview
+              source={source}
+              start={day}
+              end={end}
+              offset={offset}
+              pickDay={(d) => {
+                setDay(d);
+                changed();
+              }}
+            />
+          )}
         </div>
 
         <div className="grid gap-4 border-t border-border pt-5 text-sm leading-6 sm:grid-cols-2">
@@ -248,16 +261,7 @@ export function DuplicateForm({
           </div>
           <p aria-live="polite" className={`text-sm ${busy ? "font-medium" : "text-muted"}`}>
             {busy
-              ? contest
-                ? `Copying registration setup${counts.jobs ? `, ${plural(counts.jobs, "volunteer job", "volunteer jobs")}, and ${plural(counts.shifts, "shift", "shifts")}` : ""}. This takes a few seconds.`
-                : `Copying ${listAnd(
-                    [
-                      plural(counts.jobs, "job", "jobs"),
-                      plural(counts.shifts, "shift", "shifts"),
-                      counts.items ? plural(counts.items, "thing to bring", "things to bring") : "",
-                      counts.files ? plural(counts.files, "file", "files") : "",
-                    ].filter(Boolean),
-                  )}. This takes a few seconds.`
+              ? `Copying ${listAnd(source.copying.length ? source.copying : ["its details"])}. This takes a few seconds.`
               : contest
                 ? `Makes a draft only your team can see. Nobody is emailed: not directors, Coordinators, or volunteers.`
                 : "Makes a draft only your team can see. Nobody is emailed."}
@@ -269,7 +273,7 @@ export function DuplicateForm({
 }
 
 /** The new dates: the range, how far everything moves, a change of weekday, the shifts, and registration dates. */
-function DatePreview({ source, start, end, offset }: { source: DuplicateSource; start: string; end: string; offset: number }) {
+function DatePreview({ source, start, end, offset, pickDay }: { source: DuplicateSource; start: string; end: string; offset: number; pickDay: (day: string) => void }) {
   const contest = source.kind === "band_contest" || source.kind === "group_event";
   const moved = (d: string | null) => (d ? addDays(d, offset) : null);
   // The database's rule (copy_event_setup): a date already past, or not before the first day, is left blank.
@@ -278,7 +282,10 @@ function DatePreview({ source, start, end, offset }: { source: DuplicateSource; 
   const opensTo = moved(source.opensOn);
   const opensBlank = Boolean(opensTo && (opensTo < source.today || !deadlineTo || deadlineBlank || opensTo > deadlineTo));
   const weekdayChanged = offset % 7 !== 0;
-  const daysOut = daysBetween(source.today, start);
+  // The nearest day on the same weekday as before (not in the past), offered in the warning.
+  const back = ((offset % 7) + 7) % 7;
+  const sameWeekday = [addDays(start, -back), addDays(start, 7 - back)].filter((d) => d >= source.today).sort((a, b) => Math.abs(daysBetween(start, a)) - Math.abs(daysBetween(start, b)))[0];
+  const deadlineWarning = contest ? contestDeadlineWarning(source.kind, start, source.today) : null;
   return (
     <div role="status" className="mt-3 space-y-3 rounded-md border border-brand/25 bg-brand-soft px-4 py-3 text-sm leading-6">
       {start === source.today && (
@@ -295,21 +302,21 @@ function DatePreview({ source, start, end, offset }: { source: DuplicateSource; 
             <span className="font-semibold">
               Different days of the week: {weekdays(start, end)}, not {weekdays(source.startsOn, source.endsOn)}.
             </span>{" "}
-            Shifts keep their order, so {longWeekday(source.startsOn)}&apos;s shifts move to {longWeekday(start)}.
+            Shifts keep their order, so {longWeekday(source.startsOn)}&apos;s shifts move to {longWeekday(start)}.{" "}
+            {sameWeekday && (
+              <button type="button" onClick={() => pickDay(sameWeekday)} className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
+                Use {dayShort(sameWeekday)} instead
+              </button>
+            )}
           </p>
         </div>
       )}
-      {contest && daysOut <= 21 && (
-        // A day close to now leaves directors little time: say so before copying, not after.
+      {deadlineWarning && (
+        // A day close to now leaves directors little time: say so before copying, by the same rule as Band registration.
         <div className="flex gap-2">
           <LineIcon name="warning" className="mt-0.5 size-5 shrink-0 text-warning" />
           <p>
-            <span className="font-semibold">
-              {daysOut === 0 ? "That's today." : `That's ${plural(daysOut, "day", "days")} away.`}
-            </span>{" "}
-            {daysOut <= 1
-              ? "There's no time for directors to register before it."
-              : `The deadline has to be before ${formatDate(addDays(start, -1), { year: undefined })}, so directors would have ${plural(daysOut - 1, "day", "days")} at most to register.`}
+            <span className="font-semibold">{deadlineWarning.head}</span> {deadlineWarning.body}
           </p>
         </div>
       )}

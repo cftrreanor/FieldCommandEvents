@@ -121,11 +121,14 @@ export type StationTab = {
   stop?: number;
   /** A check-in stop with no Coordinator: nobody can check bands in there on contest day. */
   needsLead?: boolean;
+  /** A duplicated event's job still holding "[new date]" (how many places): the ◆ and "Add the new date". */
+  newDates?: number;
 };
 
 /** What a tab says under its name: the first thing still to do, or how full it is. */
 function status(t: StationTab, unsaved: boolean) {
   if (unsaved) return "Unsaved changes";
+  if (t.newDates) return "Add the new date";
   // A volunteer event's job: what it needs, or how full it is.
   if (t.job) {
     const stop = t.stop ? `Stop ${t.stop} · ` : "";
@@ -177,7 +180,7 @@ export function StationTabs({
           const unsaved = t.active && Boolean(progress?.dirty.details);
           // Something to do (no shifts yet, unfinished, unsaved): an amber line under the name.
           // A job: what the status line says it needs (a shift or a thing to bring); other sign-ups also count unfinished details.
-          const needs = unsaved || (t.job ? !t.capacity || Boolean(t.needsLead) : !t.configured);
+          const needs = unsaved || Boolean(t.newDates) || (t.job ? !t.capacity || Boolean(t.needsLead) : !t.configured);
           return (
             <li key={t.id}>
               <Link

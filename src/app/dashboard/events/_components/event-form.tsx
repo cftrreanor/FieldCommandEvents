@@ -224,7 +224,7 @@ export function EventForm({
         <div id="description" className="scroll-mt-24 space-y-1.5">
           <NewDateNote value={initial.description} spot="description" />
           <input type="hidden" name="descriptionField" value="1" />
-          <Field label="Description" hint="Shown on your public page.">
+          <Field label="Description" hint="Optional. Shown on your public page.">
             <Textarea name="description" maxLength={4000} rows={4} defaultValue={initial.description} />
           </Field>
         </div>

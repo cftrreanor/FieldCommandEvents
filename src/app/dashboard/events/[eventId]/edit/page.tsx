@@ -1,3 +1,5 @@
+import { loadNewDatePlaces } from "@/lib/duplicate-event";
+import { newDateSpotHref } from "@/lib/duplicate-words";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -104,6 +106,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const steppedSetup =
     hasConferences(event.event_type) || event.event_type === "volunteer" || event.event_type === "band_contest" || hasRooms(event.event_type);
   const stepOnly = steppedSetup && event.status !== "published" && !asked;
+  const detailsPlaces = stepOnly ? await loadNewDatePlaces(eventId, "details") : [];
   const guided = setupParam === "1" && !steppedSetup;
   const at = SETUP_STEPS.findIndex((s) => s.id === section);
   const prevStep = guided && at > 0 ? setupHref(eventId, SETUP_STEPS[at - 1].id) : undefined;
@@ -410,8 +413,8 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                       lng: event.venue_lng,
                     },
                     askChildName,
-                    // The description, once there is one (a duplicated event brings its source's): editable here.
-                    description: event.public_notes ?? undefined,
+                    // Every event has a Description box (owner, 2026-11-20).
+                    description: event.public_notes ?? "",
                   }}
                   venueSearchEnabled={isPlacesConfigured}
                   submitLabel={guided ? "Save and continue" : "Save changes"}
@@ -421,7 +424,10 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                   stickySave={!guided}
                   autosave={!guided && !published}
                   next={
-                    stepOnly
+                    stepOnly && detailsPlaces.length
+                      ? // A duplicated draft's "[new date]" left on Details: Next goes there first.
+                        { href: newDateSpotHref(`/dashboard/events/${eventId}`, detailsPlaces[0]), label: "Next up: Add the new date" }
+                      : stepOnly
                       ? event.event_type === "volunteer"
                         ? { href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Jobs and shifts" }
                         : event.event_type === "band_contest"

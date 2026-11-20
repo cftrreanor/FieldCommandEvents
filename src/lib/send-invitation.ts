@@ -31,7 +31,13 @@ export async function sendInvitation(invitationId: string): Promise<boolean | st
   const saved = await loadSystemEmail(invitationEmailKey(details));
   const copy = await copiedInvitation(invitationId, event?.status === "draft");
   const { subject, html, text } = invitationEmail(details, url, hasBands(eventType), leadWords(eventType).one, saved, copy);
-  return sendEmail({ to: details.email, subject, html, text });
+  const sent = await sendEmail({ to: details.email, subject, html, text });
+  // Delivered only once the email service accepted it: a send cut off before this reads as "Not emailed yet".
+  if (sent === true) {
+    const { error: deliveredError } = await admin.from("invitations").update({ delivered_at: new Date().toISOString() }).eq("id", invitationId);
+    if (deliveredError && deliveredError.code !== "42703") console.error("Marking an invitation delivered failed", deliveredError.message);
+  }
+  return sent;
 }
 
 /**

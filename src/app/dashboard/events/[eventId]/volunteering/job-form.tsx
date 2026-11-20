@@ -49,6 +49,7 @@ export function JobForm({
   initial: {
     name: string;
     instructions: string | null;
+    location?: string | null;
     adults_only?: boolean;
     min_adults?: number | null;
     lead_ids?: string[];
@@ -76,6 +77,8 @@ export function JobForm({
   // Only a job that takes shifts can be a check-in stop (its Coordinators work shifts there).
   const stopHere = bands && !items;
   const [why, setWhy] = useState<string | null>(null);
+  // A copied job's old Location holding "[new date]": its box shows (kept for this visit once shown).
+  const [showLocation] = useState(Boolean(initial.location?.includes("[new date]")));
   const setEdited = useStepEdits("details");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
@@ -239,9 +242,10 @@ export function JobForm({
       <Field label="Job name" hint={bands ? "Like Spectator parking, Concessions, or the Gate" : "Like Parking, Litter pickup, or Supplies to bring"}>
         <Input name="name" required maxLength={80} defaultValue={initial.name} />
       </Field>
+      <NewDateNote value={initial.name} spot="job-name" />
       <InSlot id="job-more">
         {/* Open when the copied instructions still hold "[new date]", so it's in sight. */}
-        <details open={openMore || Boolean(initial.instructions?.includes("[new date]"))} className="group rounded-lg border border-border">
+        <details open={openMore || Boolean(initial.instructions?.includes("[new date]")) || showLocation} className="group rounded-lg border border-border">
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
             <span>
               {stopHere ? "More options: band check-in stop, Coordinators, instructions, and age rules" : "More options: Coordinators, instructions, and age rules"}
@@ -255,6 +259,17 @@ export function JobForm({
           <div className="space-y-3 border-t border-border p-3">
             {stopHere && <CheckInStopFields kind={stop} setKind={setStop} initial={initial} formId={FORM} orderHref={links.order} />}
             <CoordinatorPicker label={leadLabel} initial={initial.lead_ids ?? []} onChange={changed} formId={FORM} {...coordinators} />
+            {showLocation && (
+              // A job made before the job redesign can have a Location (volunteers see it on band contests and
+              // festivals). A copy's "[new date]" there is shown, so it can be filled in; it stays until the page
+              // is left, so the box doesn't vanish mid-edit.
+              <>
+                <NewDateNote value={initial.location} spot="location" />
+                <Field label="Location" hint="Where volunteers should report. Jobs made before the redesign kept this.">
+                  <Input name="location" form={FORM} maxLength={200} defaultValue={initial.location ?? ""} />
+                </Field>
+              </>
+            )}
             <NewDateNote value={initial.instructions} spot="instructions" />
             <Field label="Instructions for volunteers" hint="Optional. What to wear, bring, and do.">
               <Textarea name="instructions" form={FORM} defaultValue={initial.instructions ?? ""} />

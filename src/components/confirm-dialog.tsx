@@ -191,7 +191,16 @@ function DialogBody({ request: r, close }: { request: Request; close: () => void
           className="mt-4 w-full rounded-sm border border-field-border bg-background px-3 py-2 text-sm"
         />
       )}
-      <div className={r.kind === "confirm" && r.cancelIsMain ? "mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end" : "mt-6 flex flex-wrap justify-end gap-2"}>
+      {/* Phones: one footer for every window, full width and stacked, the main button first and the quiet way out below. */}
+      <div
+        className={
+          r.kind === "confirm" && r.cancelIsMain
+            ? "mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"
+            : r.kind === "confirm" || r.kind === "ask"
+              ? "mt-6 flex flex-col gap-2 sm:flex-row-reverse sm:justify-start"
+              : "mt-6 flex flex-wrap justify-end gap-2"
+        }
+      >
         {r.kind === "confirm" && r.cancelIsMain ? (
           <>
             <Button type="submit" variant="secondary" className="max-sm:w-full">
@@ -247,11 +256,11 @@ function DialogBody({ request: r, close }: { request: Request; close: () => void
           </>
         ) : (
           <>
-            <Button type="button" variant="ghost" onClick={close}>
-              {(r.kind === "confirm" && r.cancelLabel) || "Never mind"}
-            </Button>
-            <Button type="submit" variant={r.kind === "confirm" && r.danger ? "warn" : undefined}>
+            <Button type="submit" variant={r.kind === "confirm" && r.danger ? "warn" : undefined} className="max-sm:w-full">
               {r.confirmLabel || (r.kind === "ask" ? "Add" : "Continue")}
+            </Button>
+            <Button type="button" variant="ghost" onClick={close} className="max-sm:w-full">
+              {(r.kind === "confirm" && r.cancelLabel) || "Never mind"}
             </Button>
           </>
         )}

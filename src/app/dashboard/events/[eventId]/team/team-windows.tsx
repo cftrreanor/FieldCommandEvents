@@ -134,6 +134,7 @@ export function AddToTeam({
   stations,
   inviteRole,
   emptyText = "Nobody else on your team yet. Invite someone new below.",
+  addNote,
 }: {
   roleName: string;
   note?: ReactNode;
@@ -152,6 +153,8 @@ export function AddToTeam({
   inviteRole?: string;
   /** Said when nobody else can be added from the team. */
   emptyText?: string;
+  /** What adding someone from the team does, when it isn't the usual ("Emails them now, before you publish"). */
+  addNote?: string;
 }) {
   const [every, setEvery] = useState(false);
   const role = scope ? (every ? "host" : "co_host") : (inviteRole ?? "");
@@ -189,7 +192,7 @@ export function AddToTeam({
           <p className="mt-1 text-sm text-muted">{emptyText}</p>
         ) : (
           <>
-            <p className="text-sm text-muted">Added right away. We&apos;ll email them that you added them.</p>
+            <p className="text-sm text-muted">{addNote ?? "Added right away. We'll email them that you added them."}</p>
             <ul className="mt-2 divide-y divide-border rounded-lg border border-border">
               {options.map((o) => {
                 const blocked = o.takesSpot && full;

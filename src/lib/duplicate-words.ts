@@ -90,7 +90,7 @@ export function copyStepLabel(step: string, kind: string | null | undefined) {
 }
 /** Where each copied step lives under the event. */
 export function copyStepPath(step: string) {
-  return step === "details" ? "/edit" : step === "registration" ? "/bands" : step === "rooms" ? "/rooms" : "/volunteering";
+  return step === "files" ? "/edit?section=files" : step === "details" ? "/edit" : step === "registration" ? "/bands" : step === "rooms" ? "/rooms" : "/volunteering";
 }
 
 /** "Not emailed yet · sent when you publish" and the rest of a copied Coordinator's ladder (dates in the event's time zone). */
@@ -127,51 +127,127 @@ export function sendLabel(status: "held" | "sent" | "expired" | "accepted", publ
   return status === "held" ? (published ? "Send invitation" : "Send invitation now") : "Send a new invitation";
 }
 
-/** A spot on a copy still holding "[new date]" (copy_new_date_spots): its step, what it is, and the job it's on. */
-export type NewDateSpot = { step: string; what: string; station_id: string | null; job: string | null; count: number };
+/**
+ * A place on a copy still holding "[new date]" (copy_new_date_spots), counted under the page where it's fixed: its
+ * step ("files" for a map or document's name, fixed in Event settings' Maps and documents), which field (`what`),
+ * the job it's on, a detail (a shift's start time, a file's or option's name), and how many. `unmarked`: an old date
+ * that was too long to mark ("[new date]" would have pushed the text past its limit), to change by hand.
+ */
+export type NewDateSpot = {
+  step: string;
+  what: string;
+  station_id: string | null;
+  job: string | null;
+  detail: string | null;
+  count: number;
+  unmarked?: boolean;
+};
 
-/** "The description", "Trail crew: a shift", "A map or document's name (Park map)". */
-export function newDateSpotLabel(s: NewDateSpot) {
-  if (!s.job) return s.what;
-  return s.station_id ? `${s.job}: ${s.what.charAt(0).toLowerCase()}${s.what.slice(1)}` : `${s.what} (${s.job})`;
+/** "places": one word for where "[new date]" is ("spot" means a shift's opening). */
+export const places = (n: number) => plural(n, "place", "places");
+
+/** The step a place is counted under, in the step bar's words (Maps and documents has its own line). */
+export function newDateStepLabel(step: string, kind: string | null | undefined) {
+  return step === "files" ? "Maps and documents" : copyStepLabel(step, kind);
 }
 
 /**
- * Where each "[new date]" is filled in. #new-date opens whatever the field is folded in (More options, Edit shift)
- * and puts the cursor on the marker (NewDateScroll).
+ * What the place is, in plain words: "The description", "A Litter pickup shift (10:30 AM)", "An item in Things to
+ * bring", "Map name: Park map [new date]", "Trail crew's instructions".
+ */
+export function newDateSpotLabel(s: NewDateSpot) {
+  const job = s.job ?? "a job";
+  const label = (() => {
+    switch (s.what) {
+      case "description":
+        return "The description";
+      case "file":
+        return `Map name: ${s.detail ?? ""}`;
+      case "document":
+        return `Document name: ${s.detail ?? ""}`;
+      case "director-info":
+        return "The information for directors";
+      case "meal-details":
+        return "The meal details";
+      case "meal-option":
+        return `A meal option: ${s.detail ?? ""}`;
+      case "contact":
+        return "The contact for directors";
+      case "room-name":
+        return `A room's name: ${job}`;
+      case "room-note":
+        return `The note for ${job}`;
+      case "zone":
+        return `A zone's name: ${s.detail ?? ""}`;
+      case "job-name":
+        return `A job's name: ${job}`;
+      case "location":
+        return `${job}'s location`;
+      case "shift":
+        return `A ${job} shift${s.detail ? ` (${s.detail})` : ""}`;
+      case "item":
+        return "An item in Things to bring";
+      default:
+        return `${job}'s instructions`;
+    }
+  })();
+  return s.unmarked ? `${label} (too long to mark: change its dates by hand)` : label;
+}
+
+/**
+ * Where each "[new date]" is filled in. #new-date-[what] opens whatever the field is folded in (More options, Edit
+ * shift) and puts the cursor on the marker (NewDateScroll).
  */
 export function newDateSpotHref(base: string, s: NewDateSpot) {
   const path =
     s.step === "details"
-      ? s.what.startsWith("A map")
+      ? `${base}/edit`
+      : s.step === "files"
         ? `${base}/edit?section=files`
-        : `${base}/edit`
-      : s.step === "registration"
-        ? `${base}/bands`
-        : s.step === "rooms"
-          ? `${base}/rooms`
-          : `${base}/volunteering${s.station_id ? `?station=${s.station_id}` : ""}`;
-  // Which field on that page (NewDateNote's spot), so two on one page each land on their own.
-  const spot =
-    s.what === "The description" ? "description"
-    : s.what.startsWith("A map") ? "file"
-    : s.what === "The information for directors" ? "director-info"
-    : s.what === "The meal details" ? "meal-details"
-    : s.what === "A room's note" ? "room"
-    : s.what === "A shift" ? "shift"
-    : s.what === "A thing to bring" ? "item"
-    : "instructions";
+        : s.step === "registration"
+          ? `${base}/bands`
+          : s.step === "rooms"
+            ? `${base}/rooms`
+            : s.what === "zone"
+              ? `${base}/booths`
+              : `${base}/volunteering${s.station_id ? `?station=${s.station_id}` : ""}`;
+  const spot = s.what === "document" ? "file" : s.what;
   return `${path}#new-date-${spot}`;
 }
 
-/** "Add the new date in Details: 1 spot", or "… in Details (1 spot) and Jobs and shifts (2 spots)". */
+/** "Add the new date in Details: 1 place", or "… in Details (1 place) and Jobs and shifts (2 places)". */
 export function newDateBlocker(spots: NewDateSpot[], kind: string | null | undefined) {
   const by = new Map<string, number>();
   for (const s of spots) {
-    const label = copyStepLabel(s.step, kind);
+    const label = newDateStepLabel(s.step, kind);
     by.set(label, (by.get(label) ?? 0) + s.count);
   }
   const parts = [...by.entries()];
-  if (parts.length === 1) return `Add the new date in ${parts[0][0]}: ${plural(parts[0][1], "spot", "spots")}`;
-  return `Add the new date in ${listAnd(parts.map(([l, n]) => `${l} (${plural(n, "spot", "spots")})`))}`;
+  if (parts.length === 1) return `Add the new date in ${parts[0][0]}: ${places(parts[0][1])}`;
+  return `Add the new date in ${listAnd(parts.map(([l, n]) => `${l} (${places(n)})`))}`;
+}
+
+/** The counts a duplicate brings, worked out once (duplicateCounts) for every screen that names them. */
+export type DuplicateCounts = { jobs: number; shifts: number; items: number; files: number; coordinators: number; invited: number; rooms?: number };
+
+/** "1 map or document", "3 maps and documents". */
+export const mapsAndDocuments = (n: number) => (n === 1 ? "1 map or document" : `${n} maps and documents`);
+
+/** "2 Coordinators (1 invited again)", "1 Coordinator", in the event's own word for the role. */
+export function coordinatorWords(total: number, invited: number, one = "Coordinator", many = "Coordinators") {
+  return `${plural(total, one, many)}${invited > 0 && invited < total ? ` (${invited} invited again)` : invited > 0 && invited === total ? (total === 1 ? " (invited again)" : " (all invited again)") : ""}`;
+}
+
+/** What a duplicate brings, in one list for the panel, New event, the Duplicate page, and the copy. */
+export function comesOverParts(kind: string | null | undefined, c: DuplicateCounts, details = true): string[] {
+  return [
+    details ? "its details" : "",
+    kind === "band_contest" || kind === "group_event" ? "registration setup" : "",
+    c.rooms ? plural(c.rooms, "room", "rooms") : "",
+    c.jobs ? plural(c.jobs, "job", "jobs") : "",
+    c.shifts ? plural(c.shifts, "shift", "shifts") : "",
+    c.items ? plural(c.items, "thing to bring", "things to bring") : "",
+    c.files ? mapsAndDocuments(c.files) : "",
+    c.coordinators ? coordinatorWords(c.coordinators, c.invited) : "",
+  ].filter(Boolean);
 }

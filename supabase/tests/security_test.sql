@@ -3653,6 +3653,18 @@ begin
   exception when sqlstate 'P0001' then ok := true;
   end;
   assert ok, 'a festival with no rooms can''t be published';
+  ok := false;
+  begin
+    perform public.copy_group_event_setup('10000000-0000-0000-0000-0000000000d1', '10000000-0000-0000-0000-0000000000d4');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'dup: the old festival copy can''t be called by anyone signed in (Duplicate event replaced it)';
+end $$;
+-- The shared copy body still works for the server (it runs as the host's claims).
+reset role;
+do $$
+declare ok boolean := false; res jsonb;
+begin
   res := public.copy_group_event_setup('10000000-0000-0000-0000-0000000000d1', '10000000-0000-0000-0000-0000000000d4');
   assert (res ->> 'rooms')::int = 3, 'copying brings the rooms';
   assert (select count(*) from public.rooms where event_id = '10000000-0000-0000-0000-0000000000d4' and path_order is not null) = 3,
@@ -3667,6 +3679,10 @@ begin
   exception when sqlstate 'P0001' then ok := true;
   end;
   assert ok, 'a festival that''s set up can''t be copied into';
+end $$;
+set role authenticated;
+do $$
+begin
   update public.events set status = 'published' where id = '10000000-0000-0000-0000-0000000000d4';
   assert (select status from public.events where id = '10000000-0000-0000-0000-0000000000d4') = 'published',
          'with rooms and a deadline, it publishes';
@@ -9022,6 +9038,8 @@ begin
   assert ok, 'a stranger can''t copy a contest';
 end $$;
 set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","email":"host@example.com"}';
+-- Nobody signed in calls it any more (Duplicate event replaced it); its checks still hold for the server.
+reset role;
 do $$
 declare ok boolean := false;
 begin
@@ -10657,7 +10675,8 @@ begin
   assert ok, 'reuse only from events the person hosts';
 end $$;
 
--- Copying last year's contest or festival brings no sponsors or levels.
+-- Copying last year's contest or festival brings no sponsors or levels (the shared copy body, as the server runs it).
+reset role;
 do $$ begin
   perform public.copy_band_contest_setup('5b000000-0000-0000-0000-0000000000e2', '5b000000-0000-0000-0000-0000000000e6');
   perform public.copy_group_event_setup('5b000000-0000-0000-0000-0000000000e3', '5b000000-0000-0000-0000-0000000000e7');
@@ -11158,8 +11177,13 @@ begin
   assert (select instructions from public.stations where event_id = c1 and name = 'Trail crew') = 'Meet at the north lot', 'dup: instructions';
   assert (select count(*) from public.event_files where event_id = c1 and path like c1::text || '/%' and path like '%-park-map.pdf'
              and label = 'Park map') = 1, 'dup: the map, in the copy''s folder';
-  assert (r -> 'summary' -> 'files' -> 0 ->> 'from') = 'dc000000-0000-0000-0000-0000000000e1/0d0d0d0d-0000-0000-0000-000000000001-park-map.pdf',
-         'dup: the summary names the file to copy';
+  assert (r -> 'files' -> 0 ->> 'from') = 'dc000000-0000-0000-0000-0000000000e1/0d0d0d0d-0000-0000-0000-000000000001-park-map.pdf',
+         'dup: the answer names the file to copy';
+  assert (r2 -> 'files' -> 0 ->> 'to') = (r -> 'files' -> 0 ->> 'to'), 'dup: and a retry names it again, from the rows';
+  -- What's stored keeps counts and ids only: no names, addresses, or file names.
+  assert (select position('@' in summary::text) = 0 and position('Park map' in summary::text) = 0 and position('park-map' in summary::text) = 0
+                 and position('"name"' in summary::text) = 0
+            from public.event_copies where event_id = c1), 'dup: the stored summary keeps no names, addresses, or file names';
 
   -- Never: anyone who signed up, what they did, or the rest.
   assert (select coalesce(sum(registered_count), 0) from public.shifts where event_id = c1) = 0, 'dup: shift counts are 0';
@@ -11194,8 +11218,8 @@ begin
   assert (select public_notes from public.events where id = c1) = 'Bring gloves. See you [new date]!', 'dup: an old date in the description is blanked';
   assert (select jsonb_array_length(public.copy_new_date_spots(c1))) = 1
      and public.copy_new_date_spots(c1) -> 0 ->> 'step' = 'details', 'dup: the step that holds the marker';
-  assert jsonb_array_length(r -> 'summary' -> 'coordinators' -> 'held') = 2
-     and jsonb_array_length(r -> 'summary' -> 'coordinators' -> 'added') = 1, 'dup: the summary counts Coordinators held and added';
+  assert (r -> 'summary' -> 'coordinators' ->> 'held')::int = 2 and jsonb_array_length(r -> 'coordinators' -> 'held') = 2
+     and (r -> 'summary' -> 'coordinators' ->> 'added')::int = 1, 'dup: the summary counts Coordinators held and added';
   assert (select count(*) from public.event_copy_steps where event_id = c1 and opened_at is null) = 2, 'dup: two copied steps, not opened';
   assert (select source_event_id = 'dc000000-0000-0000-0000-0000000000e1' from public.event_copies where event_id = c1), 'dup: where it came from';
   -- The source didn't change.
@@ -11537,7 +11561,7 @@ begin
     update public.events set status = 'published', volunteer_signup_open = true where id = c2;
     assert false, 'dup: a copy with "[new date]" left can''t be published';
   exception when sqlstate 'P0001' then
-    assert sqlerrm like 'Add the new date first.%Details (1 spot)%', 'dup: the reason names the step and how many: ' || sqlerrm;
+    assert sqlerrm like 'Add the new date first.%Details (1 place)%', 'dup: the reason names the step and how many: ' || sqlerrm;
   end;
   assert (select status = 'draft' from public.events where id = c2), 'dup: it stays a draft';
   update public.events set public_notes = 'Bring gloves. See you today!' where id = c2;
@@ -11772,6 +11796,125 @@ begin
   assert public.copy_blank_dates('Nov 7, 2026', k) = '[new date]', 'dup: blank: the right day in another year is old';
   assert public.copy_blank_dates(null, k) is null and public.copy_marker_count('a [new date] b [new date]') = 2, 'dup: blank: counts';
 end $$;
+
+-- dup: blank, more. Grades, scores, words, names, and links stay; more ways of writing a date are caught (the same
+-- cases as src/lib/old-dates.test.ts).
+do $$
+declare k date[] := array['2027-11-06', '2027-11-07']::date[];
+begin
+  assert public.copy_blank_dates('Grades 4/5 and 6/7/8 meet at 9. Grade 3/4 too.', k) = 'Grades 4/5 and 6/7/8 meet at 9. Grade 3/4 too.', 'dup: blank: grades stay';
+  assert public.copy_blank_dates('Scored 10/10 and 9/10 last year', k) = 'Scored 10/10 and 9/10 last year', 'dup: blank: scores stay';
+  assert public.copy_blank_dates('We march 8 to 5. You may 2 shifts.', k) = 'We march 8 to 5. You may 2 shifts.', 'dup: blank: lowercase march and may stay';
+  assert public.copy_blank_dates('Ask Jan 2 hours before', k) = 'Ask Jan 2 hours before', 'dup: blank: a name before a count stays';
+  assert public.copy_blank_dates('See https://example.org/2026/11/1 or [Nov 1 map](https://x.org/nov-1) or www.site.com/11/1 or parks.org/11/1', k)
+         = 'See https://example.org/2026/11/1 or [Nov 1 map](https://x.org/nov-1) or www.site.com/11/1 or parks.org/11/1', 'dup: blank: links stay';
+  assert public.copy_blank_dates('Nov 1 at https://x.org/a and Nov 2', k) = '[new date] at https://x.org/a and [new date]', 'dup: blank: around a link';
+  assert public.copy_blank_dates('On 8 November, the 8th of November, 2026-11-08, 11-8-2026, and Saturday the 8th.', k)
+         = 'On [new date], [new date], [new date], [new date], and [new date].', 'dup: blank: day first, ISO, dashes, and "Saturday the 8th"';
+  assert public.copy_blank_dates('Saturday the 6th, Sunday 7 November 2027, 2027-11-07', k) = 'Saturday the 6th, Sunday 7 November 2027, 2027-11-07',
+         'dup: blank: the copy''s own days stay, written any way';
+  assert public.copy_blank_dates('Sunday the 6th', k) = '[new date]', 'dup: blank: the 6th is a Saturday';
+end $$;
+
+-- dup: places. An old-style job's Location is a place (the job form shows its box while it holds one); a map's name
+-- is counted under Maps and documents; text that "[new date]" would push past its limit comes over whole and is
+-- listed as a place to change by hand, never failing the copy.
+insert into public.events (id, organization_id, name, slug, status, event_type, timezone, starts_on, ends_on, window_start, window_end,
+                           venue_address, classifications, director_info)
+values
+  ('dc000000-0000-0000-0000-0000000000e8', 'dc000000-0000-0000-0000-000000000001', 'Leaf Day', 'dup-leaf', 'published', 'volunteer',
+   'America/Chicago', current_date - 300, current_date - 300, now() - interval '300 days', now() - interval '299 days 18 hours',
+   '1 Leaf Ln', '{}', null),
+  ('dc000000-0000-0000-0000-0000000000e7', 'dc000000-0000-0000-0000-000000000001', 'Fall Classic', 'dup-classic', 'published', 'band_contest',
+   'America/Chicago', current_date - 300, current_date - 300, now() - interval '300 days', now() - interval '299 days 18 hours',
+   '1 Band Way', array['1A'], repeat('a', 2950) || ' Due 11/2, 11/3, 11/4, 11/5, 11/6.');
+insert into public.stations (id, event_id, name, location, sort_order, signup_kind) values
+  ('dc000000-0000-0000-0000-0000000005e8', 'dc000000-0000-0000-0000-0000000000e8', 'Raking', 'Lot B (11/2 only)', 1, 'shifts');
+insert into public.event_files (id, event_id, label, path, file_name, content_type, size_bytes, audiences, created_by)
+values
+  ('dc000000-0000-0000-0000-0000000009e1', 'dc000000-0000-0000-0000-0000000000e8', 'Park map 11/2',
+   'dc000000-0000-0000-0000-0000000000e8/0d0d0d0d-0000-0000-0000-000000000002-map.png', 'map.png', 'image/png', 10, '{public}', '000000dc-0000-0000-0000-000000000001'),
+  ('dc000000-0000-0000-0000-0000000009e2', 'dc000000-0000-0000-0000-0000000000e8', repeat('b', 112) || ' 11/2',
+   'dc000000-0000-0000-0000-0000000000e8/0d0d0d0d-0000-0000-0000-000000000003-rules.pdf', 'rules.pdf', 'application/pdf', 10, '{public}', '000000dc-0000-0000-0000-000000000001');
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000001","email":"dcowner@example.com"}';
+do $$
+declare r jsonb; c uuid; b uuid; sp jsonb; ok boolean := false;
+begin
+  r := public.duplicate_event('dc000000-0000-0000-0000-0000000000e8', current_date + 60, 'Leaf Day again', gen_random_uuid());
+  c := (r ->> 'event_id')::uuid;
+  sp := public.copy_new_date_spots(c);
+  assert (select location from public.stations where event_id = c) = 'Lot B ([new date] only)', 'dup: an old-style job''s Location is marked';
+  assert exists (select 1 from jsonb_array_elements(sp) x where x ->> 'what' = 'location' and x ->> 'step' = 'jobs' and (x ->> 'count')::int = 1),
+         'dup: and it''s a place of its own (its box shows while it holds one)';
+  assert exists (select 1 from jsonb_array_elements(sp) x where x ->> 'what' = 'file' and x ->> 'step' = 'files' and x ->> 'detail' = 'Park map [new date]'),
+         'dup: a map''s name is counted under Maps and documents';
+  assert (select label from public.event_files where event_id = c and file_name = 'rules.pdf') = repeat('b', 112) || ' 11/2',
+         'dup: a name "[new date]" would push past 120 characters comes over whole, never cut';
+  assert exists (select 1 from jsonb_array_elements(sp) x where x ->> 'what' = 'document' and (x ->> 'unmarked')::boolean),
+         'dup: and is listed as a place to change by hand';
+  begin
+    update public.events set status = 'published' where id = c;
+  exception when sqlstate 'P0001' then
+    ok := sqlerrm like '%Maps and documents (2 places)%Jobs and shifts (1 place)%';
+  end;
+  assert ok, 'dup: the publish block names Maps and documents, in places';
+  update public.event_files set label = 'Rules' where event_id = c and file_name = 'rules.pdf';
+  assert not exists (select 1 from jsonb_array_elements(public.copy_new_date_spots(c)) x where x ->> 'what' = 'document'),
+         'dup: once it''s changed, it isn''t a place any more';
+
+  -- Information for directors near its 3,000-character limit, with several dates: the copy is made, nothing is cut.
+  r := public.duplicate_event('dc000000-0000-0000-0000-0000000000e7', current_date + 60, 'Fall Classic again', gen_random_uuid());
+  b := (r ->> 'event_id')::uuid;
+  assert (select director_info from public.events where id = b) = (select director_info from public.events where id = 'dc000000-0000-0000-0000-0000000000e7'),
+         'dup: long information for directors comes over whole when the markers wouldn''t fit';
+  assert exists (select 1 from jsonb_array_elements(public.copy_new_date_spots(b)) x
+                  where x ->> 'what' = 'director-info' and x ->> 'step' = 'registration' and (x ->> 'unmarked')::boolean),
+         'dup: and is a place to change its dates by hand';
+  update public.events set director_info = 'Due [new date].' where id = b;
+  assert exists (select 1 from jsonb_array_elements(public.copy_new_date_spots(b)) x where x ->> 'what' = 'director-info' and not (x ->> 'unmarked')::boolean),
+         'dup: a changed field counts its markers again';
+end $$;
+
+-- dup: privacy. A removed Coordinator's address is gone once Undo can't bring it back (cleared on read and daily);
+-- a Co-host of only the copy sees names only for this event's team; a send that never went out reads as not emailed.
+do $$
+declare r jsonb; c uuid; inv uuid; rid uuid;
+begin
+  r := public.duplicate_event('dc000000-0000-0000-0000-0000000000e1', current_date + 90, 'Privacy copy', gen_random_uuid());
+  c := (r ->> 'event_id')::uuid;
+  perform set_config('dup.cp', c::text, false);
+  assert public.copy_invitation_is_held(c, 'DCcoord@example.com'), 'dup: inviting a held address is told it''s waiting for this copy';
+  select invitation_id into inv from public.copy_coordinators(c) where email = 'dccoord2@example.com';
+  rid := public.remove_copy_invitation(inv);
+  assert 'dccoord2@example.com' in (select * from public.copy_recent_removals(c)), 'dup: while Undo works, they aren''t offered again';
+  perform set_config('dup.rid', rid::text, false);
+end $$;
+reset role;
+update public.copy_invitation_removals set removed_at = now() - interval '11 minutes' where id = current_setting('dup.rid')::uuid;
+do $$ begin
+  assert public.purge_copy_invitation_removals() = 1, 'dup: the daily clean-up removes it';
+  assert not exists (select 1 from public.copy_invitation_removals where invitation::text like '%dccoord2%'), 'dup: the removed address is gone';
+end $$;
+insert into public.event_staff (event_id, user_id, role) values (current_setting('dup.cp')::uuid, '000000dc-0000-0000-0000-000000000006', 'co_host');
+update public.invitations set held_for_publish = false, token = gen_random_uuid(), sent_at = now() - interval '10 minutes', delivered_at = null,
+                              expires_at = now() + interval '29 days'
+ where event_id = current_setting('dup.cp')::uuid and email = 'dccoord@example.com';
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000006","email":"dcstranger@example.com"}';
+do $$ begin
+  assert (select name from public.copy_coordinators(current_setting('dup.cp')::uuid) where email = 'dccoord@example.com') = 'dccoord@example.com',
+         'dup: a Co-host of only the copy doesn''t see the name of someone on the account''s other events';
+  assert (select status from public.copy_coordinators(current_setting('dup.cp')::uuid) where email = 'dccoord@example.com') = 'held',
+         'dup: sent but never delivered reads as not emailed yet';
+  assert not public.copy_invitation_is_held('dc000000-0000-0000-0000-0000000000e1', 'dccoord@example.com'), 'dup: nothing held on the source';
+end $$;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000001","email":"dcowner@example.com"}';
+do $$ begin
+  assert (select name from public.copy_coordinators(current_setting('dup.cp')::uuid) where email = 'dccoord@example.com') = 'Coco Ordinator',
+         'dup: the Account Host sees the name of someone on the account''s team';
+end $$;
+reset role;
 
 -- Clean up.
 set role service_role;

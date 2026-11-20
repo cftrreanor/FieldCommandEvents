@@ -3,7 +3,7 @@ import { cache, type ReactNode } from "react";
 import { LineIcon } from "@/components/line-icon";
 import { requireUser } from "@/lib/auth";
 import { loadCopyPublishCheck, type CopyPublishCheck, type DuplicateSummary } from "@/lib/duplicate-event";
-import { addDays, firstName, listAnd, newDateSpotHref, newDateSpotLabel, offsetWords, plural, shortRange, type NewDateSpot } from "@/lib/duplicate-words";
+import { addDays, firstName, listAnd, mapsAndDocuments, newDateSpotHref, newDateSpotLabel, offsetWords, places, plural, shortRange, type NewDateSpot } from "@/lib/duplicate-words";
 import { loadAccountHost } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, utcToZonedDate, utcToZonedTime } from "@/lib/time";
@@ -92,20 +92,52 @@ export function registrationLines(f: CopyFacts, place: "here" | "elsewhere"): st
   ].filter((x): x is string => Boolean(x));
 }
 
-/** "[new date]" spots on a copy, each a link to where it's filled in. */
-export function NewDateList({ base, spots, className = "" }: { base: string; spots: NewDateSpot[]; className?: string }) {
+/**
+ * "[new date]" places on a copy, each a link to where it's filled in, grouped under the page where it's fixed
+ * ("Details", "Maps and documents", "Jobs and shifts"). Wraps in full on phones ("[new date]" is never cut off).
+ */
+export function NewDateList({
+  base,
+  spots,
+  className = "",
+  groupLabel,
+}: {
+  base: string;
+  spots: NewDateSpot[];
+  className?: string;
+  /** The page each place is fixed on, as a heading over its places (Maps and documents has its own, with its link). */
+  groupLabel?: (step: string) => { label: string; href: string };
+}) {
   if (!spots.length) return null;
+  const item = (s: NewDateSpot, i: number) => (
+    <li key={`${s.step}-${s.what}-${s.station_id ?? s.job ?? ""}-${s.detail ?? i}`} className="[overflow-wrap:anywhere]">
+      <Link href={newDateSpotHref(base, s)} className={LINK}>
+        {newDateSpotLabel(s)}
+      </Link>
+      {s.what === "item" && s.job && s.job !== "Things to bring" ? <span className="text-muted"> · {s.job}</span> : null}
+      {s.count > 1 && <span className="text-muted"> · {places(s.count)}</span>}
+    </li>
+  );
+  if (!groupLabel) return <ul className={`space-y-1 ${className}`}>{spots.map(item)}</ul>;
+  const steps = [...new Set(spots.map((s) => s.step))];
   return (
-    <ul className={`space-y-1 ${className}`}>
-      {spots.map((s, i) => (
-        <li key={`${s.step}-${s.what}-${s.station_id ?? s.job ?? i}`}>
-          <Link href={newDateSpotHref(base, s)} className={LINK}>
-            {newDateSpotLabel(s)}
-          </Link>{" "}
-          <span className="text-muted">· {plural(s.count, "spot", "spots")}</span>
-        </li>
-      ))}
-    </ul>
+    <div className={`space-y-2 ${className}`}>
+      {steps.map((step) => {
+        const here = spots.filter((s) => s.step === step);
+        const g = groupLabel(step);
+        return (
+          <div key={step}>
+            <p className="font-medium">
+              <Link href={g.href} className="underline underline-offset-4 hover:text-brand">
+                {g.label}
+              </Link>{" "}
+              <span className="font-normal text-muted">· {places(here.reduce((n, s) => n + s.count, 0))}</span>
+            </p>
+            <ul className="mt-0.5 space-y-1 pl-4">{here.map(item)}</ul>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -133,12 +165,12 @@ export async function CopiedNote({ facts: f, place = "event" }: { facts: CopyFac
           ? [{ href: `${base}/volunteering`, link: `${plural(f.shiftsOutside, "shift", "shifts")} outside the ${event.event_type === "band_contest" ? "contest's" : "festival's"} hours`, where: "Jobs and shifts" }]
           : []),
         { href: `${base}/edit`, link: "The description", where: "Details" },
-        ...(f.files ? [{ href: `${base}/edit?section=files`, link: "Maps and documents", where: `${plural(f.files, "file", "files")} came over` }] : []),
+        ...(f.files ? [{ href: `${base}/edit?section=files`, link: "Maps and documents", where: `${mapsAndDocuments(f.files)} came over` }] : []),
         { href: `${base}/edit?section=emails`, link: "Where replies go, and who gets notified", where: "Email settings, not copied" },
       ]
     : [
         { href: `${base}/edit`, link: "The description", where: "Details" },
-        ...(f.files ? [{ href: `${base}/edit?section=files`, link: "Maps and documents", where: `${plural(f.files, "file", "files")} came over` }] : []),
+        ...(f.files ? [{ href: `${base}/edit?section=files`, link: "Maps and documents", where: `${mapsAndDocuments(f.files)} came over` }] : []),
         { href: `${base}/edit?section=emails`, link: "Where replies go, and who gets notified", where: "Email settings, not copied" },
       ];
   // On Band registration, its own items say "below".
@@ -148,7 +180,8 @@ export async function CopiedNote({ facts: f, place = "event" }: { facts: CopyFac
   const emailedBefore = check.invitations.filter((i) => i.status === "expired");
   const tz = event.timezone || "America/Chicago";
   const sent = check.invitations.filter((i) => i.status === "sent");
-  const added = summary.coordinators?.added ?? [];
+  // How many Coordinators already on the account's team kept their jobs (the stored summary keeps counts only).
+  const added = typeof summary.coordinators?.added === "number" ? summary.coordinators.added : 0;
   const reg = registrationLines(f, place === "registration" ? "here" : "elsewhere");
   const user = await requireUser();
   const supabase = await createClient();
@@ -162,7 +195,7 @@ export async function CopiedNote({ facts: f, place = "event" }: { facts: CopyFac
         summary.shifts ? plural(summary.shifts, "shift", "shifts") : "",
         summary.items ? plural(summary.items, "thing to bring", "things to bring") : "",
         summary.rooms ? plural(summary.rooms, "room", "rooms") : "",
-        f.files ? plural(f.files, "file", "files") : "",
+        f.files ? mapsAndDocuments(f.files) : "",
       ].filter(Boolean),
     ) || "its details"}`,
     "Any changes you've made to it go too",
@@ -238,13 +271,14 @@ export async function CopiedNote({ facts: f, place = "event" }: { facts: CopyFac
             </ul>
           )}
           {check.newDates.length > 0 && (
-            <div>
-              <p className="font-semibold text-warning">
-                <span aria-hidden>◆ </span>Add the new date
-              </p>
-              <p>Dates typed into the copied text are left as &ldquo;[new date]&rdquo; for you to fill in. Publishing waits until they are.</p>
-              <NewDateList base={base} spots={check.newDates} className="mt-1" />
-            </div>
+            // The full list is in one place: the publish card, below.
+            <p className="font-medium text-warning">
+              <span aria-hidden>◆ </span>Dates typed into the copied text are left as &ldquo;[new date]&rdquo;, in{" "}
+              {places(check.newDates.reduce((n, d) => n + d.count, 0))}. Publishing waits until each is filled in.{" "}
+              <a href="#publish" className={LINK}>
+                See them under Publish
+              </a>
+            </p>
           )}
           <p className="font-semibold">Check what came over</p>
           <ul className="space-y-1">
@@ -267,12 +301,11 @@ export async function CopiedNote({ facts: f, place = "event" }: { facts: CopyFac
             </p>
           )}
           {sent.length > 0 && <p>Already invited: {listAnd(sent.map((s) => s.name))}. Publishing won&apos;t email them again.</p>}
-          {added.length > 0 &&
-            added.map((a) => (
-              <p key={`${a.user_id}-${a.job}`}>
-                {a.name} is already on your team, so they keep leading {a.job}.
-              </p>
-            ))}
+          {added > 0 && (
+            <p>
+              {added === 1 ? "1 Coordinator is already on your team, so they keep leading their job." : `${added} Coordinators are already on your team, so they keep leading their jobs.`}
+            </p>
+          )}
           <p>
             {contest && summary.bands_on_source
               ? `${event.event_type === "group_event" ? "Groups" : "Bands"} and volunteers aren't copied: the ${plural(summary.bands_on_source, event.event_type === "group_event" ? "group" : "band", event.event_type === "group_event" ? "groups" : "bands")} registered stay on ${check.source?.name}.`

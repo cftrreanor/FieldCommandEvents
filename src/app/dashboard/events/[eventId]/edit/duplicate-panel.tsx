@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Card } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
-import { canDuplicateKind, duplicateHref, firstName, listAnd, plural } from "@/lib/duplicate-words";
+import { duplicateCounts } from "@/lib/duplicate-event";
+import { canDuplicateKind, comesOverParts, duplicateHref, firstName, listAnd } from "@/lib/duplicate-words";
 import { loadAccountHost } from "@/lib/plan";
 import { createClient } from "@/lib/supabase/server";
 
@@ -23,7 +24,7 @@ export async function DuplicatePanel({ event }: { event: { id: string; name: str
         <h2 className="text-lg font-semibold">Duplicate event</h2>
         <div className="mt-1 space-y-2 text-sm leading-6">
           <p className="font-semibold">{host.name ? `${host.name} can duplicate this event for you.` : "Your Account Host can duplicate this event for you."}</p>
-          <p className="text-muted">Only the Account Host and Co-hosts of every event can create events. You&apos;re a Co-host of {event.name} only.</p>
+          <p className="text-muted">Only the Account Host and Co-hosts of every event can duplicate events. You&apos;re a Co-host of {event.name} only.</p>
         </div>
         {host.email && (
           <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
@@ -36,23 +37,9 @@ export async function DuplicatePanel({ event }: { event: { id: string; name: str
       </Card>
     );
   }
-  const [{ count: jobs }, { count: shifts }, { count: items }, { count: files }, { data: leads }] = await Promise.all([
-    supabase.from("stations").select("id", { count: "exact", head: true }).eq("event_id", event.id),
-    supabase.from("shifts").select("id", { count: "exact", head: true }).eq("event_id", event.id),
-    supabase.from("station_items").select("id", { count: "exact", head: true }).eq("event_id", event.id),
-    supabase.from("event_files").select("id", { count: "exact", head: true }).eq("event_id", event.id),
-    supabase.from("station_leads").select("user_id").eq("event_id", event.id),
-  ]);
-  const coordinators = new Set((leads ?? []).map((l) => l.user_id)).size;
-  const parts = [
-    "its details",
-    event.event_type === "band_contest" || event.event_type === "group_event" ? "registration setup" : "",
-    jobs ? plural(jobs, "job", "jobs") : "",
-    shifts ? plural(shifts, "shift", "shifts") : "",
-    items ? plural(items, "thing to bring", "things to bring") : "",
-    files ? plural(files, "file", "files") : "",
-    coordinators ? plural(coordinators, "Coordinator", "Coordinators") : "",
-  ].filter(Boolean);
+  // The same counts and words as New event and the Duplicate page (duplicateCounts, comesOverParts).
+  const counts = (await duplicateCounts([event.id], event.organization_id)).get(event.id)!;
+  const parts = comesOverParts(event.event_type, counts);
   return (
     <Card className="scroll-mt-6" id="duplicate">
       <h2 className="text-lg font-semibold">Duplicate event</h2>

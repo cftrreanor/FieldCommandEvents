@@ -61,7 +61,7 @@ export async function duplicateEvent(fromEventId: string, requestId: string, _pr
     return { error: error && (error.code === "42501" || error.code === "P0001") ? friendlyDbError(error) : "Nothing was created. Try again." };
   }
   const result = data as DuplicateResult;
-  const { failed } = await copyCopiedFiles(result.event_id, result.summary.files ?? [], result.existing);
+  const { failed } = await copyCopiedFiles(result.event_id, result.files ?? [], result.existing);
   // A contest's copy lands on Band registration, so that step is opened by landing there (marked here, so every
   // screen agrees from the first render).
   if (result.summary.kind === "band_contest") {
@@ -174,7 +174,8 @@ export async function discardCopy(eventId: string): Promise<ActionState> {
     if (removeError) console.error("Removing a discarded copy's files from storage failed", removeError);
   }
   revalidatePath("/dashboard", "layout");
-  const keep = new URLSearchParams({ name: gone.name, on: gone.starts_on }).toString();
+  // Back to Duplicate event with the name and day kept; its back link goes to My events (the copy is gone).
+  const keep = new URLSearchParams({ name: gone.name, on: gone.starts_on, from: "events" }).toString();
   return {
     ok: true,
     message: `Deleted ${gone.name}.`,
@@ -246,17 +247,11 @@ export async function publishCopy(eventId: string, send: string[], signup?: "now
         : "Published, and sign-up is open"
       : "Published";
   const names = (list: { name: string }[]) => joinNames(list.map((p) => p.name));
-  const wasnt = (n: number) => (n === 1 ? "wasn't" : "weren't");
+  // Short: the event page's card below Links to share says why, with the buttons to send or remove.
+  const missed = [...notEmailed, ...left];
   const parts = [
     emailed.length ? `${emailed.length === 1 ? "An invitation went" : "Invitations went"} to ${names(emailed)}.` : "",
-    notEmailed.length === 1
-      ? `${notEmailed[0].name} wasn't emailed: ${lowerFirst(notEmailed[0].why)}`
-      : notEmailed.length
-        ? `${names(notEmailed)} weren't emailed. They're listed on the event page to send again.`
-        : "",
-    left.length
-      ? `${names(left)} ${wasnt(left.length)} emailed: send ${left.length === 1 ? "their invitation" : "their invitations"} from Team setup when you're ready.`
-      : "",
+    missed.length ? `${names(missed)} ${missed.length === 1 ? "wasn't" : "weren't"} emailed.` : "",
   ].filter(Boolean);
   return {
     ok: true,
