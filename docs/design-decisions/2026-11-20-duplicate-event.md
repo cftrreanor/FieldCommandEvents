@@ -68,3 +68,17 @@ consultant). Three findings rated 3. Owner decisions:
 
 By the routing rule, the fixes get a light check from the roles that raised findings plus the Product Manager and
 Marketing Manager.
+
+## Built pages, after fixes: follow-up check (2026-11-20)
+
+Review: docs/design-reviews/2026-11-20-duplicate-event-built-2.md (all seven roles and the consultant). Two findings rated
+3, both with clear fixes. Owner decisions:
+
+| # | Finding | Severity | Decision | Notes |
+|---|---|---|---|---|
+| 1 | A job's old Location can block publishing for good | 3 | Take the advice | Location (no longer shown on the job form) is never a "[new date]" place for these kinds, or the box shows when it holds one; a test |
+| 2 | Long text can stop duplicating with only "Try again" | 3 | Take the advice | A marker never pushes text past its limit; a field that still doesn't fit is named; a test |
+| — | A contest close to its day: three deadline rules | 2 | Owner: **the two-week rule** | Both screens say registration should close two weeks before contest day; the Duplicate page says plainly when that's already past or leaves a day or so, before copying |
+| — | Duplicate event on every My events card | 2 | Owner: **past and soon** | On past events and events within a few weeks of their day; always in Event settings and on New event |
+| — | Description box on Details | 2 | Owner: **every event** | Details always has a Description box (it was missing for every event) |
+| — | All other severity 2 and 1 findings | 2/1 | Take the advice | As written in the report: one list of "[new date]" places, each under the page where it's fixed; ◆ on Jobs tabs; "place" not "spot"; date patterns fixed (grades, scores, "march", names, links) and widened ("7 November", ISO dates, job and room names); the privacy promise made true (counts only in the summary, removals cleared daily); Remove on the "wasn't emailed" card; re-adding a removed Coordinator says it emails them now (and isn't offered while Undo works); a same-day date allowed with a warning; the smaller items |
