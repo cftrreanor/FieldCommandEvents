@@ -14,6 +14,7 @@ import {
 import { SetupSteps } from "@/components/volunteer-steps";
 import { STEP_PATHS, type SetupStepFacts, type StepsKind } from "@/lib/setup-steps";
 import { hasConferences, hasRooms } from "@/lib/event-types";
+import { loadCopySteps } from "@/lib/duplicate-event";
 
 /**
  * Every page of an event. On the day itself, the team's jobs of the day are a
@@ -48,6 +49,8 @@ export default async function EventLayout({ children, params }: LayoutProps<"/da
             ? festivalSteps(facts)
             : meetingSteps(facts)
       : null;
+  // A duplicated draft: its copied steps say "Copied: check it" until opened, then "Opened" until saved or confirmed.
+  if (steps && kind && kind !== "meeting") steps.copied = await loadCopySteps(eventId);
   return (
     <>
       {day && <DayBar day={day} />}

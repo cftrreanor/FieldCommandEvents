@@ -76,6 +76,8 @@ automated test.
   (database update `20261209000000_conference_teacher_only.sql`).
 - **Volunteers' phone numbers:** Hosts, Co-hosts, and Volunteer Leads; Coordinators only on
   event day.
+- **Duplicated events (20270207000000_duplicate_event.sql):** duplicating an event never copies volunteers, families,
+  children, or anyone's details, and Coordinators copied with it get no access until they accept their invitation.
 - **Visiting directors:** see their own registration, never other schools' contact details.
 - **The public:** sees only what the organizer publishes, such as the schedule. Families never
   see who else booked or registered.

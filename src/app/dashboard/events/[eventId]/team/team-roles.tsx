@@ -24,6 +24,8 @@ import { CopyLinkButton, DeleteButton, RemoveButton, SmallActionButton } from ".
 import { AddToTeam, ChoiceWindowButton, type TeamOption } from "./team-windows";
 import { leadWords } from "@/lib/event-types";
 import { CO_HOST_POWERS } from "@/lib/team-words";
+import { loadCopiedPeople } from "@/lib/duplicate-event";
+import { CopiedCoordinators } from "./copied-coordinators";
 
 type Person = { full_name: string; email: string; phone: string | null } | null;
 type StaffRow = { user_id: string; role: "volunteer_director" | "section_lead" | "co_host"; profiles: Person };
@@ -108,6 +110,10 @@ export async function TeamRoles({
         .order("removed_at", { ascending: false }),
       supabase.rpc("team_options", { p_event: eventId }),
     ]);
+  // A duplicated event's copied Coordinators: their own group, with one status ladder (Duplicate event, 2026-11-20).
+  const copied = access.isHost && roles.includes("section-leads") ? await loadCopiedPeople(eventId) : null;
+  const copiedIds = new Set((copied?.people ?? []).map((p) => p.id));
+  const notEmailed = (copied?.people ?? []).filter((p) => p.status === "held" || p.status === "expired");
   const staffRows = (staff ?? []) as unknown as StaffRow[];
   const hosts = ((hostData ?? []) as Host[]).sort((a, b) => Number(b.kind === "owner") - Number(a.kind === "owner"));
   const accountHost = hosts.find((h) => h.kind === "owner");
@@ -116,7 +122,8 @@ export async function TeamRoles({
   const wide = hosts.some((h) => h.user_id === user.id && h.kind !== "event");
   const directors = staffRows.filter((s) => s.role === "volunteer_director");
   const leads = staffRows.filter((s) => s.role === "section_lead");
-  const invitations = (invitationData ?? []) as Invitation[];
+  // Copied invitations show in their own group, not again under Pending.
+  const invitations = ((invitationData ?? []) as Invitation[]).filter((inv) => !copiedIds.has(inv.id));
   const stations = (stationData ?? []).map((st) => ({
     ...st,
     lead_ids: (leadRows ?? []).filter((l) => l.station_id === st.id).map((l) => l.user_id),
@@ -449,8 +456,10 @@ export async function TeamRoles({
           tabs={roles.map((r) => ({
             key: r,
             label: steps[r].title,
-            status: count[r] ? steps[r].status : "Optional",
-            mark: count[r] ? "done" : undefined,
+            // Copied Coordinators not emailed yet: a yellow mark with how many.
+            ...(r === "section-leads" && notEmailed.length && copied?.team.coordinators_included
+              ? { status: `${notEmailed.length} not emailed yet`, mark: "todo" as const }
+              : { status: count[r] ? steps[r].status : "Optional", mark: count[r] ? ("done" as const) : undefined }),
             href: href(r),
             active: r === active,
           }))}
@@ -542,7 +551,54 @@ export async function TeamRoles({
                 </div>
               )}
 
-              {tab === "section-leads" && (
+              {/* Kept on the page while it's a copy, even once its list is empty, so Undo stays in reach after a Remove. */}
+              {tab === "section-leads" && copied && (copied.people.length > 0 || !copied.published) && (
+                <section className={copied.people.length ? "space-y-3" : undefined}>
+                  {!copied.team.coordinators_included && notEmailed.length > 0 && (
+                    <div className="rounded-md border border-brand/25 bg-brand-soft px-3 py-2 text-sm leading-6">
+                      <p>
+                        <span className="font-semibold">Your plan doesn&apos;t include Volunteer Leads and {lead.many},</span> so{" "}
+                        {notEmailed.length === 1 ? "this person can't" : `these ${notEmailed.length} can't`} be invited. Everything else came over, and the
+                        jobs work without a {lead.one}.
+                      </p>
+                      <Link href="/dashboard/account" className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
+                        See your plan
+                      </Link>
+                    </div>
+                  )}
+                  {copied.team.coordinators_included && copied.team.max != null && copied.team.free === 0 && notEmailed.length > 0 && (
+                    <div className="rounded-md border border-brand/25 bg-brand-soft px-3 py-2 text-sm leading-6">
+                      <p>
+                        <span className="font-semibold">
+                          Your team is full: {copied.team.used} of {copied.team.max} team spots.
+                        </span>{" "}
+                        An invitation takes a spot when it&apos;s sent, so these wait here. Freeing a spot doesn&apos;t send them: press Send once there&apos;s
+                        room. Publishing still works.
+                      </p>
+                      <Link href="/dashboard/team" className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
+                        Free a spot on My team
+                      </Link>
+                    </div>
+                  )}
+                  {copied.people.length > 0 && (
+                  <div>
+                    <h2 className="text-sm font-semibold">Copied from {copied.source ?? "the event you duplicated"}</h2>
+                    <p className="mt-1 text-sm leading-6 text-muted">
+                      Invitations for the same jobs. They can&apos;t open {event.name} until they accept.
+                      {notEmailed.length > 0 && copied.team.coordinators_included && (
+                        <>
+                          {" "}
+                          <span aria-hidden className="inline-block size-2.5 rounded-full bg-warning align-middle" /> means not emailed yet.
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  )}
+                  <CopiedCoordinators eventId={eventId} eventName={event.name} people={copied.people} published={copied.published} leadTitle={lead.one} />
+                </section>
+              )}
+
+              {tab === "section-leads" && !(copied && copied.people.length > 0 && leads.every((l) => copied.people.some((p) => p.status === "accepted" && p.email.toLowerCase() === (l.profiles?.email ?? "").toLowerCase()))) && (
                 <div>
                   <h2 className="text-sm font-semibold">Current members</h2>
                   <p className="mt-1 text-sm leading-6 text-muted">

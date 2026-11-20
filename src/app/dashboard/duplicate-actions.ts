@@ -6,8 +6,10 @@ import { requireUser } from "@/lib/auth";
 import { copyCopiedFiles, loadCopyCoordinators, type CopiedFile, type DuplicateResult } from "@/lib/duplicate-event";
 import { FILES_BUCKET } from "@/lib/event-files";
 import { changePublished } from "@/lib/publish-event";
+import { publishAndOpenBandRegistration } from "./band-actions";
 import { sendInvitation } from "@/lib/send-invitation";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { formatDate, utcToZonedDate } from "@/lib/time";
 
 // Duplicate event (owner decisions: docs/design-decisions/2026-11-20-duplicate-event.md). Every rule is in the
 // database (20270207000000_duplicate_event.sql): who may duplicate, what comes over, held invitations, and Delete
@@ -191,10 +193,15 @@ export type PublishCopyState = ActionState & {
 export async function publishCopy(eventId: string, send: string[], signup?: "now" | "later"): Promise<PublishCopyState> {
   await requireUser();
   const supabase = await createClient();
-  const { data: ev } = await supabase.from("events").select("event_type, name").eq("id", eventId).maybeSingle();
+  const { data: ev } = await supabase.from("events").select("event_type, name, timezone, band_registration_opens_on").eq("id", eventId).maybeSingle();
   if (!ev) return { error: "Only the event's host can publish it." };
   const signsUp = ev.event_type === "volunteer" || ev.event_type === "fair";
-  const published = await changePublished(eventId, true, signsUp && signup ? signup === "now" : undefined);
+  const registers = ev.event_type === "band_contest" || ev.event_type === "group_event";
+  // A contest or festival opens registration as it publishes (on its opening day, if one is set), as its own
+  // publish button does; everything else publishes with sign-up open now or later.
+  const published = registers
+    ? await publishAndOpenBandRegistration(eventId)
+    : await changePublished(eventId, true, signsUp && signup ? signup === "now" : undefined);
   if (published.error) return { error: published.error };
 
   const people = await loadCopyCoordinators(eventId);
@@ -210,7 +217,16 @@ export async function publishCopy(eventId: string, send: string[], signup?: "now
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
   revalidatePath("/dashboard", "layout");
 
-  const head = signsUp ? (signup === "later" ? "Published. Sign-up is closed until you open it" : "Published, and sign-up is open") : "Published";
+  const opensLater = ev.band_registration_opens_on && ev.band_registration_opens_on > utcToZonedDate(new Date().toISOString(), ev.timezone || "America/Chicago");
+  const head = registers
+    ? opensLater
+      ? `Published. Registration opens ${formatDate(ev.band_registration_opens_on, { year: undefined })}`
+      : "Published, and registration is open"
+    : signsUp && signup
+      ? signup === "later"
+        ? "Published. Sign-up is closed until you open it"
+        : "Published, and sign-up is open"
+      : "Published";
   const names = (list: { name: string }[]) => joinNames(list.map((p) => p.name));
   const parts = [
     emailed.length ? `Invitations went to ${names(emailed)}.` : "",

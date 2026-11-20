@@ -60,6 +60,11 @@ import { hasSponsorsCard, SponsorsCardBody, SponsorsSection } from "./sponsors/s
 import { festivalRegistrationMissing, festivalRoomsMissing } from "@/lib/setup-checklist";
 import { minutesPerGroup } from "@/lib/rooms";
 import { datesMoved } from "@/lib/schedule-emails";
+import { CopiedNote, CopiedStepsLine, loadCopyFacts, type CopyFacts } from "./copied-note";
+import { CopyPublish } from "./copy-publish";
+import { NotEmailedLine } from "./team/copied-coordinators";
+import { loadCopiedPeople } from "@/lib/duplicate-event";
+import { copyStepLabel, copyStepPath } from "@/lib/duplicate-words";
 
 export const metadata: Metadata = { title: "Event setup" };
 
@@ -342,6 +347,10 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   // Hosts: the setup checklist and what publishing will do (the same facts every event page's strip uses).
   const setup: SetupFacts | null = access.isHost ? await loadSetupFacts(eventId) : null;
   const checklist = setup ? setupChecklist(setup) : null;
+  // A duplicated event (Duplicate event, 2026-11-20): its "Copied from" note and publish window while a draft; once
+  // published, a line for anyone not emailed until they're sent or removed.
+  const copyFacts: CopyFacts | null = access.isHost && event.status !== "published" ? await loadCopyFacts(eventId) : null;
+  const copiedLive = access.isHost && event.status === "published" ? await loadCopiedPeople(eventId) : null;
 
   const past = today > event.ends_on;
   const published = event.status === "published";
@@ -1040,6 +1049,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         festival={fest ? { previewHref: publicUrl } : undefined}
         // A one-day meetings event's optional contact email lives here (it has no More options step: owner, 2026-11-09).
         contact={conferenceHere && access.isHost && conference?.schedule !== "weekly" ? { initial: conference?.contact_email ?? null, meeting: event.event_type === "meeting" } : undefined}
+        copy={copyFacts ? await copyPublishParts(copyFacts, conferenceHere ? `/e/${event.slug}/book` : fest ? publicUrl : `/e/${event.slug}/volunteer`, user.id, user.email ?? "") : undefined}
       /> : null;
 
   // Still setting up: the one thing to do next, in the main column too.
@@ -1164,7 +1174,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
     <div
       className={dayActions || (checklist && !(steppedSetup && !published) && !fest) ? "lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-8" : undefined}
     >
-      {justPublished && !contestLive && (
+      {justPublished && !contestLive && query.copy !== "1" && (
         <SuccessToast
           message={
             fest
@@ -1174,7 +1184,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         />
       )}
       {justPublished && <ScrollTo id="share" />}
-      {justCopied && <SuccessToast message="Your copy is ready. Check the dates on each step, then publish." />}
+      {justCopied && <SuccessToast message={copyFacts ? "Duplicated. Check what came over, then publish." : "Your copy is ready. Check the dates on each step, then publish."} />}
       {demoEnded && <SuccessToast message="You're back on your own account. The demo people and sample data are gone." />}
       {/* Meetings set up in steps: the step bar is the one tracker, so no second checklist beside it (decisions 2026-11-08). */}
       {dayActions ? <DayRail day={dayActions} /> : checklist && !(steppedSetup && !published) && !fest && <SetupGuide checklist={checklist} />}
@@ -1218,6 +1228,15 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
             </Link>
           )}
         </div>
+
+        {copyFacts && <CopiedNote facts={copyFacts} />}
+        {copiedLive && (
+          <NotEmailedLine
+            eventId={eventId}
+            people={copiedLive.people.filter((p) => (p.status === "held" || p.status === "expired") && copiedLive.team.coordinators_included)}
+            teamHref={`/dashboard/events/${eventId}/edit?section=team&tab=section-leads`}
+          />
+        )}
 
         {contestLive && inviteable ? (
           <GetTheWordOut
@@ -1312,7 +1331,10 @@ function PublishPanel({
   previewHref,
   contact,
   festival,
+  copy,
 }: {
+  /** A duplicated draft: its publish window in place of the buttons, and what's left to look over. */
+  copy?: { buttons: ReactNode; readyLine: ReactNode; effect: string | null };
   /** A festival: its page, to preview before publishing. */
   festival?: { previewHref: string };
   facts: SetupFacts;
@@ -1349,9 +1371,16 @@ function PublishPanel({
   const festFix = festival && !festRooms && facts.roomTwoAtOnce ? facts.roomTwoAtOnce : null;
   const blocked = needsJob || Boolean(bandMissing) || meetingTodo.length > 0 || Boolean(festRooms || festReg);
   // A volunteer event says what its own button opens (it chooses when sign-up opens), as band contests do.
-  const effects = publishEffects(facts).map((line) =>
-    jobsHere && line.startsWith("Volunteer sign-up") ? "With Publish and open sign-up, volunteers can pick a shift or an item right away." : line,
-  );
+  const effects = [
+    ...publishEffects(facts).map((line) =>
+      jobsHere && line.startsWith("Volunteer sign-up")
+        ? "With Publish and open sign-up, volunteers can pick a shift or an item right away."
+        : copy?.effect && line.startsWith("Nobody is emailed")
+          ? "Volunteers aren't emailed. People only find out when you share your link."
+          : line,
+    ),
+    ...(copy?.effect ? [copy.effect] : []),
+  ];
   return (
     <Card id="publish" className="mt-8 scroll-mt-6">
       <h2 className="text-lg font-semibold">{blocked ? "Not ready to publish yet" : others.length ? "Almost ready to publish" : "Ready to publish"}</h2>
@@ -1443,6 +1472,12 @@ function PublishPanel({
           </Link>
           .
         </p>
+      ) : copy?.readyLine ? (
+        // A copy: nothing is missing, but nobody has said the copied steps are right yet (no "set up" for what nobody has looked at).
+        <>
+          <p className="mt-2 text-sm">Nothing is missing.</p>
+          {copy.readyLine}
+        </>
       ) : (
         <p className="mt-2 flex items-center gap-2 text-sm font-medium text-success">
           <span aria-hidden>✓</span> Everything your event needs is set up.
@@ -1494,6 +1529,8 @@ function PublishPanel({
             </Link>
           )}
         </div>
+      ) : copy ? (
+        copy.buttons
       ) : (
         jobsHere ? (
           <div className="mt-5 space-y-3">
@@ -2094,5 +2131,45 @@ async function festivalFacts(
         </>
       ) : null,
     moved: moved ? { line: moved.line } : null,
+  };
+}
+
+/** A duplicated draft's publish window and Ready card lines (Duplicate event, 2026-11-20). */
+async function copyPublishParts(f: CopyFacts, previewHref: string, userId: string, userEmail: string) {
+  const { check, event } = f;
+  const supabase = await createClient();
+  const { data: me } = await supabase.from("profiles").select("full_name, email").eq("id", userId).maybeSingle();
+  const base = `/dashboard/events/${event.id}`;
+  const label = (step: string) => copyStepLabel(step, event.event_type);
+  const labels = Object.fromEntries(check.steps.map((s) => [s.step, label(s.step)]));
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: reg } = await supabase.from("events").select("band_registration_opens_on, band_registration_deadline").eq("id", event.id).maybeSingle();
+  const coordinators = check.invitations.length;
+  return {
+    readyLine: <CopiedStepsLine facts={f} labels={labels} />,
+    effect: coordinators
+      ? check.toOffer.length
+        ? `You choose which copied ${coordinators === 1 ? "Coordinator gets" : "Coordinators get"} an invitation email. You see who before anything is sent.`
+        : null
+      : null,
+    buttons: (
+      <CopyPublish
+        eventId={event.id}
+        eventName={event.name}
+        kind={event.event_type}
+        previewHref={previewHref}
+        opensOn={reg?.band_registration_opens_on && reg.band_registration_opens_on > today ? reg.band_registration_opens_on : null}
+        deadline={reg?.band_registration_deadline ?? null}
+        people={check.toOffer.map((p) => ({ id: p.invitation_id, name: p.name, email: p.email, jobs: p.jobs, expired: p.status === "expired" }))}
+        blocked={check.cantSend.map((p) => ({
+          name: p.name,
+          jobs: p.jobs,
+          why: check.team.coordinators_included ? (p.why_not ?? "There's no free team spot.") : "Your plan doesn't include Volunteer Leads and Coordinators.",
+        }))}
+        alreadySent={check.invitations.filter((i) => i.status === "sent").map((i) => ({ name: i.name, sentOn: i.sent_at?.slice(0, 10) ?? null }))}
+        unopened={check.unopened.map((u) => ({ label: label(u.step), href: `${base}${copyStepPath(u.step)}`, quotes: u.oldDates }))}
+        host={{ name: me?.full_name ?? "", email: me?.email ?? userEmail }}
+      />
+    ),
   };
 }

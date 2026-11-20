@@ -186,16 +186,6 @@ export async function createEvent(_prev: ActionState, formData: FormData): Promi
     .single();
   if (error) return { error: friendlyDbError(error) };
 
-  // Started from a previous contest: its setup comes over (the database checks it's the same account and
-  // that this person hosts both). The new contest is made either way; if copying fails, it starts empty.
-  const from = String(formData.get("fromEventId") ?? "");
-  let copied = "";
-  if (eventType === "band_contest" && /^[0-9a-f-]{36}$/.test(from)) {
-    const { error: copyError } = await supabase.rpc("copy_band_contest_setup", { p_from: from, p_to: data.id });
-    if (copyError) console.error("Copying a previous band contest failed", copyError.code, copyError.message);
-    copied = `?copied=${from}${copyError ? "&copy=failed" : ""}`;
-  }
-
   revalidatePath("/dashboard");
   // Conferences and meetings go straight to their setup, where the day or weekly hours are set. A
   // volunteer event's step 2 is its jobs, and a band contest's is registration (team, emails, and maps
@@ -209,7 +199,7 @@ export async function createEvent(_prev: ActionState, formData: FormData): Promi
       : eventType === "volunteer"
         ? `/dashboard/events/${data.id}/volunteering`
         : eventType === "band_contest"
-          ? `/dashboard/events/${data.id}/bands${copied}`
+          ? `/dashboard/events/${data.id}/bands`
           : eventType === "group_event"
             ? // A festival's step 2: Rooms and schedule.
               `/dashboard/events/${data.id}/rooms`
@@ -297,41 +287,6 @@ export async function updateEvent(eventId: string, _prev: ActionState, formData:
   // In the guided setup, on to the next step.
   const next = String(formData.get("next") ?? "");
   redirect(next.startsWith(`/dashboard/events/${eventId}/edit?`) ? next : `/dashboard/events/${eventId}`);
-}
-
-/**
- * A band contest whose copy from a previous contest failed: try it again. The database still refuses
- * if the new contest has been set up since (jobs or bands added) or isn't a draft.
- */
-export async function retryContestCopy(eventId: string, fromEventId: string): Promise<ActionState> {
-  await requireUser();
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("copy_band_contest_setup", { p_from: fromEventId, p_to: eventId });
-  if (error) {
-    console.error("Copying a previous band contest failed again", error.code, error.message);
-    return { error: error.code === "P0001" ? error.message : "The setup still didn't come over. Set up registration below, or try again later." };
-  }
-  revalidatePath(`/dashboard/events/${eventId}`, "layout");
-  redirect(`/dashboard/events/${eventId}/bands?copied=${fromEventId}`);
-}
-
-/**
- * Picked the wrong contest to start from: deletes this new contest (a draft with no bands yet) and goes
- * back to the first step, keeping its date, to pick another.
- */
-export async function startContestOver(eventId: string): Promise<ActionState> {
-  await requireUser();
-  const supabase = await createClient();
-  const { data: ev } = await supabase.from("events").select("status, event_type, starts_on").eq("id", eventId).maybeSingle();
-  const { count: bands } = await supabase.from("bands").select("id", { count: "exact", head: true }).eq("event_id", eventId);
-  if (!ev || ev.status !== "draft" || ev.event_type !== "band_contest" || (bands ?? 0) > 0) {
-    return { error: "This contest can't start over: it's published or has bands registered." };
-  }
-  const { data, error } = await supabase.from("events").delete().eq("id", eventId).select("id");
-  if (error) return { error: friendlyDbError(error) };
-  if (!data?.length) return { error: "Only the Account Host can start a contest over: ask them, or keep editing this one." };
-  revalidatePath("/dashboard", "layout");
-  redirect(`/dashboard/events/new?type=band_contest&on=${ev.starts_on}`);
 }
 
 /**

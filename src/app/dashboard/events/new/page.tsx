@@ -12,8 +12,8 @@ import { SetupSteps } from "@/components/volunteer-steps";
 import { sponsorsEnabled } from "@/lib/sponsors-data";
 import type { StepsKind } from "@/lib/setup-steps";
 import { SetupLogo } from "../_components/setup-logo";
-import { ContestPicker } from "../_components/contest-picker";
-import { FestivalCopy, type PastFestival } from "../_components/festival-copy";
+import { StartFromEvent, type PastEvent } from "../_components/start-from-event";
+import { canDuplicateKind, listAnd, longRange, plural } from "@/lib/duplicate-words";
 import { loadBrand } from "@/lib/badges";
 import { EventTypeChoices } from "@/components/event-type-picker";
 import { hasConferences, isEventType } from "@/lib/event-types";
@@ -22,14 +22,14 @@ import { freeStatus } from "@/lib/admin";
 import { requireUser } from "@/lib/auth";
 import { PlanAsk } from "@/components/plan-ask";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime } from "@/lib/time";
+import { formatDate } from "@/lib/time";
 
 export const metadata: Metadata = { title: "New event" };
 
 export default async function NewEventPage({ searchParams }: PageProps<"/dashboard/events/new">) {
   const org = await getMyOrganization();
   if (!org) redirect("/dashboard");
-  const { type, from, on, picked } = await searchParams;
+  const { type, on } = await searchParams;
   // The plan's own kinds come first in the picker; any other kind can be set up to try.
   // Before the packages update, teacher accounts host conferences only.
   const supabase = await createClient();
@@ -100,87 +100,11 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
     // The account's logo and color, for an Account Host to set from the start.
     const { data: isAdmin } = await supabase.rpc("is_org_admin", { org: org.id });
     const brand = isAdmin ? await loadBrand(org.id) : null;
-    // A band contest can start from any earlier contest on the account (a format that worked well, not just last year's).
-    const { data: pastData } =
-      type === "band_contest"
-        ? await supabase
-            .from("events")
-            .select("id, name, status, classifications, starts_on, ends_on, timezone, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng")
-            .eq("organization_id", org.id)
-            .eq("event_type", "band_contest")
-            .order("starts_on", { ascending: false })
-            .limit(30)
-        : { data: [] };
-    const past = ((pastData ?? []) as {
-      id: string;
-      name: string;
-      status: string;
-      classifications: string[] | null;
-      starts_on: string;
-      ends_on: string;
-      timezone: string;
-      window_start: string;
-      window_end: string;
-      venue_name: string | null;
-      venue_address: string;
-      venue_place_id: string | null;
-      venue_lat: number | null;
-      venue_lng: number | null;
-    }[]).filter((e) => e.status !== "draft" || (e.classifications ?? []).length > 0); // a draft never set up has nothing to copy
-    const source = past.find((e) => e.id === from) ?? null;
-    // A festival can start from an earlier one on the account (copy last year's: owner decisions, 2026-11-11).
-    const { data: festivalData } =
-      type === "group_event"
-        ? await supabase
-            .from("events")
-            .select("id, name, status, starts_on, timezone")
-            .eq("organization_id", org.id)
-            .eq("event_type", "group_event")
-            .order("starts_on", { ascending: false })
-            .limit(30)
-        : { data: [] };
-    const thisYear = Number(utcToZonedDate(new Date().toISOString(), org.default_timezone).slice(0, 4));
-    // A draft never published may be half set up: only festivals that went live, and have started, are offered.
-    const pastFestivals: PastFestival[] = ((festivalData ?? []) as { id: string; name: string; status: string; starts_on: string }[])
-      .filter((e) => e.status !== "draft" && e.starts_on <= utcToZonedDate(new Date().toISOString(), org.default_timezone))
-      .map((e) => {
-        const year = Number(e.starts_on.slice(0, 4));
-        return {
-          id: e.id,
-          name: e.name,
-          date: formatDate(e.starts_on),
-          // "Spring Choir Festival 2026" becomes "… 2027"; a name without a year stays as it is.
-          newName: e.name.replace(/\b(20\d\d)\b/, (y) => String(Math.max(Number(y) + 1, thisYear))),
-          when: year >= thisYear - 1 ? ("Last year" as const) : ("Last time" as const),
-        };
-      });
-    // A date already typed before picking (or before starting over) stays.
+    // Start from one of your events (Duplicate event, 2026-11-20): this kind's events on the account, for the
+    // Account Host and Co-hosts of every event. Replaces "Start from a previous contest" and the festival copy.
+    const past = isAdmin && canDuplicateKind(type) ? await pastEvents(supabase, org.id, type) : [];
+    // A date already typed before (or kept from starting over) stays.
     const day = typeof on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(on) ? on : undefined;
-    const pastContest = (e: (typeof past)[number]) => ({ id: e.id, name: e.name, date: formatDate(e.starts_on), venue: e.venue_name });
-    // What's copied and what starts fresh, shown as soon as a contest is chosen in the dropdown.
-    const copies = (
-                <div className="grid gap-3 text-sm sm:grid-cols-2">
-                  <div>
-                    <p className="font-semibold">Copied when you save</p>
-                    <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                      <li>Classifications and information for directors</li>
-                      <li>Payment link, chaperone limit, meals, and contact for directors</li>
-                      <li>Registration dates, moved by the same number of days as contest day (left blank if that&apos;s in the past)</li>
-                      <li>Ready times and equipment spots</li>
-                      <li>Volunteer jobs, check-in stops, and things to bring, with shifts at the same times of day</li>
-                    </ul>
-                  </div>
-                  <div>
-                    <p className="font-semibold">Starts fresh</p>
-                    <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                      <li>Bands and invitations</li>
-                      <li>The performance schedule</li>
-                      <li>People who signed up to volunteer, and coordinators</li>
-                      <li>Files and maps, email reply settings, and who gets notified</li>
-                    </ul>
-                  </div>
-                </div>
-    );
     return (
       <div className="mx-auto max-w-5xl" data-required-marks>
         {type === "volunteer" || type === "band_contest" || type === "group_event" ? (
@@ -203,24 +127,7 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
           </SetupHeader>
         )}
         {trialNote}
-        {pastFestivals.length > 0 && <FestivalCopy festivals={pastFestivals} today={utcToZonedDate(new Date().toISOString(), org.default_timezone)} />}
-        {past.length > 0 && (
-          // Start from an earlier contest: its setup comes over when this one is saved.
-          <Card className="mt-6">
-            <h2 className="text-lg font-semibold">Start from a previous contest</h2>
-            <p className="mt-1 text-sm text-muted">Copy the setup of a contest that worked well, or start from scratch.</p>
-            <div className="mt-4">
-              <ContestPicker key={source?.id ?? "new"} contests={past.map(pastContest)} current={source ? pastContest(source) : null} copies={copies} />
-            </div>
-            {source && (
-              <>
-                <p className="mt-4 text-sm font-semibold">
-                  Pick the new contest date below. The name, times, and venue are filled in from {source.name}.
-                </p>
-              </>
-            )}
-          </Card>
-        )}
+        {past.length > 0 && <StartFromEvent events={past} kindWords={KIND_WORDS[type] ?? "an event"} />}
         <Card className="mt-6">
           <h2 className="text-lg font-semibold">Event details</h2>
           <p className="mt-1 text-sm text-muted">The name, dates, times, and venue everyone sees.</p>
@@ -229,38 +136,11 @@ export default async function NewEventPage({ searchParams }: PageProps<"/dashboa
               action={createEvent}
               organizationId={org.id}
               eventType={type}
-              key={source?.id ?? "new"}
-              nameHint={source ? "Same name as the contest you're copying. Add the year if it helps tell them apart." : undefined}
-              dateHint={source ? `${source.name} was ${formatDateRange(source.starts_on, source.ends_on)}.` : undefined}
-              focusDate={Boolean(source && picked)}
-              initial={
-                source
-                  ? {
-                      startsOn: day,
-                      endsOn: day,
-                      name: source.name,
-                      timezone: source.timezone,
-                      startTime: utcToZonedTime(source.window_start, source.timezone).slice(0, 5),
-                      endTime: utcToZonedTime(source.window_end, source.timezone).slice(0, 5),
-                      venue: {
-                        name: source.venue_name,
-                        address: source.venue_address,
-                        placeId: source.venue_place_id,
-                        lat: source.venue_lat,
-                        lng: source.venue_lng,
-                      },
-                    }
-                  : { timezone: org.default_timezone, startsOn: day, endsOn: day }
-              }
+              initial={{ timezone: org.default_timezone, startsOn: day, endsOn: day }}
               venueSearchEnabled={isPlacesConfigured}
               submitLabel="Save and continue"
               setup={{}}
-              extra={
-                <>
-                  {source && <input type="hidden" name="fromEventId" value={source.id} />}
-                  {brand && <SetupLogo eventId={null} logo={brand.logo} color={brand.color} />}
-                </>
-              }
+              extra={brand && <SetupLogo eventId={null} logo={brand.logo} color={brand.color} />}
             />
           </div>
         </Card>
@@ -313,4 +193,56 @@ function FirstStep({ kind, intro, children, sponsorsOn = false }: { kind: StepsK
       </p>
     </>
   );
+}
+
+const KIND_WORDS: Record<string, string> = {
+  volunteer: "a volunteer event",
+  fair: "a school fair",
+  band_contest: "a band contest",
+  group_event: "a festival",
+};
+
+/** This kind's events on the account, newest first, each with what it would bring over. A draft with no jobs has nothing to copy. */
+async function pastEvents(supabase: Awaited<ReturnType<typeof createClient>>, orgId: string, type: string): Promise<PastEvent[]> {
+  const { data } = await supabase
+    .from("events")
+    .select("id, name, status, starts_on, ends_on, venue_name")
+    .eq("organization_id", orgId)
+    .eq("event_type", type)
+    .order("starts_on", { ascending: false })
+    .limit(30);
+  const events = (data ?? []) as { id: string; name: string; status: string; starts_on: string; ends_on: string; venue_name: string | null }[];
+  if (!events.length) return [];
+  const ids = events.map((e) => e.id);
+  const [{ data: stations }, { data: shifts }, { data: items }, { data: files }, { data: leads }] = await Promise.all([
+    supabase.from("stations").select("event_id").in("event_id", ids),
+    supabase.from("shifts").select("event_id").in("event_id", ids),
+    supabase.from("station_items").select("event_id").in("event_id", ids),
+    supabase.from("event_files").select("event_id").in("event_id", ids),
+    supabase.from("station_leads").select("event_id, user_id").in("event_id", ids),
+  ]);
+  const n = (rows: { event_id: string }[] | null, id: string) => (rows ?? []).filter((r) => r.event_id === id).length;
+  return events
+    .map((e) => {
+      const jobs = n(stations, e.id);
+      const coordinators = new Set((leads ?? []).filter((l) => l.event_id === e.id).map((l) => l.user_id)).size;
+      const parts = [
+        type === "band_contest" || type === "group_event" ? "registration setup" : "",
+        jobs ? plural(jobs, "job", "jobs") : "",
+        n(shifts, e.id) ? plural(n(shifts, e.id), "shift", "shifts") : "",
+        n(items, e.id) ? plural(n(items, e.id), "thing to bring", "things to bring") : "",
+        n(files, e.id) ? plural(n(files, e.id), "file", "files") : "",
+        coordinators ? plural(coordinators, "Coordinator", "Coordinators") : "",
+      ].filter(Boolean);
+      return { e, jobs, parts };
+    })
+    .filter(({ e, jobs }) => e.status !== "draft" || jobs > 0)
+    .map(({ e, parts }) => ({
+      id: e.id,
+      name: e.name,
+      date: formatDate(e.starts_on),
+      dates: longRange(e.starts_on, e.ends_on),
+      venue: e.venue_name,
+      summary: parts.length ? `Brings ${listAnd(parts)}` : "Brings its details",
+    }));
 }

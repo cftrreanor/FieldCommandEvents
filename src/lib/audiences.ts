@@ -472,6 +472,7 @@ export const audiences = {
           "Build a day of equal shifts in one step, or add each shift by hand",
           "Add where volunteers should report, any instructions, and who's leading each sign-up",
           "Mark sign-ups as adults only, and open or close sign-ups whenever you're ready",
+          "Running it again? Duplicate last year's event onto new dates: jobs, shifts, and things to bring come over, and volunteers start fresh",
         ],
         screen: {
           src: "/screens/potluck-items.webp",

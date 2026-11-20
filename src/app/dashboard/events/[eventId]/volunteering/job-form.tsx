@@ -54,7 +54,7 @@ export function JobForm({
     checkpoint_kind?: CheckpointKind | null;
     due_minutes_before_warm_up?: number | null;
   };
-  coordinators: { options: LeadOption[]; pending: string[]; invite: Action };
+  coordinators: { options: LeadOption[]; pending: string[]; held?: { name: string; expired: boolean }[]; teamHref?: string; invite: Action };
   leadLabel: string;
   links: JobLinks;
   /** Someone has signed up for it, so it can't be deleted. */

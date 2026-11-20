@@ -23,6 +23,7 @@ import { AUDIENCES, fileHref, fileMeta, isShowing, uploadedLines, type EventFile
 import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime, zoneName } from "@/lib/time";
 import { deleteEvent, publishAndOpen, setEventPublished, setEventShowBrand, setEventType, updateEvent } from "../../../actions";
 import { DeleteEventButton } from "../delete-event";
+import { DuplicatePanel } from "./duplicate-panel";
 import { reopenBandRegistration, setBandRegistrationOpen } from "../../../band-actions";
 import { ReopenRegistration } from "../bands/reopen-registration";
 import { DemoStart } from "@/components/demo-switcher";
@@ -723,6 +724,8 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                   </div>
                 </Panel>
               )}
+
+              {!guided && <DuplicatePanel event={{ id: eventId, name: event.name, event_type: event.event_type, organization_id: event.organization_id }} />}
 
               {guided ? (
                 stepFooter

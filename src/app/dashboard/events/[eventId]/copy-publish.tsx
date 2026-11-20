@@ -1,0 +1,286 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useId, useRef, useState } from "react";
+import { publishCopy } from "@/app/dashboard/duplicate-actions";
+import { toast } from "@/components/toaster";
+import { Button } from "@/components/ui";
+import { listAnd } from "@/lib/duplicate-words";
+import { formatDate } from "@/lib/time";
+
+export type PublishPerson = { id: string; name: string; email: string; jobs: string[]; expired: boolean };
+export type PublishBlocked = { name: string; jobs: string[]; why: string };
+export type UnopenedStep = { label: string; href: string; quotes: { text: string; context: string }[] };
+
+type Version = "now" | "later" | "plain" | "register";
+
+/**
+ * Publishing a duplicated event: the same buttons as any draft, each opening a window that says what publishing
+ * does in that version (open sign-up now or later; a contest's or festival's registration, now or on its opening
+ * day), lists copied steps nobody has opened (quoting old dates found in their text), and names, ticked, who'll be
+ * emailed an invitation. Publishing runs first, as the signed-in person (the plan is checked); then the ticked
+ * invitations go. Nobody is emailed twice.
+ */
+export function CopyPublish({
+  eventId,
+  eventName,
+  kind,
+  previewHref,
+  opensOn,
+  deadline,
+  people,
+  blocked,
+  alreadySent,
+  unopened,
+  host,
+}: {
+  eventId: string;
+  eventName: string;
+  kind: string;
+  previewHref: string;
+  /** A contest's or festival's registration opening day, when it's after today. */
+  opensOn: string | null;
+  deadline: string | null;
+  /** Not emailed yet (or expired), and can be sent: ticked to start. */
+  people: PublishPerson[];
+  /** Not emailed yet, and can't be sent now (with why). */
+  blocked: PublishBlocked[];
+  /** Sent and still working: publishing doesn't email them again. */
+  alreadySent: { name: string; sentOn: string | null }[];
+  unopened: UnopenedStep[];
+  /** Whoever is publishing: the email is from them. */
+  host: { name: string; email: string };
+}) {
+  const router = useRouter();
+  const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const [version, setVersion] = useState<Version>("now");
+  const [ticked, setTicked] = useState<string[]>(people.map((p) => p.id));
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const registers = kind === "band_contest" || kind === "group_event";
+  const contestWord = kind === "band_contest" ? "band" : "group";
+  const page = kind === "band_contest" ? "The contest page" : kind === "group_event" ? "The festival page" : "Your public page";
+
+  const open = (v: Version) => {
+    setVersion(v);
+    setTicked(people.map((p) => p.id));
+    setFailure(null);
+    dialog.current?.showModal();
+  };
+  const going = people.filter((p) => ticked.includes(p.id));
+  const who = listAnd(going.map((p) => p.name));
+  const count = `${going.length} ${going.length === 1 ? "Coordinator" : "Coordinators"}`;
+  const opensWords = opensOn ? `registration opens ${formatDate(opensOn, { weekday: undefined, year: undefined })}` : "open registration";
+  const doing =
+    version === "now" ? "open sign-up" : version === "later" ? "open sign-up later" : version === "register" ? opensWords : "";
+  const title = going.length
+    ? `Publish ${eventName}${doing ? `, ${doing},` : ""} and email ${who}?`
+    : doing
+      ? `Publish ${eventName} and ${version === "later" ? "open sign-up later" : doing}?`
+      : `Publish ${eventName}?`;
+  const label = going.length
+    ? `Publish${doing ? `, ${doing},` : ""} and email ${count}`
+    : version === "now"
+      ? "Publish and open sign-up"
+      : version === "later"
+        ? "Publish, open sign-up later"
+        : version === "register"
+          ? opensOn
+            ? `Publish, ${opensWords}`
+            : "Publish and open registration"
+          : "Publish event";
+  const sentence =
+    version === "now"
+      ? "Your public page goes online and volunteer sign-up opens right away. Volunteers aren't emailed."
+      : version === "later"
+        ? "Your public page goes online. Sign-up stays closed until you open it, so people can see the event but can't sign up yet. Volunteers aren't emailed."
+        : version === "register"
+          ? `${page} goes online, and ${contestWord} registration opens ${opensOn ? `on ${formatDate(opensOn)}` : "now"}${deadline ? ` through ${formatDate(deadline)}` : ""}. Directors aren't emailed: share the registration link or invite directors from ${kind === "band_contest" ? "Band registration" : "Registration"} when you're ready. Volunteer sign-up stays closed until you open it.`
+          : "Your public page goes online. Volunteer sign-up stays closed until you open it. Volunteers aren't emailed.";
+
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    setFailure(null);
+    try {
+      const r = await publishCopy(eventId, ticked, version === "now" || version === "later" ? version : undefined);
+      if (r.error) {
+        setBusy(false);
+        setFailure(`Couldn't publish: ${r.error.replace(/\.$/, "")}. ${eventName} is still a draft, and nobody was emailed.`);
+        return;
+      }
+      if (r.message) toast(r.message);
+      dialog.current?.close();
+      router.push(`/dashboard/events/${eventId}?published=1&copy=1`);
+    } catch {
+      setBusy(false);
+      setFailure(`Couldn't publish: the connection dropped. Try again. Nobody is emailed twice.`);
+    }
+  };
+
+  const go = "inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-success px-4 text-sm font-semibold text-success-foreground shadow-sm hover:brightness-90";
+  return (
+    <>
+      {registers ? (
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button type="button" onClick={() => open("register")} className={go}>
+            {opensOn ? `Publish, ${opensWords}` : "Publish and open registration"}
+          </button>
+          {kind === "group_event" && (
+            <a href={previewHref} target="_blank" className="inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand">
+              Preview the festival page<span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          )}
+        </div>
+      ) : kind === "volunteer" ? (
+        <div className="mt-5 space-y-3">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <button type="button" onClick={() => open("now")} className={go}>
+              Publish and open sign-up
+            </button>
+            <a href={previewHref} target="_blank" className="inline-flex min-h-11 items-center text-sm font-medium text-brand underline-offset-4 hover:underline">
+              Preview the sign-up page
+            </a>
+          </div>
+          <div className="text-sm">
+            <p className="text-muted">Not ready for sign-ups yet? Publish now and open sign-up later. People can see the event but can&apos;t sign up.</p>
+            <Button type="button" variant="secondary" className="mt-2" onClick={() => open("later")}>
+              Publish, open sign-up later
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5">
+          <button type="button" onClick={() => open("plain")} className={go}>
+            Publish event
+          </button>
+        </div>
+      )}
+
+      <dialog
+        ref={dialog}
+        aria-labelledby={titleId}
+        onCancel={(e) => busy && e.preventDefault()}
+        onClick={(e) => !busy && e.target === e.currentTarget && dialog.current?.close()}
+        className="team-window m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-xl overflow-hidden rounded-xl border border-border p-0 text-left text-foreground shadow-elevated"
+      >
+        <div className="flex max-h-[calc(100dvh-2rem)] flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto p-6">
+            <h2 id={titleId} className="text-xl font-semibold leading-7 [overflow-wrap:anywhere]">
+              {title}
+            </h2>
+            <p className="mt-3 leading-7 text-muted">{sentence}</p>
+
+            {unopened.length > 0 && (
+              <div className="mt-4 rounded-md border border-warning/50 bg-warning-soft px-3 py-2 text-sm leading-6">
+                <p className="font-semibold">
+                  Copied, and nobody has opened {unopened.length === 1 ? "this step" : "these steps"} yet
+                </p>
+                <ul className="mt-1 space-y-1">
+                  {unopened.map((u) => (
+                    <li key={u.label}>
+                      <Link href={u.href} className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4 sm:min-h-0">
+                        {u.label}
+                      </Link>
+                      {u.quotes.length > 0 && (
+                        <span>
+                          {" "}
+                          still mentions {listAnd(u.quotes.slice(0, 3).map((q) => `“${q.text}”`))}
+                          <span className="block text-muted">{u.quotes[0].context}</span>
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-muted">You can still publish, and change any of it after.</p>
+              </div>
+            )}
+
+            {(people.length > 0 || blocked.length > 0 || alreadySent.length > 0) && (
+              <fieldset className="mt-4">
+                <legend className="text-sm font-semibold">Email an invitation to</legend>
+                {people.length > 0 ? (
+                  <ul className="mt-2 divide-y divide-border rounded-lg border border-border">
+                    {people.map((p) => (
+                      <li key={p.id}>
+                        <label className="flex min-h-11 items-start gap-3 px-3 py-3 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={ticked.includes(p.id)}
+                            disabled={busy}
+                            onChange={() => setTicked((t) => (t.includes(p.id) ? t.filter((x) => x !== p.id) : [...t, p.id]))}
+                            className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--brand)]"
+                          />
+                          <span className="min-w-0">
+                            <span className="block font-medium">
+                              {p.name} · <span className="font-normal">{listAnd(p.jobs)}</span>
+                            </span>
+                            <span className="block text-muted [overflow-wrap:anywhere]">{p.email}</span>
+                            {p.expired && <span className="block text-muted">Invitation expired: this sends a new one</span>}
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-muted">Nobody to email now.</p>
+                )}
+                {alreadySent.length > 0 && (
+                  <p className="mt-2 text-sm leading-6">
+                    Already invited: {listAnd(alreadySent.map((s) => (s.sentOn ? `${s.name} (sent ${formatDate(s.sentOn, { weekday: undefined, year: undefined })})` : s.name)))}.
+                    Publishing won&apos;t email them again while {alreadySent.length === 1 ? "that invitation" : "those invitations"}{" "}
+                    still {alreadySent.length === 1 ? "works" : "work"}.
+                  </p>
+                )}
+                {blocked.length > 0 && (
+                  <ul className="mt-2 space-y-1 text-sm leading-6">
+                    {blocked.map((b) => (
+                      <li key={b.name}>
+                        <span className="font-medium">{b.name} can&apos;t be emailed now:</span> <span className="text-muted">{b.why}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {people.length > 0 && (
+                  <p className="mt-2 text-sm leading-6 text-muted">
+                    Anyone unticked stays in Team setup as &ldquo;Not emailed yet&rdquo;, to send later. Nobody can open the event until they accept. The email
+                    is from you, {host.name || host.email}, and gives {host.email} for anyone who can&apos;t help.
+                  </p>
+                )}
+              </fieldset>
+            )}
+
+            {busy && (
+              <p aria-live="polite" className="mt-4 text-sm font-medium">
+                {going.length ? `Publishing, then sending ${going.length === 1 ? "1 invitation" : `${going.length} invitations`}…` : "Publishing…"}
+              </p>
+            )}
+            {failure && (
+              <div role="alert" className="mt-4 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-sm leading-6 text-danger">
+                <p>{failure}</p>
+              </div>
+            )}
+          </div>
+          {/* Pinned to the bottom of the window, so the buttons stay in reach on a phone. */}
+          <div className="flex shrink-0 flex-col gap-2 border-t border-border p-4 sm:flex-row-reverse sm:justify-start sm:px-6">
+            {busy ? (
+              <button type="button" aria-disabled className={`${go} cursor-wait max-sm:w-full`}>
+                <span aria-hidden className="size-4 animate-spin rounded-full border-2 border-success-foreground border-t-transparent motion-reduce:animate-none" />
+                {going.length ? "Publishing and sending…" : "Publishing…"}
+              </button>
+            ) : (
+              <button type="button" onClick={submit} className={`${go} max-sm:w-full`}>
+                {failure ? "Try again" : label}
+              </button>
+            )}
+            <Button type="button" variant="secondary" disabled={busy} onClick={() => dialog.current?.close()} className="shrink-0 whitespace-nowrap max-sm:w-full">
+              Keep it a draft
+            </Button>
+          </div>
+        </div>
+      </dialog>
+    </>
+  );
+}

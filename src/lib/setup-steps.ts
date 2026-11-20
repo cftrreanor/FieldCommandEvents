@@ -67,5 +67,10 @@ export type SetupStepFacts = {
   sponsorsOn?: boolean;
   /** Steps this event doesn't have (a one-day meetings event has no More options: owner, 2026-11-09). */
   skip?: string[];
+  /**
+   * A duplicated event's copied steps, by key, until each is saved or confirmed: "copied" ("Copied: check it")
+   * until opened, then "opened" ("Opened", never "Done"). Duplicate event, 2026-11-20.
+   */
+  copied?: Partial<Record<string, "copied" | "opened">>;
 };
 

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { Badge, Card } from "@/components/ui";
+import { canDuplicateKind, duplicateHref } from "@/lib/duplicate-words";
 import { requireUser } from "@/lib/auth";
 import { registrationIsOpen } from "@/lib/bands";
 import { getMyOrganization, type Organization } from "@/lib/data";
@@ -206,6 +207,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     : 0;
 
   const orgs = orgRows ?? [];
+  // Who can duplicate an event (the Account Host and Co-hosts of every event): Duplicate event on its card.
+  const adminOrgs = new Set(
+    (await Promise.all(orgs.map(async (o) => ((await supabase.rpc("is_org_admin", { org: o.id })).data ? o.id : null)))).filter(Boolean) as string[],
+  );
   const hosted = orgs.length
     ? ((
         await supabase
@@ -365,6 +370,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                 draft={drafts.get(e.id)}
                 spot={spotHolder?.id === e.id ? spotHolder.ends_on : null}
                 ask={accountHost && org ? { host: accountHost, orgName: org.name } : null}
+                duplicable={adminOrgs.has(e.organization_id) && canDuplicateKind(e.event_type) && (e.status !== "draft" || isPast(e))}
               />
             ),
           }))}
@@ -556,10 +562,13 @@ function HostedCard({
   draft,
   spot,
   ask,
+  duplicable = false,
 }: {
   event: EventSummary;
   showType: boolean;
   signups: number;
+  /** Published or past, on an account this person can create events on: Duplicate event (2026-11-20). */
+  duplicable?: boolean;
   /** Drafts: the setup checklist, for the next step and how far along it is. */
   draft?: DraftStatus;
   /** The last day this conference holds the one free spot (after a plan ends). */
@@ -584,7 +593,9 @@ function HostedCard({
         </Badge>
       }
     >
-      {past || e.status === "archived" ? null : today && day ? (
+      {past || e.status === "archived" ? (
+        duplicable ? <DuplicateButton event={e} /> : null
+      ) : today && day ? (
         // Above the card's own link, so it can be tapped on its own.
         <Link
           href={`${href}/${day.path}`}
@@ -593,9 +604,12 @@ function HostedCard({
           Today · {day.label} →
         </Link>
       ) : e.status === "published" ? (
-        <div className="space-y-1 text-sm">
-          <p className="font-medium">{signupLine(e.event_type, signups)}</p>
-          {spot && <p className="text-muted">Uses your one free conference spot through {formatDate(spot, { weekday: undefined, year: undefined })}</p>}
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="space-y-1 text-sm">
+            <p className="font-medium">{signupLine(e.event_type, signups)}</p>
+            {spot && <p className="text-muted">Uses your one free conference spot through {formatDate(spot, { weekday: undefined, year: undefined })}</p>}
+          </div>
+          {duplicable && <DuplicateButton event={e} />}
         </div>
       ) : draft ? (
         <DraftNext draft={draft} href={href} ask={ask ?? null} />
@@ -603,6 +617,18 @@ function HostedCard({
         <p className="text-sm font-medium">Next: finish setup and publish</p>
       )}
     </EventCard>
+  );
+}
+
+/** "Duplicate event" on a card: above the card's own link, so it can be pressed on its own, named with the event. */
+function DuplicateButton({ event: e }: { event: EventSummary }) {
+  return (
+    <Link
+      href={duplicateHref(e.id, "events")}
+      className="relative z-10 inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand"
+    >
+      Duplicate event<span className="sr-only"> {e.name}</span>
+    </Link>
   );
 }
 

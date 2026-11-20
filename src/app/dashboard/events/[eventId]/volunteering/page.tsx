@@ -11,6 +11,7 @@ import { saveMyDigestPrefs } from "../../../notify-actions";
 import { DigestCard } from "./digest-card";
 import { getEventAccess, getOrigin } from "@/lib/data";
 import { missing } from "@/lib/schema-check";
+import { loadCopyCoordinators } from "@/lib/duplicate-event";
 import { createClient } from "@/lib/supabase/server";
 import { loadAccountPlan } from "@/lib/plan";
 import { eachDate, formatDate, formatTimeRange, utcToZonedDate, utcToZonedTime } from "@/lib/time";
@@ -96,7 +97,8 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
           .order("created_at")
       : Promise.resolve({ data: [] }),
     // Coordinators invited but not joined yet, shown on their sign-up.
-    supabase.from("invitations").select("email, station_id").eq("event_id", eventId).eq("role", "section_lead").is("accepted_at", null),
+    // Held for publishing (a duplicated event's Coordinators) have no link yet: they show as "not emailed yet" below.
+    supabase.from("invitations").select("email, station_id").eq("event_id", eventId).eq("role", "section_lead").is("accepted_at", null).not("token", "is", null),
   ]);
   // Check-in stations first, in the band's order, matching the volunteer sign-up page.
   if (stationsError) missing();
@@ -132,6 +134,8 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
   ].filter((z): z is string => Boolean(z));
   const zones = hasBooths(event.event_type) ? [...new Set(made.length ? made : FAIR_ZONES)] : undefined;
 
+  // A duplicated draft's copied Coordinators not emailed yet (or whose invitation expired), on their jobs.
+  const copiedLeads = access.isHost ? (await loadCopyCoordinators(eventId)).filter((c) => c.status === "held" || c.status === "expired") : [];
   const shifts = (shiftData ?? []) as Shift[];
   // Items to bring (stations without times), and for the open one, who's bringing what.
   const { data: itemData } = await supabase
@@ -516,6 +520,8 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                 }
                 leadOptions={leadOptions}
                 pendingInvites={(inviteData ?? []).filter((inv) => inv.station_id === current.id).map((inv) => inv.email)}
+                heldInvites={copiedLeads.filter((c) => c.station_id === current.id || c.jobs.includes(current.name)).map((c) => ({ name: c.name, expired: c.status === "expired" }))}
+                teamHref={`/dashboard/events/${eventId}/edit?section=team&tab=section-leads`}
                 job={
                   jobsHere
                     ? {

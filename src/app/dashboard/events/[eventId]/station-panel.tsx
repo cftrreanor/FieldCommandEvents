@@ -104,6 +104,8 @@ export function StationPanel({
   kindLocked = null,
   leadOptions = [],
   pendingInvites = [],
+  heldInvites = [],
+  teamHref,
   job,
   adultsNeeded = {},
 }: {
@@ -135,6 +137,10 @@ export function StationPanel({
   leadOptions?: LeadOption[];
   /** Invited to lead it, not accepted yet. */
   pendingInvites?: string[];
+  /** A duplicated draft's copied Coordinators for it, not emailed yet (Duplicate event). */
+  heldInvites?: { name: string; expired: boolean }[];
+  /** Team setup's Coordinators tab, where they're sent or removed. */
+  teamHref?: string;
   /** A volunteer event's job: its own layout and words, saved as people type. */
   job?: JobFacts;
   /** Adults each shift still needs (its job saves spots for adults). */
@@ -202,7 +208,7 @@ export function StationPanel({
                 remove={deleteStation.bind(null, eventId, station.id)}
                 initial={station}
                 leadLabel={leadWords(event.event_type).many}
-                coordinators={{ options: leadOptions, pending: pendingInvites, invite: inviteCoordinator.bind(null, eventId, station.id) }}
+                coordinators={{ options: leadOptions, pending: pendingInvites, held: heldInvites, teamHref, invite: inviteCoordinator.bind(null, eventId, station.id) }}
                 links={job.links}
                 signedUp={stationShifts.some((x) => x.registered_count > 0) || (items ?? []).some((x) => x.claimed_count > 0)}
                 ready={job.ready}
@@ -221,7 +227,7 @@ export function StationPanel({
               zones={zones}
               leadLabel={leadWords(event.event_type).many}
               kind={{ value: station.signup_kind ?? "shifts", locked: kindLocked }}
-              coordinators={{ options: leadOptions, pending: pendingInvites, invite: inviteCoordinator.bind(null, eventId, station.id) }}
+              coordinators={{ options: leadOptions, pending: pendingInvites, held: heldInvites, teamHref, invite: inviteCoordinator.bind(null, eventId, station.id) }}
               trackUnsaved
               draft={!station.details_saved_at}
               remaining={[

@@ -24,17 +24,51 @@ export type InvitationDetails = {
   inviter_name: string | null;
 };
 
+/**
+ * A duplicated event's Coordinator (Duplicate event, 2026-11-20): the job they led at the event it was copied from,
+ * whoever sent it (for a no), and whether it went before the copy was published (Send now).
+ */
+export type CopiedInvitation = {
+  /** The event it was copied from, and its first day. */
+  sourceName: string;
+  sourceStartsOn: string;
+  /** Every job they lead on the copy ("Trail crew and Litter pickup"). */
+  jobs: string | null;
+  /** Whoever sent it: their first name and address, for anyone who can't help this time. */
+  hostFirst: string;
+  hostEmail: string;
+  /** Sent before the copy was published. */
+  early: boolean;
+};
+
 /** A different email for co-hosts, Volunteer Leads and Coordinators, with a one-tap accept link. */
 /** `bands`: the event is a band contest (a volunteer event has no bands). */
 /** `leadTitle`: what the person leading a sign-up is called. */
 /** `saved`: an admin's wording for this kind of invitation (invitationEmailKey), if any. */
-export function invitationEmail(inv: InvitationDetails, acceptUrl: string, bands = true, leadTitle = "Coordinator", saved: SystemEmailText | null = null) {
+/** `copy`: a duplicated event's Coordinator: the extra paragraph about the job they led last time. */
+export function invitationEmail(
+  inv: InvitationDetails,
+  acceptUrl: string,
+  bands = true,
+  leadTitle = "Coordinator",
+  saved: SystemEmailText | null = null,
+  copy: CopiedInvitation | null = null,
+) {
   const who = inv.inviter_name ? `${inv.inviter_name} from ${inv.organization}` : inv.organization;
   const when =
     inv.starts_on && inv.ends_on ? `${formatDateRange(inv.starts_on, inv.ends_on)}${inv.venue_name ? ` at ${inv.venue_name}` : ""}` : "";
   // A co-host invitation from My team is for the whole account, not one event.
   const eventName = inv.event_name ?? `${inv.organization}'s events`;
-  const station = inv.station_name ?? "a sign-up";
+  const station = copy?.jobs ?? inv.station_name ?? "a sign-up";
+  const month = copy ? new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${copy.sourceStartsOn}T12:00:00Z`)) : "";
+  // Said whatever the wording: the same job as last time, who to tell if not this time, and (sent early) that it's still being set up.
+  const copied =
+    copy && inv.role === "section_lead"
+      ? [
+          `You're the ${leadTitle} for ${station} at ${copy.sourceName} (${month}), and this is the same job on the new dates. If you can't help this time, let ${copy.hostFirst} know at ${copy.hostEmail}.`,
+          ...(copy.early ? ["The event is still being set up. Once you accept, you can see it as it comes together."] : []),
+        ]
+      : [];
 
   const { subject, heading, paragraphs } = inv.role === "co_host"
     ? {
@@ -71,8 +105,8 @@ export function invitationEmail(inv: InvitationDetails, acceptUrl: string, bands
           paragraphs: [
             `${who} asked you to lead ${station} at ${inv.event_name} (${when}).`,
             bands
-              ? "You'll see who's on your sign-up's shifts and check bands in on contest day. Volunteers' phone numbers unlock on the day."
-              : "You'll see who's on your sign-up's shifts, and their phone numbers unlock on the day of the event.",
+              ? `You'll see who signs up for ${station} and check bands in on contest day. Volunteers' phone numbers unlock on the day.`
+              : `You'll see who signs up for ${station}, and their phone numbers unlock on the day of the event.`,
           ],
         };
   // An account co-host invitation has no event: saved wording that names one would read
@@ -93,16 +127,21 @@ export function invitationEmail(inv: InvitationDetails, acceptUrl: string, bands
     lead_title: leadTitle,
   });
 
+  const body = custom?.paragraphs ?? paragraphs;
   return {
     subject: custom?.subject || subject,
     ...emailLayout({
       heading: custom?.heading || heading,
       paragraphs: [
-        ...(custom?.paragraphs ?? paragraphs),
-        `Tap the button to accept. There's no password: it signs you in as ${inv.email}, and sets up your account if you don't have one yet.`,
+        ...body.slice(0, 1),
+        ...copied,
+        ...body.slice(1),
+        `Use the button to accept. There's no password: it signs you in as ${inv.email}, and sets up your account if you don't have one yet.`,
       ],
       button: { label: custom?.button || "Accept invitation", url: acceptUrl },
-      footer: `This invitation is for ${inv.email} and works until ${formatDate(inv.expires_at.slice(0, 10))}. The button signs you in for the first ${EMAIL_LINK_DAYS} days; after that, sign in with this email to accept. Please don't forward it. If you weren't expecting it, you can ignore this email.`,
+      // When it stops working, next to the button; the footer keeps the sign-in limit.
+      buttonNote: `Works until ${formatDate(inv.expires_at.slice(0, 10))}`,
+      footer: `This invitation is for ${inv.email}. The button signs you in for the first ${EMAIL_LINK_DAYS} days; after that, sign in with this email to accept. Please don't forward it. If you weren't expecting it, you can ignore this email.`,
     }),
   };
 }

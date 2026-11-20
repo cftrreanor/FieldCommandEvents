@@ -1,4 +1,6 @@
 import "server-only";
+import { getOrigin } from "@/lib/data";
+import { addDays, coordinatorStatus } from "@/lib/duplicate-words";
 import { FILES_BUCKET } from "@/lib/event-files";
 import { eachDay, findOldDates, type OldDate } from "@/lib/old-dates";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -171,4 +173,72 @@ export async function loadCopyPublishCheck(eventId: string): Promise<CopyPublish
     team: raw.team,
     discard_blocker: raw.discard_blocker,
   };
+}
+
+/**
+ * The copied steps still asking to be checked, for the step bar: "copied" until opened, then "opened" until saved
+ * or confirmed. Empty for an event that wasn't duplicated (or before the database update).
+ */
+export async function loadCopySteps(eventId: string): Promise<Partial<Record<string, "copied" | "opened">>> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("event_copy_steps").select("step, opened_at, confirmed_at").eq("event_id", eventId);
+  if (error || !data?.length) return {};
+  const open = data.filter((s) => !s.confirmed_at);
+  if (!open.length) return {};
+  // "Saved since the copy was made" counts as confirmed: the publish check works that out.
+  const { data: check } = await supabase.rpc("copy_publish_check", { p_event: eventId });
+  const confirmed = new Set(((check as { steps?: CopyStep[] } | null)?.steps ?? []).filter((s) => s.confirmed).map((s) => s.step));
+  return Object.fromEntries(open.filter((s) => !confirmed.has(s.step)).map((s) => [s.step, s.opened_at ? "opened" : "copied"]));
+}
+
+/** One copied Coordinator as Team setup and the event page show them (the ladder's words worked out once). */
+export type CopiedPersonView = {
+  id: string;
+  name: string;
+  email: string;
+  jobs: string[];
+  status: CopyCoordinator["status"];
+  statusText: string;
+  dot: boolean;
+  tone: "warn" | "good" | "plain";
+  canSend: boolean;
+  url: string | null;
+  until: string;
+};
+
+/**
+ * A copy's Coordinators with their ladder, for Team setup, the job chips, and the event page; plus the team's
+ * state (plan, spots). Null for an event that wasn't duplicated.
+ */
+export async function loadCopiedPeople(eventId: string): Promise<{ people: CopiedPersonView[]; team: CopyPublishCheck["team"]; published: boolean; source: string | null } | null> {
+  const check = await loadCopyPublishCheck(eventId);
+  if (!check) return null;
+  const supabase = await createClient();
+  const [{ data: ev }, { data: tokens }] = await Promise.all([
+    supabase.from("events").select("status").eq("id", eventId).maybeSingle(),
+    check.invitations.some((i) => i.status === "sent")
+      ? supabase.from("invitations").select("id, token").in("id", check.invitations.filter((i) => i.status === "sent").map((i) => i.invitation_id))
+      : Promise.resolve({ data: [] as { id: string; token: string | null }[] }),
+  ]);
+  const published = ev?.status === "published";
+  const origin = await getOrigin();
+  const until = addDays(new Date().toISOString().slice(0, 10), 30);
+  const people = check.invitations.map((c) => {
+    const s = coordinatorStatus(c, published, check.team.coordinators_included);
+    const token = (tokens ?? []).find((t) => t.id === c.invitation_id)?.token;
+    return {
+      id: c.invitation_id,
+      name: c.name,
+      email: c.email,
+      jobs: c.jobs.length ? c.jobs : ["a job"],
+      status: c.status,
+      statusText: s.text,
+      dot: s.dot,
+      tone: s.tone,
+      canSend: c.can_send,
+      url: token ? `${origin}/invite/${token}` : null,
+      until,
+    };
+  });
+  return { people, team: check.team, published, source: check.source?.name ?? null };
 }

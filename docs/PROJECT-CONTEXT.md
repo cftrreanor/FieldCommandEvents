@@ -37,6 +37,13 @@ publishing, and words).
 
 Volunteers can be added to band contests and festivals too (the "Jobs and shifts" or "Volunteers" area).
 
+**Duplicate event** (every kind with jobs; the Account Host and Co-hosts of every event): a new draft on new dates
+from New event ("Start from one of your events"), a card on My events, or Event settings, Publishing and more. Details,
+jobs, shifts, things to bring, maps and documents, and contest or festival registration setup come over, every date
+moved by the same number of days; never volunteers, bands, groups, or anyone's details. Copied steps say "Copied:
+check it" until opened. Coordinators come over as invitations, emailed when the organizer publishes (ticked in the
+publish window) or with Send now. Decisions: `docs/design-decisions/2026-11-20-duplicate-event.md`
+
 ## Add-ons and packages
 
 - **Packages** (names and prices are set on the admin Packages page, so check the app for current ones): Free,
@@ -95,6 +102,7 @@ Sample people are never emailed, and "Back to me" or "Remove demo people" takes 
 
 Keep the last ten or so; older ones are in git history and `docs/design-decisions/`.
 
+- 2026-11-20 (PR pending): Duplicate event: a new draft from any event with jobs, on new dates, from New event, My events, or Event settings; Coordinators come over as invitations sent when you publish (or Send now); replaces "Start from a previous contest" and the festival copy
 - 2026-11-19 (PR pending): Event details: on a multi-day event the times read "Daily start time" and "Daily end time" (the hours each day, which is how shifts and the event page use them), not first-day start and last-day end
 - 2026-11-14 (PR pending): Visitor check-in follow-up fixes: one deletion date everywhere, kept totals after deletion, "Our school has a copy" can be undone, "Saved:" left where a checked name was, the safe choice first in the download warning, and "Let Ben check in" as a button
 - 2026-11-14 (PR pending): Visitor check-in fixes from the built-page check: name choices with particles kept in the last name, one download button that follows what's changed, a soft amber door note with Let Ben check in for Hosts, report groups with the front office first, and "Our school has a copy"

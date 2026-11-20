@@ -60,7 +60,7 @@ export function StationForm({
   /** Time slots or items to bring, and why it can't change right now (null if it can). */
   kind?: { value: SignupKind; locked: string | null };
   /** Who leads it, picked from the team, with a window to invite someone new. */
-  coordinators?: { options: LeadOption[]; pending: string[]; invite: Action };
+  coordinators?: { options: LeadOption[]; pending: string[]; held?: { name: string; expired: boolean }[]; teamHref?: string; invite: Action };
   submitLabel?: string;
   /** A band contest: sign-ups can be stops on the bands' check-in path. */
   bands?: boolean;
@@ -891,6 +891,8 @@ export function CoordinatorPicker({
   initial,
   options,
   pending,
+  held = [],
+  teamHref,
   invite,
   onChange,
   formId,
@@ -898,6 +900,9 @@ export function CoordinatorPicker({
   label: string;
   initial: string[];
   options: LeadOption[];
+  /** A duplicated draft's copied Coordinators for this job, not emailed yet (sent or removed in Team setup). */
+  held?: { name: string; expired: boolean }[];
+  teamHref?: string;
   /** The form these picks save with, when the picker is drawn outside it. */
   formId?: string;
   /** Emails invited to lead this sign-up who haven't accepted yet. */
@@ -937,6 +942,23 @@ export function CoordinatorPicker({
             {email} · invited
           </span>
         ))}
+        {held.map((h) =>
+          teamHref ? (
+            <a
+              key={h.name}
+              href={teamHref}
+              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-surface px-3 text-sm hover:border-brand"
+            >
+              <span aria-hidden className="inline-block size-2.5 rounded-full bg-warning" />
+              {h.name} · {h.expired ? "invitation expired" : "not emailed yet"}
+            </a>
+          ) : (
+            <span key={h.name} className="inline-flex min-h-9 items-center gap-2 rounded-full border border-border px-3 text-sm">
+              <span aria-hidden className="inline-block size-2.5 rounded-full bg-warning" />
+              {h.name} · {h.expired ? "invitation expired" : "not emailed yet"}
+            </span>
+          ),
+        )}
         <Button type="button" variant="secondary" className="min-h-9 px-3 text-sm" onClick={() => setOpen(true)}>
           + Add
         </Button>

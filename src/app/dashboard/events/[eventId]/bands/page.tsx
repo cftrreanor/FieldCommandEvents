@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import QRCode from "qrcode";
-import { retryContestCopy, startContestOver } from "@/app/dashboard/actions";
 import { openBandRegistrationNow, publishAndOpenBandRegistration, reopenBandRegistration, setBandRegistrationOpen, updateBandSettings } from "@/app/dashboard/band-actions";
 import { Badge, Card } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
@@ -18,6 +17,7 @@ import { BAND_COLUMNS, deadlinePassed, opensLater, registrationIsOpen, type Band
 import { getEventAccess, getOrigin } from "@/lib/data";
 import { formatPhone } from "@/lib/phone";
 import { missing } from "@/lib/schema-check";
+import { CopiedNote, loadCopyFacts } from "../copied-note";
 import { loadMealOrders, loadMealSettings } from "@/lib/meals";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatDateRange, utcToZonedDate } from "@/lib/time";
@@ -54,7 +54,7 @@ function dayBefore(date: string) {
  */
 export default async function BandsPage({ params, searchParams }: PageProps<"/dashboard/events/[eventId]/bands">) {
   const { eventId } = await params;
-  const { tab, copied, copy } = await searchParams;
+  const { tab } = await searchParams;
   const access = await getEventAccess(eventId);
   // Volunteer and Coordinators get the read-only schedule instead.
   if (!access.isHost) redirect(`/dashboard/events/${eventId}/schedule`);
@@ -182,7 +182,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
     loadMealSettings(supabase, eventId),
     loadMealOrders(supabase, ((bandData ?? []) as { id: string }[]).map((b) => b.id)),
   ]);
-  const registrationForm = (next?: { href: string; label: string }) => (
+  const registrationForm = (next?: { href: string; label: string }, datesFirst = false) => (
     <RegistrationSettings
       eventId={eventId}
       initial={{
@@ -204,6 +204,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
       today={today}
       alreadyOpen={regOpen}
       contest={{ day: event.starts_on, label: formatDate(event.starts_on, { weekday: undefined, year: undefined }), lastDeadline: dayBefore(event.starts_on) }}
+      datesFirst={datesFirst}
     />
   );
 
@@ -243,6 +244,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
 
   // A festival before it's published: step 3 of its setup (the steps sit above, from the layout; board 5, 2026-11-11).
   if (roomsHere && !published) {
+    const copyFacts = await loadCopyFacts(eventId);
     return (
       <div data-required-marks>
         {/* No "Back to" link while setting up: it would jump ahead to Publish. The step bar is the way around. */}
@@ -252,6 +254,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
         <a href={`/e/${event.slug}/${hasRooms(event.event_type) ? "register" : "bands"}`} target="_blank" className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4">
           Preview the form <span className="sr-only">(opens in a new tab)</span>
         </a>
+        {copyFacts && <CopiedNote facts={copyFacts} place="registration" />}
         <div className="mt-6">{festivalForm({ href: `/dashboard/events/${eventId}/volunteering`, label: "Volunteers" })}</div>
       </div>
     );
@@ -259,21 +262,8 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
 
   // A band contest before it's published: step 2 of its setup (the steps sit above, from the layout).
   if (contest && !published) {
-    // Just started from a previous contest: what came over (or that it didn't), and what to check.
-    const fromId = typeof copied === "string" && /^[\w-]{1,64}$/.test(copied) ? copied : null;
-    const copyFailed = Boolean(fromId) && copy === "failed";
-    const copiedFrom = fromId
-      ? ((await supabase.from("events").select("name, starts_on, band_registration_deadline, band_registration_opens_on, payment_link, meals_offered").eq("id", fromId).maybeSingle())
-          .data as {
-          name: string;
-          starts_on: string;
-          band_registration_deadline: string | null;
-          band_registration_opens_on: string | null;
-          payment_link: string | null;
-          meals_offered: boolean | null;
-        } | null)
-      : null;
-    const copyNote = copiedFrom && !copyFailed ? await copySummary(supabase, eventId, copiedFrom, event) : null;
+    // Duplicated: where it came from and what to look over; a blank deadline puts the dates first (Duplicate event).
+    const copyFacts = await loadCopyFacts(eventId);
     return (
       <div data-required-marks>
         {/* No "Back to" link while setting up: it would jump ahead to Publish. The step bar is the way around. */}
@@ -284,56 +274,10 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
         <a href={`/e/${event.slug}/${hasRooms(event.event_type) ? "register" : "bands"}`} target="_blank" className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4">
           Preview what directors see <span className="sr-only">(opens in a new tab)</span>
         </a>
-        {copiedFrom && copyNote && (
-          <div role="status" className="mt-4 flex gap-2 rounded-lg border border-brand/25 bg-brand-soft px-4 py-3 text-sm leading-6">
-            <span aria-hidden>ⓘ</span>
-            <div className="space-y-1.5">
-              <p>
-                <span className="font-semibold">
-                  Copied from your {formatDate(copiedFrom.starts_on, { weekday: undefined })} contest, {copiedFrom.name}.
-                </span>{" "}
-                Its registration settings are filled in below{copyNote.jobs}.
-              </p>
-              {copyNote.dates.length > 0 && (
-                <ul className="list-disc pl-5">
-                  {copyNote.dates.map((d) => (
-                    <li key={d}>{d}</li>
-                  ))}
-                </ul>
-              )}
-              {copyNote.shiftsOutside > 0 && (
-                <p>
-                  {copyNote.shiftsOutside === 1 ? "1 shift falls" : `${copyNote.shiftsOutside} shifts fall`} outside the new contest&apos;s hours. Check{" "}
-                  {copyNote.shiftsOutside === 1 ? "it" : "them"} on the{" "}
-                  <Link href={`/dashboard/events/${eventId}/volunteering`} className="font-semibold text-brand underline underline-offset-4">
-                    Jobs and shifts step
-                  </Link>
-                  .
-                </p>
-              )}
-              <p>Check {copyNote.check}, and anything that&apos;s different this time.</p>
-              <StartOver eventId={eventId} />
-            </div>
-          </div>
-        )}
-        {copyFailed && copiedFrom && (
-          <div role="alert" className="mt-4 space-y-2 rounded-lg border border-warning/40 bg-warning-soft px-4 py-3 text-sm leading-6">
-            <p>
-              <span className="font-semibold">The setup from {copiedFrom.name} didn&apos;t come over.</span> Your new contest is saved. Try copying
-              again, or set up registration below.
-            </p>
-            <ActionButton
-              action={retryContestCopy.bind(null, eventId, fromId!)}
-              variant="secondary"
-              pendingText="Copying…"
-              confirmMessage={`Try copying from ${copiedFrom.name} again? Its registration settings replace anything you've entered below since.`}
-              confirmLabel="Copy again"
-            >
-              Try copying again
-            </ActionButton>
-          </div>
-        )}
-        <div className="mt-6">{registrationForm({ href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Jobs and shifts" })}</div>
+        {copyFacts && <CopiedNote facts={copyFacts} place="registration" />}
+        <div className="mt-6">
+          {registrationForm({ href: `/dashboard/events/${eventId}/volunteering`, label: "Next up: Jobs and shifts" }, Boolean(copyFacts && !event.band_registration_deadline))}
+        </div>
       </div>
     );
   }
@@ -626,65 +570,5 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
         </div>
       </div>
     </div>
-  );
-}
-
-/** After copying from a previous contest: which registration dates moved or were dropped, what to check, and the jobs that came over. */
-async function copySummary(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  eventId: string,
-  from: { band_registration_deadline: string | null; band_registration_opens_on: string | null; payment_link: string | null; meals_offered: boolean | null },
-  event: { band_registration_deadline: string | null; band_registration_opens_on: string | null; director_info: string | null },
-) {
-  const [{ data: stations }, { data: ev }, { data: shifts }] = await Promise.all([
-    supabase.from("stations").select("checkpoint_kind").eq("event_id", eventId),
-    supabase.from("events").select("window_start, window_end").eq("id", eventId).maybeSingle(),
-    supabase.from("shifts").select("starts_at, ends_at").eq("event_id", eventId),
-  ]);
-  const stops = (stations ?? []).filter((s) => s.checkpoint_kind).length;
-  const jobs = (stations ?? []).length - stops;
-  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-  const counts = [jobs && plural(jobs, "volunteer job", "volunteer jobs"), stops && plural(stops, "check-in stop", "check-in stops")].filter(Boolean).join(" and ");
-  const dates: string[] = [];
-  const date = (d: string) => formatDate(d, { weekday: undefined });
-  if (from.band_registration_deadline) {
-    dates.push(
-      event.band_registration_deadline
-        ? `Registration deadline moved to ${date(event.band_registration_deadline)}`
-        : "The registration deadline would have been in the past, so it's blank. Pick a new one",
-    );
-  }
-  if (from.band_registration_opens_on) {
-    dates.push(
-      event.band_registration_opens_on
-        ? `Registration opens moved to ${date(event.band_registration_opens_on)}`
-        : "Registration opens would have been in the past, so it's blank. Pick a new date or leave it empty to open when you publish",
-    );
-  }
-  const start = ev?.window_start ? new Date(ev.window_start).getTime() : null;
-  const end = ev?.window_end ? new Date(ev.window_end).getTime() : null;
-  const shiftsOutside =
-    start && end ? (shifts ?? []).filter((s) => new Date(s.starts_at).getTime() < start || new Date(s.ends_at).getTime() > end).length : 0;
-  const check = [event.director_info && "the fee and dates in the information for directors", from.payment_link && "the payment link", from.meals_offered && "the meal price"].filter(
-    Boolean,
-  ) as string[];
-  if (!check.length) check.push("the settings below");
-  const list = check.length > 2 ? `${check.slice(0, -1).join(", ")}, and ${check.at(-1)}` : check.join(" and ");
-  return { jobs: counts ? `, and its ${counts} ${jobs + stops === 1 ? "is" : "are"} on the Jobs and shifts step` : "", dates, shiftsOutside, check: list };
-}
-
-/** Picked the wrong contest: delete this one (nothing published, no bands) and pick again. */
-function StartOver({ eventId }: { eventId: string }) {
-  return (
-    <ActionButton
-      action={startContestOver.bind(null, eventId)}
-      variant="secondary"
-      pendingText="Starting over…"
-      confirmMessage="Start over from a different contest? This deletes this new contest and everything set up in it so far, then takes you back to pick another. Your date stays."
-      confirmLabel="Delete and start over"
-      className="mt-1"
-    >
-      Picked the wrong contest? Start over
-    </ActionButton>
   );
 }
