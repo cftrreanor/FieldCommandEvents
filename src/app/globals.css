@@ -512,3 +512,11 @@ html:has(.sticky[class*="bottom-[var(--day-bar"]) {
 [data-new-date-box]:not([aria-invalid="true"]) {
   border-color: var(--warning);
 }
+
+/* Phones: a job's pinned bar (Saves as you go, Delete job, Add another job, Preview, Next up) wraps to about
+   12rem, taller than the 7rem above, so keyboard focus stops above all of it (light check, 2026-11-20). */
+@media (max-width: 639.98px) {
+  html:has(#signup-bar:not(:empty)) {
+    scroll-padding-bottom: 13rem;
+  }
+}

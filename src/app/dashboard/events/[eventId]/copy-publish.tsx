@@ -1,5 +1,6 @@
 "use client";
 
+import { signupOpensClock } from "@/lib/volunteer-signup";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
@@ -31,6 +32,7 @@ export function CopyPublish({
   opensOn,
   deadline,
   signupOpensOn = null,
+  timezone = "America/Chicago",
   people,
   blocked,
   alreadySent,
@@ -46,6 +48,8 @@ export function CopyPublish({
   deadline: string | null;
   /** A volunteer event's day sign-up opens by itself, when it's after today: "now" opens it on that day. */
   signupOpensOn?: string | null;
+  /** The event's time zone, for "at 12:00 AM Central Time". */
+  timezone?: string;
   /** Not emailed yet (or expired), and can be sent: ticked to start. */
   people: PublishPerson[];
   /** Not emailed yet, and can't be sent now (with why). */
@@ -118,7 +122,7 @@ export function CopyPublish({
   const sentence =
     version === "now"
       ? signupOpensOn
-        ? `Your public page goes online, and volunteer sign-up opens on ${formatDate(signupOpensOn, { year: undefined })}. Before then, the sign-up page says when it opens. Volunteers aren't emailed.`
+        ? `Your public page goes online, and volunteer sign-up opens on ${formatDate(signupOpensOn, { year: undefined })} at ${signupOpensClock(timezone)}. Before then, the sign-up page says when it opens. Volunteers aren't emailed.`
         : "Your public page goes online and volunteer sign-up opens right away. Volunteers aren't emailed."
       : version === "later"
         ? "Your public page goes online. Sign-up stays closed until you open it, so people can see the event but can't sign up yet. Volunteers aren't emailed."

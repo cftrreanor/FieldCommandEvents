@@ -24,7 +24,7 @@ import { createStation, moveCheckpoint, publishAndOpenSignups, setVolunteerSignu
 import { ActionButton, CopyLinkButton, NewStationForm, type LeadOption } from "../forms";
 import { StationTabs, UnsavedChangesProvider } from "./station-steps";
 import { NewDatesElsewhere } from "@/components/new-date-note";
-import { eventToday, signupBadge, signupDay, signupDayShort, signupOpensAt, signupOpensLaterOn, signupState } from "@/lib/volunteer-signup";
+import { eventToday, signupBadge, signupDay, signupDayHint, signupDayShort, signupLastDay, signupOpensAt, signupOpensLaterOn, signupRangeMessage, signupState } from "@/lib/volunteer-signup";
 import { RefreshAt } from "@/components/auto-refresh";
 import { SignupOpensField } from "../signup-opens-field";
 import { FAIR_ZONES, hasBands, hasBooths, hasRooms, leadWords, usesJobs, volunteerAreaName } from "@/lib/event-types";
@@ -410,22 +410,6 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                 )}
               </div>
               {/* On its own line, and quiet while sign-up is open, so it isn't tapped by mistake. */}
-              {event.status === "published" && access.isHost && state === "later" && (
-                // Waiting for its day: open it now, or change the day below (no "Close" before it opens).
-                <div className="mt-2">
-                  <ActionButton
-                    action={setVolunteerSignupOpen.bind(null, eventId, true)}
-                    variant="secondary"
-                    className="min-h-11 px-3! text-sm!"
-                    pendingText="Opening…"
-                    confirmMessage={`Open volunteer sign-up now? Volunteers can sign up from today instead of ${signupDay(event.volunteer_signup_opens_on!)}. Nobody is emailed.`}
-                    confirmLabel="Open sign-up now"
-                  >
-                    Open sign-up now
-                  </ActionButton>
-                  <RefreshAt at={signupOpensAt(event.volunteer_signup_opens_on!, event.timezone).toISOString()} />
-                </div>
-              )}
               {event.status === "published" && access.isHost && state !== "later" && (
                 <div className="mt-2">
                   <ActionButton
@@ -459,20 +443,35 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                 </div>
               </details>
             </div>
-            {/* Volunteer events and fairs: the day it opens by itself, whenever it isn't open now. */}
+            {/* Volunteer events and fairs: the day it opens by itself, whenever it isn't open now. While it waits,
+                "Open sign-up now" sits beside the day (no "Close" before it opens). */}
             {dayHere && state !== "open" && (
               <SignupOpensField
                 id="signup-opens"
                 eventId={eventId}
                 initial={event.volunteer_signup_opens_on ?? ""}
                 today={today}
-                lastDay={event.ends_on}
-                hint={
-                  state === "draft"
-                    ? "Leave blank to open sign-up when you publish"
-                    : state === "later"
-                      ? "Sign-up opens by itself that day. Clear it to keep sign-up closed."
-                      : "Leave blank to keep sign-up closed until you open it"
+                lastDay={signupLastDay(event)}
+                rangeMessage={signupRangeMessage(event, signupLastDay(event))}
+                firstDay={event.event_type === "volunteer" ? event.starts_on : null}
+                live={published}
+                hint={signupDayHint(state, true)}
+                aside={
+                  state === "later" && (
+                    <>
+                      <ActionButton
+                        action={setVolunteerSignupOpen.bind(null, eventId, true)}
+                        variant="secondary"
+                        className="min-h-11 px-3! text-sm!"
+                        pendingText="Opening…"
+                        confirmMessage={`Open volunteer sign-up now? Volunteers can sign up from today instead of ${signupDay(event.volunteer_signup_opens_on!)}. Nobody is emailed.`}
+                        confirmLabel="Open sign-up now"
+                      >
+                        Open sign-up now
+                      </ActionButton>
+                      <RefreshAt at={signupOpensAt(event.volunteer_signup_opens_on!, event.timezone).toISOString()} />
+                    </>
+                  )
                 }
               />
             )}
@@ -730,19 +729,6 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
           </div>
         </UnsavedChangesProvider>
       </section>
-      {/* A volunteer event's draft: the optional day sign-up opens, also on the Publish step (owner decision 2, 2026-11-20). */}
-      {jobsHere && !published && dayHere && (
-        <Card className="mt-6">
-          <SignupOpensField
-            id="signup-opens"
-            eventId={eventId}
-            initial={event.volunteer_signup_opens_on ?? ""}
-            today={today}
-            lastDay={event.ends_on}
-            hint="Leave blank to open sign-up when you publish"
-          />
-        </Card>
-      )}
       {digest && (
         <section className={jobsHere ? "mt-6" : "mt-8"}>
           <DigestCard

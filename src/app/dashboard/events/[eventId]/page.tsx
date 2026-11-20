@@ -42,7 +42,7 @@ import { closesAtLabel, parentRegistrationClosed } from "@/lib/parents";
 import { parentStats, type ParentStats } from "@/lib/parent-stats";
 import { filesFor, uploadedLines, type EventFile } from "@/lib/event-files";
 import { bandRegistrationMissing, publishEffects, setupChecklist, signupOpensOnEffect, twoWeeksBefore, type SetupFacts } from "@/lib/setup-checklist";
-import { signupDay, signupDayShort, signupOpensAt, signupOpensLaterOn } from "@/lib/volunteer-signup";
+import { signupDay, signupDayHint, signupDayShort, signupDayToast, signupLastDay, signupOpensAt, signupOpensLaterOn, signupRangeMessage } from "@/lib/volunteer-signup";
 import { SignupOpensField } from "./signup-opens-field";
 import { RefreshAt } from "@/components/auto-refresh";
 import { volunteerTotals } from "@/lib/volunteer-totals";
@@ -100,6 +100,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   const justPublished = query.published === "1";
   // Just made from last year's festival (Copy last year's festival).
   const justCopied = query.copied === "1";
+  // New dates moved or cleared volunteer sign-up's opening day (updateEvent).
+  const signupDayKind = query.signupday;
   const user = await requireUser();
   const supabase = await createClient();
 
@@ -1024,8 +1026,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
               <p className="flex flex-wrap items-center gap-2 text-sm">
                 <Badge tone="neutral">Sign-up opens {signupDayShort(signupLater)}</Badge>
-                <a href="#share" className="text-muted underline-offset-4 hover:underline">
-                  {contestLive ? "Link is in Get the word out" : "Link is in Links to share"}
+                <a href="#share" className="text-muted underline underline-offset-4 hover:text-foreground">
+                  Share the link from the top of this page
                 </a>
                 <RefreshAt at={signupOpensAt(signupLater, tz).toISOString()} />
               </p>
@@ -1085,7 +1087,13 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         // Volunteer events and fairs: the optional day sign-up opens by itself (owner decision 2, 2026-11-20).
         signupDay={
           access.isHost && (event.event_type === "volunteer" || event.event_type === "fair")
-            ? { initial: event.volunteer_signup_opens_on ?? "", today, lastDay: event.ends_on }
+            ? {
+                initial: event.volunteer_signup_opens_on ?? "",
+                today,
+                lastDay: signupLastDay(event),
+                rangeMessage: signupRangeMessage(event, signupLastDay(event)),
+                firstDay: event.event_type === "volunteer" ? event.starts_on : null,
+              }
             : undefined
         }
         // A one-day meetings event's optional contact email lives here (it has no More options step: owner, 2026-11-09).
@@ -1229,6 +1237,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
       {/* After publishing, the links to share. A copy stays at the top: its note, the links, then anyone not emailed. */}
       {justPublished && query.copy !== "1" && <ScrollTo id="share" />}
       {justCopied && !copyFacts && <SuccessToast message="Your copy is ready. Check the dates on each step, then publish." />}
+      {signupDayToast(signupDayKind, event) && <SuccessToast message={signupDayToast(signupDayKind, event)!} />}
       {demoEnded && <SuccessToast message="You're back on your own account. The demo people and sample data are gone." />}
       {/* Meetings set up in steps: the step bar is the one tracker, so no second checklist beside it (decisions 2026-11-08). */}
       {dayActions ? <DayRail day={dayActions} /> : checklist && !(steppedSetup && !published) && !fest && <SetupGuide checklist={checklist} />}
@@ -1243,6 +1252,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
             <h1 className="text-4xl font-medium tracking-tight sm:text-5xl">{event.name}</h1>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <Badge tone={published ? "live" : "neutral"}>{published ? "Published" : "Draft: only your team can see this"}</Badge>
+              {/* Volunteer sign-up waiting for its day: the same short badge as every organizer screen. */}
+              {signupLater && <Badge tone="neutral">Sign-up opens {signupDayShort(signupLater)}</Badge>}
               <Badge tone="info">{eventTypeLabel(event.event_type)}</Badge>
             </div>
             <p className="mt-3 text-muted">
@@ -1385,7 +1396,7 @@ function PublishPanel({
   signupDay: day,
 }: {
   /** Volunteer events and fairs: the "Sign-up opens" box, beside the publish buttons. */
-  signupDay?: { initial: string; today: string; lastDay: string };
+  signupDay?: { initial: string; today: string; lastDay: string; rangeMessage: string; firstDay: string | null };
   /** A duplicated draft: its publish window in place of the buttons, what's left to look over, and any "[new date]" left. */
   copy?: { buttons: ReactNode; readyLine: ReactNode; effect: string | null; newDates: { title: string; list: ReactNode } | null };
   /** A festival: its page, to preview before publishing. */
@@ -1430,7 +1441,7 @@ function PublishPanel({
     ...publishEffects(facts).map((line) =>
       jobsHere && line.startsWith("Volunteer sign-up")
         ? opensOn
-          ? signupOpensOnEffect(opensOn)
+          ? signupOpensOnEffect(opensOn, facts.timezone)
           : "With Publish and open sign-up, volunteers can pick a shift or an item right away."
         : copy?.effect && line.startsWith("Nobody is emailed")
           ? "Volunteers aren't emailed. People only find out when you share your link."
@@ -1591,11 +1602,10 @@ function PublishPanel({
           initial={day.initial}
           today={day.today}
           lastDay={day.lastDay}
-          hint={
-            jobsHere
-              ? "Leave blank to open sign-up when you publish"
-              : "Leave blank to keep sign-up closed until you open it. With a day, sign-up opens by itself that day, once you've published."
-          }
+          rangeMessage={day.rangeMessage}
+          firstDay={day.firstDay}
+          hint={signupDayHint("draft", jobsHere)}
+          blankLine={jobsHere ? "Saved. Sign-up opens when you publish" : "Saved. Sign-up stays closed until you open it"}
           className="mt-5"
         />
       )}
@@ -2287,6 +2297,7 @@ async function copyPublishParts(f: CopyFacts, previewHref: string, userId: strin
         opensOn={reg?.band_registration_opens_on && reg.band_registration_opens_on > today ? reg.band_registration_opens_on : null}
         deadline={reg?.band_registration_deadline ?? null}
         signupOpensOn={reg?.volunteer_signup_open && reg.volunteer_signup_opens_on && reg.volunteer_signup_opens_on > today ? reg.volunteer_signup_opens_on : null}
+        timezone={event.timezone || "America/Chicago"}
         people={check.toOffer.map((p) => ({ id: p.invitation_id, name: p.name, email: p.email, jobs: p.jobs, expired: p.status === "expired" }))}
         blocked={check.cantSend.map((p) => ({
           name: p.name,

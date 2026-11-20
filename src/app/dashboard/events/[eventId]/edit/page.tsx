@@ -23,12 +23,13 @@ import { NotifyForm, type TeamMember } from "./notify-form";
 import { MAX_EXTRA_EMAILS, notifyKinds, type DigestPrefs, type NotifyKind } from "@/lib/notify-kinds";
 import { AUDIENCES, fileHref, fileMeta, isShowing, uploadedLines, type EventFile } from "@/lib/event-files";
 import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime, zoneName } from "@/lib/time";
-import { deleteEvent, publishAndOpen, setEventPublished, setEventShowBrand, setEventType, updateEvent } from "../../../actions";
+import { deleteEvent, publishAndOpen, setEventPublished, setEventShowBrand, setEventType, setVolunteerSignupOpen, updateEvent } from "../../../actions";
 import { DeleteEventButton } from "../delete-event";
 import { DuplicatePanel } from "./duplicate-panel";
 import { PublishCopyLink } from "../copy-publish";
 import { SignupOpensField } from "../signup-opens-field";
-import { eventToday, signupBadge, signupState } from "@/lib/volunteer-signup";
+import { SuccessToast } from "@/components/toaster";
+import { eventToday, signupBadge, signupDayToast, signupDay, signupDayHint, signupLastDay, signupRangeMessage, signupState } from "@/lib/volunteer-signup";
 import { isUnpublishedCopy } from "@/lib/duplicate-event";
 import { reopenBandRegistration, setBandRegistrationOpen } from "../../../band-actions";
 import { ReopenRegistration } from "../bands/reopen-registration";
@@ -81,7 +82,7 @@ const SWITCH_NOTE = {
  */
 export default async function EditEventPage({ params, searchParams }: PageProps<"/dashboard/events/[eventId]/edit">) {
   const { eventId } = await params;
-  const { step, section: sectionParam, tab, setup: setupParam } = await searchParams;
+  const { step, section: sectionParam, tab, setup: setupParam, signupday } = await searchParams;
   const access = await getEventAccess(eventId);
   if (!access.isHost) redirect(`/dashboard/events/${eventId}`);
 
@@ -353,7 +354,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   };
   const afterUnpublish = republishBlocked
     ? `${republishBlocked} If you unpublish it, you can't publish it again until that changes.`
-    : "You can publish again anytime.";
+    : "You can publish again at any time.";
   // Demo mode, for FieldCommand admins (src/lib/demo.ts).
   const demo =
     section === "more" && (await supabase.rpc("is_platform_admin")).data
@@ -365,10 +366,13 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
       : null;
   const conferenceHere = conference;
   const booking = bookingWords(event.event_type);
+  const signupDayNote = signupDayToast(signupday, event);
 
   return (
     // data-required-marks: a small asterisk on each box that has to be filled in (globals.css).
     <div className="mx-auto max-w-5xl" data-required-marks>
+      {/* New dates moved or cleared volunteer sign-up's opening day: said once, after Save. */}
+      {signupDayNote && <SuccessToast message={signupDayNote} />}
       {guided ? (
         <SetupHeader current={section} back={{ href: `/dashboard/events/${eventId}`, label: "Save and finish later", guard: true }} />
       ) : (
@@ -617,28 +621,37 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                     Go to Publish
                   </Link>
                 )}
-                {/* Volunteer events and fairs: the day sign-up opens by itself, whenever it isn't open now (owner decision 2, 2026-11-20). */}
+                {/* Volunteer events and fairs: the day sign-up opens by itself, whenever it isn't open now (owner decision 2, 2026-11-20).
+                    Live, the label comes first, then its badge, with "Open sign-up now" beside the day while it waits. */}
                 {signupDayHere && signupNow !== "open" && (
                   <div className="mt-5 border-t border-border pt-4">
                     {signupNow !== "draft" && (
                       <p className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+                        <span className="font-semibold">Volunteer sign-up</span>
                         <Badge tone={signupNowBadge.tone}>{signupNowBadge.text}</Badge>
-                        <span className="text-muted">Volunteer sign-up</span>
                       </p>
                     )}
                     <SignupOpensField
                       eventId={eventId}
                       initial={event.volunteer_signup_opens_on ?? ""}
                       today={eventToday(event.timezone)}
-                      lastDay={event.ends_on}
-                      hint={
-                        signupNow === "draft"
-                          ? event.event_type === "volunteer"
-                            ? "Leave blank to open sign-up when you publish"
-                            : "Leave blank to keep sign-up closed until you open it. With a day, sign-up opens by itself that day, once you've published."
-                          : signupNow === "later"
-                            ? "Sign-up opens by itself that day. Clear it to keep sign-up closed."
-                            : "Leave blank to keep sign-up closed until you open it"
+                      lastDay={signupLastDay(event)}
+                      rangeMessage={signupRangeMessage(event, signupLastDay(event))}
+                      firstDay={event.event_type === "volunteer" ? event.starts_on : null}
+                      live={published}
+                      hint={signupDayHint(signupNow, event.event_type === "volunteer")}
+                      aside={
+                        signupNow === "later" && (
+                          <ActionButton
+                            action={setVolunteerSignupOpen.bind(null, eventId, true)}
+                            variant="secondary"
+                            pendingText="Opening…"
+                            confirmMessage={`Open volunteer sign-up now? Volunteers can sign up from today instead of ${signupDay(event.volunteer_signup_opens_on!)}. Nobody is emailed.`}
+                            confirmLabel="Open sign-up now"
+                          >
+                            Open sign-up now
+                          </ActionButton>
+                        )
                       }
                     />
                   </div>
@@ -680,7 +693,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
               <Panel id="kind" title="Kind of event" intro="What the event is for decides which pages and tools it has.">
                 <div className="space-y-3">
                   <p>
-                    This is {isMeeting(event.event_type) ? "for " : "a "}<strong>{event.event_type === "conference" ? "parent-teacher conference" : eventTypeLabel(event.event_type).toLowerCase()}</strong>.{" "}
+                    This is {isMeeting(event.event_type) ? "for " : "a "}<strong>{event.event_type === "conference" ? "parent-teacher conference" : event.event_type === "volunteer" ? "volunteer event" : eventTypeLabel(event.event_type).toLowerCase()}</strong>.{" "}
                     <span className="text-muted">{TYPE_SUMMARY[event.event_type as keyof typeof TYPE_SUMMARY] ?? TYPE_SUMMARY.band_contest}</span>
                   </p>
                   {hasConferences(event.event_type) ? (

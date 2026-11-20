@@ -262,9 +262,13 @@ export default async function EventPublicPage({ params }: Params) {
           )}
           {signupLater && (
             <Link href={`/e/${slug}/volunteer`} className="block">
-              <Card className="h-full transition hover:border-brand">
-                <p className="font-semibold">Volunteer sign-up opens {signupDay(signupLater)}</p>
-                <p className="mt-1 text-sm text-muted">See the shifts now, and come back that day to pick one.</p>
+              {/* Looks tappable: the brand border and title, and a "See the shifts" link line, like a button. */}
+              <Card className="h-full border-brand transition hover:bg-brand-soft">
+                <p className="font-semibold text-brand">Volunteer sign-up opens {signupDay(signupLater)}</p>
+                <p className="mt-1 text-sm text-muted">See the shifts now, and come back {signupDay(signupLater)} to sign up.</p>
+                <p className="mt-2 text-sm font-semibold text-brand underline underline-offset-4">
+                  See the shifts <span aria-hidden>→</span>
+                </p>
                 <RefreshAt at={signupOpensAt(signupLater, tz).toISOString()} />
               </Card>
             </Link>

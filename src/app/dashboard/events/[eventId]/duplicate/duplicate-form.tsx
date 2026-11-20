@@ -308,9 +308,11 @@ function DatePreview({ source, start, end, offset, pickDay }: { source: Duplicat
   const deadlineBlank = Boolean(deadlineTo && (deadlineTo < source.today || deadlineTo >= start));
   const opensTo = moved(source.opensOn);
   const opensBlank = Boolean(opensTo && (opensTo < source.today || !deadlineTo || deadlineBlank || opensTo > deadlineTo));
-  // Sign-up's opening day: left blank if it would be past, or after the new last day (copy_event_setup).
+  // Sign-up's opening day: left blank if it would be past, after the new last day, or for a fair on or after its
+  // first day (online sign-up closes on fair day) (copy_event_setup).
   const signupTo = moved(source.signupOpensOn);
-  const signupBlank = Boolean(signupTo && (signupTo < source.today || signupTo > end));
+  const signupLate = Boolean(signupTo && (signupTo > end || (source.kind === "fair" && signupTo >= start)));
+  const signupBlank = Boolean(signupTo && (signupTo < source.today || signupLate));
   const weekdayChanged = offset % 7 !== 0;
   // The nearest day on the same weekday as before (not in the past), offered in the warning.
   const back = ((offset % 7) + 7) % 7;
@@ -383,7 +385,7 @@ function DatePreview({ source, start, end, offset, pickDay }: { source: Duplicat
           <li>
             <span className="font-semibold">Sign-up opens:</span>{" "}
             {signupBlank
-              ? `${dayShort(source.signupOpensOn)} would move to ${formatDate(signupTo!)}, which ${signupTo! < source.today ? "has passed" : "comes after the new last day"}, so it's left blank. Sign-up opens when you publish.`
+              ? `${dayShort(source.signupOpensOn)} would move to ${formatDate(signupTo!)}, which ${signupTo! < source.today ? "has passed" : source.kind === "fair" ? "isn't before the fair" : "comes after the new last day"}, so it's left blank. Sign-up opens when you publish.`
               : `moves to ${formatDate(signupTo!)}`}
           </li>
         </ul>

@@ -85,6 +85,7 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
     volunteerSignupOpen: event.volunteer_signup_open,
     // Only a day still to come: one that's here already just means "open".
     volunteerSignupOpensOn: signupOpensLaterOn(event),
+    timezone: event.timezone,
     bandRegistrationOpen: Boolean(event.band_registration_open),
     scheduleShared: Boolean(event.performance_order_published),
     finalsSlots,

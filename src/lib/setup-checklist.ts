@@ -1,5 +1,6 @@
 import { groupWords, hasBooths, hasConferences, hasEnsembles, hasParents, hasRooms, isMeeting } from "@/lib/event-types";
 import { formatDate } from "@/lib/time";
+import { signupOpensClock } from "@/lib/volunteer-signup";
 
 /**
  * The host's setup checklist for one event: what to do before publishing,
@@ -43,6 +44,8 @@ export type SetupFacts = {
   volunteerSignupOpen: boolean;
   /** The day volunteer sign-up opens by itself, when it's still to come (null: no day, or it's here). */
   volunteerSignupOpensOn?: string | null;
+  /** The event's time zone (the "12:00 AM Central Time" sign-up opens). */
+  timezone?: string;
   bandRegistrationOpen: boolean;
   scheduleShared: boolean;
   /** Band contests: finals times exist, are published, and finalist names are revealed. */
@@ -574,11 +577,11 @@ function publishEffectsBase(f: SetupFacts): string[] {
 }
 
 /** What publishing does to volunteer sign-up: opens now, on its day, or stays closed. */
-export function volunteerSignupEffect(f: Pick<SetupFacts, "volunteerSignupOpen" | "volunteerSignupOpensOn">): string {
-  if (f.volunteerSignupOpen && f.volunteerSignupOpensOn) return signupOpensOnEffect(f.volunteerSignupOpensOn);
+export function volunteerSignupEffect(f: Pick<SetupFacts, "volunteerSignupOpen" | "volunteerSignupOpensOn" | "timezone">): string {
+  if (f.volunteerSignupOpen && f.volunteerSignupOpensOn) return signupOpensOnEffect(f.volunteerSignupOpensOn, f.timezone);
   return f.volunteerSignupOpen ? "Volunteer sign-up opens right away (it was left on)." : "Volunteer sign-up stays closed until you open it.";
 }
 
 /** The "When you publish" line for sign-up that opens on a set day. */
-export const signupOpensOnEffect = (day: string) =>
-  `Volunteer sign-up opens on ${formatDate(day, { year: undefined })}. Before then, the sign-up page says when it opens.`;
+export const signupOpensOnEffect = (day: string, timezone = "America/Chicago") =>
+  `Volunteer sign-up opens on ${formatDate(day, { year: undefined })} at ${signupOpensClock(timezone)}. Before then, the sign-up page says when it opens.`;

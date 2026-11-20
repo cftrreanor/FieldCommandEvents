@@ -9,12 +9,51 @@
 --      swap_shift_with_pass use it, from their latest versions. Before the day they say when it opens.
 --   4. Saving the day counts toward the volunteer step's "Saved by".
 --   5. duplicate_event / copy_event_setup move the day by the same number of days, or leave it blank if that
---      would be in the past (or after the copy's last day), like registration's opening day.
+--      would be in the past (or after the copy's last day, or for a fair on or after its first day, when online
+--      sign-up closes), like registration's opening day. A copy that keeps a day has sign-up switched on.
+--   6. One rule: a day is set only while sign-up is switched on. Switching it off (closing, unpublishing,
+--      publishing with sign-up later) clears the day, so no hidden day is left to open it by itself.
+--   7. reschedule_event moves a day still to come with the event's dates, or clears it (keeping sign-up closed)
+--      when it no longer fits.
 -- Safe to run twice.
 -- =============================================================================
 
 -- 1. The opening day ----------------------------------------------------------------------------
 alter table public.events add column if not exists volunteer_signup_opens_on date;
+
+-- 6. A day only while switched on (rows from before this rule, then a trigger for every write). A day that's set
+--    or changed is from today to the event's last day, or for a fair to the day before it (online sign-up closes
+--    on fair day): the same limits as the date box.
+create or replace function public.events_signup_day_needs_switch()
+returns trigger
+language plpgsql set search_path = public
+as $$
+declare
+  last_day date;
+begin
+  if not coalesce(new.volunteer_signup_open, false) then
+    new.volunteer_signup_opens_on := null;
+  end if;
+  if new.volunteer_signup_opens_on is not null
+     and (tg_op = 'INSERT' or new.volunteer_signup_opens_on is distinct from old.volunteer_signup_opens_on) then
+    last_day := case when new.event_type::text = 'fair' then new.starts_on - 1 else new.ends_on end;
+    if new.volunteer_signup_opens_on < (now() at time zone new.timezone)::date or new.volunteer_signup_opens_on > last_day then
+      raise exception '%', case when new.event_type::text = 'fair'
+                                then 'Pick a day from today to the day before the fair (' || to_char(last_day, 'Mon FMDD') || ').'
+                                else 'Pick a day from today to the event''s last day (' || to_char(last_day, 'Mon FMDD') || ').' end
+        using errcode = 'P0001';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.events_signup_day_needs_switch() from public, anon, authenticated;
+drop trigger if exists events_signup_day_needs_switch on public.events;
+create trigger events_signup_day_needs_switch
+  before insert or update of volunteer_signup_open, volunteer_signup_opens_on on public.events
+  for each row execute function public.events_signup_day_needs_switch();
+update public.events set volunteer_signup_opens_on = null
+ where volunteer_signup_opens_on is not null and not volunteer_signup_open;
 
 -- 2. The rule ------------------------------------------------------------------------------------
 create or replace function public.volunteer_signup_is_open(ev public.events)
@@ -391,14 +430,17 @@ begin
     get diagnostics zones_n = row_count;
   end if;
 
-  -- Volunteer sign-up's opening day moves by the same days, or is left blank if that's in the past or after the
-  -- copy's last day (then sign-up opens when it's published, as the organizer chooses).
+  -- Volunteer sign-up's opening day moves by the same days, or is left blank if that's in the past, after the
+  -- copy's last day, or for a fair on or after its first day (online sign-up closes on fair day). Then sign-up
+  -- opens when it's published, as the organizer chooses. A day kept switches sign-up on (a day is set only while
+  -- it's on), so the copy's Publish button says the day.
   signup := src.volunteer_signup_opens_on + p_days;
-  if signup is not null and (signup < today or signup > dst.ends_on) then
+  if signup is not null and (signup < today or signup > dst.ends_on or (kind = 'fair' and signup >= dst.starts_on)) then
     signup := null;
   end if;
   signup := coalesce(signup, dst.volunteer_signup_opens_on);
-  update events set volunteer_signup_opens_on = signup where id = p_to;
+  update events set volunteer_signup_open = volunteer_signup_open or signup is not null, volunteer_signup_opens_on = signup
+   where id = p_to;
   keep := keep || array_remove(array[signup], null);
 
   -- Jobs in their order, each with its shifts (same local clock time on the moved days, nobody signed up) and
@@ -707,3 +749,59 @@ end;
 $$;
 revoke execute on function public.duplicate_event(uuid, date, text, uuid) from public, anon;
 grant execute on function public.duplicate_event(uuid, date, text, uuid) to authenticated;
+
+-- 7. Moving the event's dates moves the opening day ---------------------------------------------------------
+-- Latest version: 20261004030000_team_invitations_and_editing.sql. Runs as the caller, so normal permissions apply.
+create or replace function public.reschedule_event(
+  p_event_id      uuid,
+  p_starts_on     date,
+  p_ends_on       date,
+  p_window_start  timestamptz,
+  p_window_end    timestamptz,
+  p_timezone      text
+)
+returns void
+language plpgsql security invoker set search_path = public
+as $$
+declare
+  old_ev    public.events;
+  day_shift int;
+  moved     date;
+begin
+  select * into old_ev from events where id = p_event_id;
+  if old_ev.starts_on is null then
+    raise exception 'Event not found' using errcode = 'P0001';
+  end if;
+  day_shift := p_starts_on - old_ev.starts_on;
+
+  update events
+     set starts_on = p_starts_on, ends_on = p_ends_on,
+         window_start = p_window_start, window_end = p_window_end, timezone = p_timezone
+   where id = p_event_id;
+  if not found then
+    raise exception 'You don''t have permission to change this event' using errcode = '42501';
+  end if;
+
+  if day_shift <> 0 or old_ev.timezone <> p_timezone then
+    update shifts
+       set starts_at = ((starts_at at time zone old_ev.timezone) + make_interval(days => day_shift)) at time zone p_timezone,
+           ends_at   = ((ends_at   at time zone old_ev.timezone) + make_interval(days => day_shift)) at time zone p_timezone
+     where event_id = p_event_id;
+  end if;
+
+  -- Volunteer sign-up's opening day, while it's still to come, moves by the same days. One that no longer fits
+  -- (today or past, after the last day, or for a fair on or after its first day) is cleared, and sign-up stays
+  -- closed until it's opened: it never opens sooner than planned. A day that has come already is left alone.
+  if old_ev.volunteer_signup_open and old_ev.volunteer_signup_opens_on > (now() at time zone old_ev.timezone)::date then
+    moved := old_ev.volunteer_signup_opens_on + day_shift;
+    if moved <= (now() at time zone p_timezone)::date or moved > p_ends_on
+       or (old_ev.event_type::text = 'fair' and moved >= p_starts_on) then
+      update events set volunteer_signup_open = false, volunteer_signup_opens_on = null where id = p_event_id;
+    elsif moved <> old_ev.volunteer_signup_opens_on then
+      update events set volunteer_signup_opens_on = moved where id = p_event_id;
+    end if;
+  end if;
+end;
+$$;
+revoke execute on function public.reschedule_event(uuid, date, date, timestamptz, timestamptz, text) from public, anon;
+grant execute on function public.reschedule_event(uuid, date, date, timestamptz, timestamptz, text) to authenticated;

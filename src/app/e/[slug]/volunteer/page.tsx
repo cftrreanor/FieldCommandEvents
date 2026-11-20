@@ -5,8 +5,8 @@ import Link from "next/link";
 import { Card } from "@/components/ui";
 import { missing } from "@/lib/schema-check";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
-import { formatDate, formatDateRange, formatTimeRange, utcToZonedDate, zoneAbbreviation, zoneName } from "@/lib/time";
-import { signupDay, signupIsOpen, signupOpensAt, signupState } from "@/lib/volunteer-signup";
+import { formatDate, formatDateRange, formatTimeRange, utcToZonedDate, zoneName } from "@/lib/time";
+import { signupDay, signupIsOpen, signupOpensAt, signupOpensClock, signupState } from "@/lib/volunteer-signup";
 import { RefreshAt } from "@/components/auto-refresh";
 import { LineIcon } from "@/components/line-icon";
 import { currentSpots, signUpVolunteer } from "./actions";
@@ -159,8 +159,15 @@ export default async function VolunteerSignupPage({ params }: Params) {
             Volunteer sign-up opens {signupDay(opensOn)}
           </p>
           <p className="mt-1 text-sm text-muted">
-            Opens at midnight ({zoneAbbreviation(`${opensOn}T12:00:00Z`, tz)}). Until then, you can look over the shifts below.
+            Opens at {signupOpensClock(tz)}, the start of {signupDay(opensOn)}. You can look over the shifts now.
           </p>
+          {/* A calendar file for the opening day, linking back here (nothing is emailed). */}
+          <a
+            href={`/e/${slug}/volunteer/opens`}
+            className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4"
+          >
+            Add a reminder to my calendar
+          </a>
           <RefreshAt at={signupOpensAt(opensOn, tz).toISOString()} />
         </Card>
       )}
@@ -194,6 +201,7 @@ export default async function VolunteerSignupPage({ params }: Params) {
             spots={currentSpots.bind(null, event.id)}
             stations={publicStations}
             disabled={!isOpen}
+            opensOn={opensOn ? signupDay(opensOn) : undefined}
             lead={leadWords(event.event_type).one}
             keepsHistory={await keepsVolunteerHistory(event.id)}
           />

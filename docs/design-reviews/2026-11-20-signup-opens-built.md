@@ -45,3 +45,18 @@ daylight-saving day; "This is a volunteer event."; "Next up:" at both widths; "a
 One story from one helper; the Publish button names the day; "Open sign-up now" confirms; the field saves and
 announces; the public notice answers "when" first; pages refresh at the opening moment; every rewritten database
 function kept its later changes; time zones worked out in the event's own zone.
+
+## After the check: what changed
+
+Every finding above was fixed; screenshots replaced in the same folder, plus `11-public-sign-up-closing-block`,
+`12-clear-the-day-confirm`, and `13-fair-sign-up-opens-limit`. `02-jobs-step-day-is-on-publish` replaces
+`02-jobs-step-when-sign-up-opens`: the draft Jobs step no longer has the field (docs/event-setup-pattern.md rule 4: a
+single setting goes on Publish).
+
+- Before the day the public sign-up page lists shifts and things to bring read-only, with no details form or buttons,
+  a closing line, and "Add a reminder to my calendar" (an .ics for the opening day).
+- One rule in the database: a day is set only while sign-up is switched on, and only from today to the event's last
+  day (a fair: the day before it). Copies that keep a day have sign-up switched on; unpublishing or closing clears it.
+  Moving the event's dates moves the day, or clears it (keeping sign-up closed) and says so on Save.
+- Saving the day writes only over the state that was read; Clear on a live event asks first.
+- Not changed: the shared Badge's text size (13 to 14 px would change every badge in the app).

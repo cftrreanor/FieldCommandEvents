@@ -254,7 +254,7 @@ export function JobForm({
         <details open={openMore || Boolean(initial.instructions?.includes("[new date]")) || Boolean(locationPlace) || Boolean(instructionsPlace)} className="group rounded-lg border border-border">
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
             <span>
-              {stopHere ? "More options: band check-in stop, Coordinators, instructions, and age rules" : "More options: Coordinators, instructions, and age rules"}
+              {stopHere ? "More options: band check-in stop, coordinators, instructions, and age rules" : "More options: coordinators, instructions, and age rules"}
               {ageRule && <span className="font-normal text-muted">{ageRule}</span>}
             </span>
             <span aria-hidden className="text-brand transition group-open:rotate-90">
