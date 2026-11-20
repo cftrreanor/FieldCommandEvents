@@ -41,4 +41,14 @@ Next: round-2 mock-ups of the changed parts, a light check, then build.
 
 Review: docs/design-reviews/2026-11-20-duplicate-event-mockups-2.md. Three findings rated 3 (the contest copy with future
 registration dates not drawn; an early invitation expiring unseen; the publish window silent about unchecked copied text).
-Owner decision: see the next line.
+Owner decision: **all as recommended, build.**
+- Contest copied with registration still ahead: Coordinators are emailed at publish; the window and button name the
+  scheduled opening.
+- An early "Send now" invitation that expires before publishing: "Invitation expired · Send again", and the publish window
+  offers it again, ticked.
+- The publish window lists copied steps nobody has opened, quoting old dates found in the copied text; publishing stays
+  allowed.
+- Every severity 2 and 1 finding as written in the report, including: the step bar stays the one tracker ("Opened", not
+  "Done", until saved or confirmed; the note's items are plain links); "Keep it a draft" disabled while publishing;
+  success messages name anyone not emailed, with a line on the event page; a freed team spot doesn't send on its own;
+  festivals built the same way (rooms, minutes per group, and walking time come over); the wording and layout fixes.
