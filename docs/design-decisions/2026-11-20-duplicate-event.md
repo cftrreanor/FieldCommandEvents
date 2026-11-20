@@ -105,3 +105,11 @@ Checked a month and a season after launch (from event_copies and events; no pers
 - The share of copies deleted with "Delete and start over"
 - The copied-Coordinator acceptance rate: invitations that came over with a copy and were accepted, of those sent
 
+
+## Final check on the changed screens (2026-11-20)
+
+Review: docs/design-reviews/2026-11-20-duplicate-event-built-3.md. Four findings rated 3 were bugs in the code with
+one possible fix each (invitation keys kept on Change email, delivery times missing for invitations already sent, the
+confirm window's focus, an unreachable long Location). Fixed as the review says, under the owner's standing "all as
+recommended" for this feature. Severity 2 and 1 fixes as written, except "Duplicate event" on every My events card,
+which stays as the owner decided (past events and those within four weeks).
