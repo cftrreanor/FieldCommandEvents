@@ -468,8 +468,9 @@ as $$
     select 'registration', 'The information for directors', null, null, 3, public.copy_marker_count(e.director_info)
       from events e join ev on ev.id = e.id
     union all
+    -- Only a band contest offering meals: otherwise there's no box for it (and directors never see it).
     select 'registration', 'The meal details', null, null, 4, public.copy_marker_count(e.meal_details)
-      from events e join ev on ev.id = e.id
+      from events e join ev on ev.id = e.id where coalesce(e.meals_offered, false) and e.event_type::text = 'band_contest'
     union all
     select 'rooms', 'A room''s note', null, r.name, 5, public.copy_marker_count(r.note)
       from rooms r join ev on ev.id = r.event_id

@@ -17,6 +17,7 @@ import { ChipAdder } from "@/components/chip-adder";
 import { normalizePhone } from "@/lib/phone";
 import { formatDate } from "@/lib/time";
 import { DateField } from "@/components/date-field";
+import { NewDateNote } from "@/components/new-date-note";
 
 /** How long after the last keystroke a field saves itself. */
 const SAVE_AFTER_MS = 900;
@@ -571,6 +572,8 @@ export function RegistrationSettings({
 
         {!datesFirst && dates}
 
+        {/* A copy: a date typed into the information came over as "[new date]" (live: it goes once replaced). */}
+        <NewDateNote value={info.value} spot="director-info" />
         <AutoField
           id="reg-info"
           label="Information for directors"
@@ -664,6 +667,7 @@ export function RegistrationSettings({
                     </p>
                   )}
                 </fieldset>
+                <NewDateNote value={mealDetails.value} spot="meal-details" />
                 <AutoField
                   id="reg-meal-details"
                   label="Meal details"

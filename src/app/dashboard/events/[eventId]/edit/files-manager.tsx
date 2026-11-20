@@ -7,6 +7,7 @@ import { uploadToSignedUrl } from "@/lib/signed-upload";
 import type { UploadedFile } from "../../../file-actions";
 import { confirmDialog } from "@/components/confirm-dialog";
 import { DateField } from "@/components/date-field";
+import { NewDateNote } from "@/components/new-date-note";
 
 const TYPES = ["application/pdf", "image/jpeg", "image/png"];
 const MAX = 10 * 1024 * 1024;
@@ -43,7 +44,8 @@ export function FilesManager({
   saveFile: (fileId: string | null, uploaded: UploadedFile | null, prev: ActionState, formData: FormData) => Promise<ActionState>;
   deleteFile: (fileId: string) => Promise<ActionState>;
 }) {
-  const [editing, setEditing] = useState<string | null>(files.length === 0 ? "new" : null);
+  // A copy: a file whose name still holds "[new date]" starts open, so the name box is in sight.
+  const [editing, setEditing] = useState<string | null>(files.length === 0 ? "new" : (files.find((f) => f.label.includes("[new date]"))?.id ?? null));
   const [message, setMessage] = useState<string | null>(null);
   const label = (v: string) => audiences.find((a) => a.value === v)?.label ?? v;
 
@@ -239,6 +241,7 @@ function FileForm({
           className="block w-full text-sm file:mr-3 file:min-h-10 file:rounded-md file:border file:border-border file:bg-surface file:px-3 file:text-sm file:font-medium"
         />
       </Field>
+      <NewDateNote value={label} spot="file" />
       <Field label="Name" hint="What people will see, e.g. Stadium & parking map.">
         <Input name="label" value={label} onChange={(e) => setLabel(e.target.value)} required maxLength={120} />
       </Field>

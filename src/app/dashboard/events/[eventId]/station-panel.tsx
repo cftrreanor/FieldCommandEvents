@@ -496,7 +496,8 @@ function ShiftList({
             </div>
           </div>
           {canManage && (
-            <details className="mt-1">
+            // Open when a copied shift's name or duties still hold "[new date]", so it's in sight.
+            <details className="mt-1" open={`${s.title} ${s.description ?? ""}`.includes("[new date]") || undefined}>
               <summary className={`inline-flex min-h-11 cursor-pointer items-center text-sm font-medium ${job ? "text-brand underline underline-offset-4" : "text-muted hover:text-foreground"}`}>
                 {job ? "Edit shift" : "Edit time slot"}
               </summary>

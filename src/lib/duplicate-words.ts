@@ -136,12 +136,32 @@ export function newDateSpotLabel(s: NewDateSpot) {
   return s.station_id ? `${s.job}: ${s.what.charAt(0).toLowerCase()}${s.what.slice(1)}` : `${s.what} (${s.job})`;
 }
 
-/** Where each "[new date]" is filled in. */
+/**
+ * Where each "[new date]" is filled in. #new-date opens whatever the field is folded in (More options, Edit shift)
+ * and puts the cursor on the marker (NewDateScroll).
+ */
 export function newDateSpotHref(base: string, s: NewDateSpot) {
-  if (s.step === "details") return s.what.startsWith("A map") ? `${base}/edit?section=files` : `${base}/edit`;
-  if (s.step === "registration") return `${base}/bands`;
-  if (s.step === "rooms") return `${base}/rooms`;
-  return `${base}/volunteering${s.station_id ? `?station=${s.station_id}` : ""}`;
+  const path =
+    s.step === "details"
+      ? s.what.startsWith("A map")
+        ? `${base}/edit?section=files`
+        : `${base}/edit`
+      : s.step === "registration"
+        ? `${base}/bands`
+        : s.step === "rooms"
+          ? `${base}/rooms`
+          : `${base}/volunteering${s.station_id ? `?station=${s.station_id}` : ""}`;
+  // Which field on that page (NewDateNote's spot), so two on one page each land on their own.
+  const spot =
+    s.what === "The description" ? "description"
+    : s.what.startsWith("A map") ? "file"
+    : s.what === "The information for directors" ? "director-info"
+    : s.what === "The meal details" ? "meal-details"
+    : s.what === "A room's note" ? "room"
+    : s.what === "A shift" ? "shift"
+    : s.what === "A thing to bring" ? "item"
+    : "instructions";
+  return `${path}#new-date-${spot}`;
 }
 
 /** "Add the new date in Details: 1 spot", or "… in Details (1 spot) and Jobs and shifts (2 spots)". */

@@ -10,6 +10,7 @@ import { NumberInput } from "@/components/number-input";
 import { setPending, useLeaveGuard } from "@/components/pending-edits";
 import { Input, Textarea } from "@/components/ui";
 import { AutoField, marked, useAutosave, withClass } from "./registration-settings";
+import { NewDateNote } from "@/components/new-date-note";
 
 const CONNECTION = "Check your connection, then select Retry.";
 
@@ -275,6 +276,7 @@ export function FestivalRegistration({
           </div>
         </fieldset>
 
+        <NewDateNote value={info.value} spot="director-info" />
         <AutoField
           id="reg-info"
           label="Information for directors (optional)"

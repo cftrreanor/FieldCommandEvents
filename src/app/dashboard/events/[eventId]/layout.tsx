@@ -15,6 +15,8 @@ import { SetupSteps } from "@/components/volunteer-steps";
 import { STEP_PATHS, type SetupStepFacts, type StepsKind } from "@/lib/setup-steps";
 import { hasConferences, hasRooms } from "@/lib/event-types";
 import { loadCopySteps } from "@/lib/duplicate-event";
+import { NewDateScroll } from "@/components/new-date-note";
+import { Suspense } from "react";
 
 /**
  * Every page of an event. On the day itself, the team's jobs of the day are a
@@ -59,6 +61,10 @@ export default async function EventLayout({ children, params }: LayoutProps<"/da
       {/* Festivals: the step bar while setting up, the event page's next step once live; no setup strip (owner, 2026-11-11). */}
       {facts && facts.eventType !== "group_event" && <SetupStrip eventId={eventId} initial={setupChecklist(facts)} skip={kind ? (kind === "meeting" ? [...STEP_PATHS.meeting, "/conferences"] : STEP_PATHS[kind]) : undefined} />}
       {children}
+      {/* A copy's "[new date]" links (#new-date): open the field and put the cursor on the marker. */}
+      <Suspense fallback={null}>
+        <NewDateScroll />
+      </Suspense>
       {/* Room for the tab bar along the bottom of a phone. */}
       {day && <div aria-hidden className="h-16 lg:hidden print:hidden" />}
     </>

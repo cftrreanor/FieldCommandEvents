@@ -228,10 +228,13 @@ export async function updateEvent(eventId: string, _prev: ActionState, formData:
   // A conference's school is set in Conference Setup, not here.
   const conference = hasConferences(before?.event_type);
   if (!conference && !v.venueAddress) return { error: "Venue: Required" };
+  // The description box shows once there is one (a duplicated event brings its source's).
+  const description = formData.get("descriptionField") === "1" ? String(formData.get("description") ?? "").trim().slice(0, 4000) : undefined;
   const details = await supabase
     .from("events")
     .update({
       name: v.name,
+      ...(description === undefined ? {} : { public_notes: description || null }),
       ...(conference
         ? // Only when it changed, so details still save before the 20261219000000 update.
           v.askChildNameField && (v.askChildName === "on") !== (await asksChildName(supabase, eventId))

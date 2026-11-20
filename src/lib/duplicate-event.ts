@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { getOrigin } from "@/lib/data";
-import { addDays, coordinatorStatus, type NewDateSpot } from "@/lib/duplicate-words";
+import { addDays, coordinatorStatus, newDateSpotHref, type NewDateSpot } from "@/lib/duplicate-words";
 import { FILES_BUCKET } from "@/lib/event-files";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
@@ -182,14 +182,23 @@ export const loadCopyPublishCheck = cache(async (eventId: string): Promise<CopyP
  * The step bar's light check: each copied step "copied" until opened, then "opened" (checked off); and how many
  * "[new date]" markers each step holds ("Add the new date"). Empty for an event that wasn't duplicated.
  */
-export async function loadCopySteps(eventId: string): Promise<{ copied: Partial<Record<string, "copied" | "opened">>; newDates: Partial<Record<string, number>> }> {
+export async function loadCopySteps(eventId: string): Promise<{
+  copied: Partial<Record<string, "copied" | "opened">>;
+  newDates: Partial<Record<string, number>>;
+  newDateHrefs: Partial<Record<string, string>>;
+}> {
   const supabase = await createClient();
   const { data, error } = await supabase.from("event_copy_steps").select("step, opened_at").eq("event_id", eventId);
-  if (error || !data?.length) return { copied: {}, newDates: {} };
+  if (error || !data?.length) return { copied: {}, newDates: {}, newDateHrefs: {} };
   const { data: spots } = await supabase.rpc("copy_new_date_spots", { p_event: eventId });
   const newDates: Partial<Record<string, number>> = {};
-  for (const s of (spots ?? []) as NewDateSpot[]) newDates[s.step] = (newDates[s.step] ?? 0) + s.count;
-  return { copied: Object.fromEntries(data.map((s) => [s.step, s.opened_at ? "opened" : "copied"])), newDates };
+  // Each step's link lands on its first marker (the right job, its field open, the cursor on "[new date]").
+  const newDateHrefs: Partial<Record<string, string>> = {};
+  for (const s of (spots ?? []) as NewDateSpot[]) {
+    newDates[s.step] = (newDates[s.step] ?? 0) + s.count;
+    newDateHrefs[s.step] ??= newDateSpotHref(`/dashboard/events/${eventId}`, s);
+  }
+  return { copied: Object.fromEntries(data.map((s) => [s.step, s.opened_at ? "opened" : "copied"])), newDates, newDateHrefs };
 }
 
 /** One copied Coordinator as Team setup and the event page show them (the ladder's words worked out once). */

@@ -4,7 +4,8 @@ import { useState, type ReactNode } from "react";
 import { AutosaveBar, useAutosaveForm } from "@/components/autosave";
 import { ActionForm } from "@/components/action-form";
 import { SubmitButton } from "@/components/submit-button";
-import { Field, Input, Select } from "@/components/ui";
+import { Field, Input, Select, Textarea } from "@/components/ui";
+import { NewDateNote } from "@/components/new-date-note";
 import { VenuePicker, type VenueValue } from "@/components/venue-picker";
 import type { ActionState } from "@/lib/action-state";
 import Link from "next/link";
@@ -25,6 +26,11 @@ export type EventFormValues = {
   venue?: VenueValue;
   /** Conferences: whether families give their child's name when they book. */
   askChildName?: boolean;
+  /**
+   * The description on the event's public page, when it has one (a duplicated event brings its source's, with any
+   * typed date left as "[new date]" to fill in). Undefined: no box.
+   */
+  description?: string | null;
 };
 
 /** Used for both creating and editing an event. */
@@ -211,6 +217,17 @@ export function EventForm({
           <LineIcon name="lock" inline /><strong>Family privacy:</strong> families see only the open times, never who else booked. Children&apos;s
           names and parents&apos; notes are seen only by you and your co-hosts, and are permanently deleted 30 days after the conference.
         </p>
+      )}
+
+      {initial.description != null && (
+        // id: the copy's links land here (#new-date puts the cursor on the marker).
+        <div id="description" className="scroll-mt-24 space-y-1.5">
+          <NewDateNote value={initial.description} spot="description" />
+          <input type="hidden" name="descriptionField" value="1" />
+          <Field label="Description" hint="Shown on your public page.">
+            <Textarea name="description" maxLength={4000} rows={4} defaultValue={initial.description} />
+          </Field>
+        </div>
       )}
 
       {extra}

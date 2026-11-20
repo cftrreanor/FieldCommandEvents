@@ -17,6 +17,7 @@ import { StepNotice, useStepEdits } from "./volunteering/station-steps";
 import { copyDialog } from "@/components/confirm-dialog";
 import { CO_HOST_POWERS } from "@/lib/team-words";
 import { TimeField } from "@/components/time-field";
+import { NewDateNote } from "@/components/new-date-note";
 
 type Action = (prev: ActionState, formData: FormData) => Promise<ActionState>;
 
@@ -128,6 +129,7 @@ export function StationForm({
           <ZoneInput zones={zones} defaultValue={initial?.zone} />
         </Field>
       )}
+      <NewDateNote value={initial?.location} spot="instructions" className="sm:col-span-2" />
       <Field label="Location" hint="Optional. Where volunteers should report." className="sm:col-span-2">
         <Input
           name="location"
@@ -143,6 +145,7 @@ export function StationForm({
           </datalist>
         )}
       </Field>
+      <NewDateNote value={initial?.instructions} spot="instructions" className="sm:col-span-2" />
       <Field label="Instructions for volunteers" hint="Optional. What to wear, bring, and do." className="sm:col-span-2">
         <Textarea name="instructions" defaultValue={initial?.instructions ?? ""} />
       </Field>
@@ -494,6 +497,7 @@ export function ShiftForm({
         unadded(f);
       }}
     >
+      <NewDateNote value={`${initial?.title ?? ""} ${initial?.description ?? ""}`} spot="shift" className="sm:col-span-2" />
       {initial && (
         <Field label="Title" className="sm:col-span-2">
           <Input name="title" required defaultValue={initial.title} placeholder="e.g. Morning parking crew" />
@@ -854,6 +858,7 @@ function ItemRow({ item: it, autosave }: { item: EditableItem; autosave: boolean
         className={autosave ? "contents" : `grid items-center gap-3 grid-cols-[minmax(0,1fr)_6rem] ${itemCols(false)}`}
       >
         {autosave && <input type="hidden" name="auto" value="1" />}
+        <NewDateNote value={it.name} spot="item" className="col-span-full" />
         <Input name="name" required maxLength={100} defaultValue={it.name} aria-label="Item" className={autosave ? "col-span-3 sm:col-span-1" : undefined} />
         {autosave && <NeededLabel />}
         <NumberInput name="needed" required defaultValue={it.needed} maxLength={3} aria-label={`How many ${it.name} needed`} />

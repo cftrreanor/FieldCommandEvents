@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { NewDateNote } from "@/components/new-date-note";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -239,7 +240,8 @@ export function JobForm({
         <Input name="name" required maxLength={80} defaultValue={initial.name} />
       </Field>
       <InSlot id="job-more">
-        <details open={openMore} className="group rounded-lg border border-border">
+        {/* Open when the copied instructions still hold "[new date]", so it's in sight. */}
+        <details open={openMore || Boolean(initial.instructions?.includes("[new date]"))} className="group rounded-lg border border-border">
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
             <span>
               {stopHere ? "More options: band check-in stop, Coordinators, instructions, and age rules" : "More options: Coordinators, instructions, and age rules"}
@@ -253,6 +255,7 @@ export function JobForm({
           <div className="space-y-3 border-t border-border p-3">
             {stopHere && <CheckInStopFields kind={stop} setKind={setStop} initial={initial} formId={FORM} orderHref={links.order} />}
             <CoordinatorPicker label={leadLabel} initial={initial.lead_ids ?? []} onChange={changed} formId={FORM} {...coordinators} />
+            <NewDateNote value={initial.instructions} spot="instructions" />
             <Field label="Instructions for volunteers" hint="Optional. What to wear, bring, and do.">
               <Textarea name="instructions" form={FORM} defaultValue={initial.instructions ?? ""} />
             </Field>

@@ -85,7 +85,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const { data: event } = await supabase
     .from("events")
     .select(
-      "id, organization_id, name, status, event_type, created_by, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng, band_registration_open, band_registration_deadline, band_registration_opens_on",
+      "id, organization_id, name, status, event_type, created_by, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng, band_registration_open, band_registration_deadline, band_registration_opens_on, public_notes",
     )
     .eq("id", eventId)
     .maybeSingle();
@@ -410,6 +410,8 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                       lng: event.venue_lng,
                     },
                     askChildName,
+                    // The description, once there is one (a duplicated event brings its source's): editable here.
+                    description: event.public_notes ?? undefined,
                   }}
                   venueSearchEnabled={isPlacesConfigured}
                   submitLabel={guided ? "Save and continue" : "Save changes"}

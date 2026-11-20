@@ -74,5 +74,7 @@ export type SetupStepFacts = {
   copied?: Partial<Record<string, "copied" | "opened">>;
   /** A duplicated event's "[new date]" markers left, by step key: "Add the new date" until they're filled in. */
   newDates?: Partial<Record<string, number>>;
+  /** Where each such step's link goes: its first marker, with the field open (#new-date). */
+  newDateHrefs?: Partial<Record<string, string>>;
 };
 

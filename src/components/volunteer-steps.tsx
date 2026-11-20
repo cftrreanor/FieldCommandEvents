@@ -131,7 +131,7 @@ export function SetupSteps({
                       {s.label}
                     </span>
                   ) : (
-                    <Link href={`${base}${s.path}`} className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4 hover:text-brand">
+                    <Link href={facts.newDateHrefs?.[s.key] ?? `${base}${s.path}`} className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4 hover:text-brand">
                       {s.label}
                     </Link>
                   )}
