@@ -512,7 +512,9 @@ function publishEffectsBase(f: SetupFacts): string[] {
     const through = f.registrationDeadlineOn ? ` and stays open through ${formatDate(f.registrationDeadlineOn, { year: undefined })}` : "";
     return [
       "The festival page goes online for families and group directors.",
-      `Group registration opens${through}.`,
+      f.registrationOpensOn
+        ? `Group registration opens on ${formatDate(f.registrationOpensOn)}${through}. Before then, the registration page says when it opens.`
+        : `Group registration opens${through}.`,
       ...(f.stations > 0
         ? [f.volunteerSignupOpen ? "Volunteer sign-up opens right away (it was left on)." : "Volunteer sign-up stays closed until you open it."]
         : []),
