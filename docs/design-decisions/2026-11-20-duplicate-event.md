@@ -36,3 +36,9 @@ Review: docs/design-reviews/2026-11-20-duplicate-event-mockups.md. Owner decisio
 | — | All other severity 2 and 1 findings | 2/1 | Take the advice | As written in the report: no Coordinator checkboxes on the Duplicate page (decided in the publish window); one status ladder ("Not emailed yet · sent when you publish", "Invitation sent [date]", "Accepted"); "If you can't help this time, let [host] know"; "discard this copy" for whoever made it, never published, nothing on it; one transaction with a request id; shift list closed by default; "Volunteers aren't copied" wording; festivals bring rooms; account members copied straight on as Coordinators; source invitations never accepted don't come over; the wording and layout fixes |
 
 Next: round-2 mock-ups of the changed parts, a light check, then build.
+
+## Round 2: light check (2026-11-20)
+
+Review: docs/design-reviews/2026-11-20-duplicate-event-mockups-2.md. Three findings rated 3 (the contest copy with future
+registration dates not drawn; an early invitation expiring unseen; the publish window silent about unchecked copied text).
+Owner decision: see the next line.
