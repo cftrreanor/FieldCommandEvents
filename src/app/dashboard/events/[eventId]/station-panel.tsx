@@ -185,9 +185,12 @@ export function StationPanel({
               job ? null : station.location,
               leadNames.length
                 ? `${job ? (leadNames.length > 1 ? "Coordinators" : "Coordinator") : leadNames.length > 1 ? "Leads" : "Lead"}: ${leadNames.join(", ")}`
-                : canManage
-                  ? job ? "No Coordinator yet" : "No lead yet"
-                  : null,
+                : canManage && heldInvites.length
+                  ? // A copied Coordinator held for publishing: named, as on the job's chips.
+                    `${heldInvites.length > 1 ? "Coordinators" : "Coordinator"}: ${heldInvites.map((h) => `${h.name} · ${h.expired ? "invitation expired" : "not emailed yet"}`).join(", ")}`
+                  : canManage
+                    ? job ? "No Coordinator yet" : "No lead yet"
+                    : null,
             ]
               .filter(Boolean)
               .join(" · ")}

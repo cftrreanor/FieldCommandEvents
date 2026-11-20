@@ -48,9 +48,9 @@ export function SetupTabs({
               way={way}
               scroll={false}
               current={t.active}
-              className={`${folderTab(t.active)} max-sm:h-full max-sm:w-full`}
+              className={`${folderTab(t.active)} max-sm:h-full max-sm:w-full ${fit && tabs.length > 2 ? "max-sm:min-w-0 max-sm:px-2.5 max-sm:[overflow-wrap:anywhere]" : ""}`}
             >
-              <span className="flex items-center gap-1.5 whitespace-nowrap max-sm:whitespace-normal">
+              <span className="flex items-center gap-x-1.5 whitespace-nowrap max-sm:flex-wrap max-sm:whitespace-normal">
                 {t.mark === "done" && <span aria-hidden>✓</span>}
                 {t.short ? (
                   <>

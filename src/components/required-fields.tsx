@@ -7,7 +7,10 @@ import { useEffect } from "react";
  * in the root layout):
  *
  *   - A form's submit buttons look faded until its required boxes are filled
- *     in (they still work, so tapping one early isn't a dead end).
+ *     in (they still work, so tapping one early isn't a dead end). That's CSS
+ *     alone (form:invalid in globals.css): marking the buttons from here
+ *     changed server-rendered HTML before React hydrated it, a hydration
+ *     warning on every page with a required box.
  *   - Only once they try to save with a required box empty does anything
  *     turn red: each box still needed is outlined, a line under the form says
  *     what to do, and the first one gets the focus (instead of the browser's
@@ -25,10 +28,6 @@ export function RequiredFields() {
       if (!checkable(form)) return;
       // Not form.checkValidity(): that reports every empty box as if they'd tried to save.
       const ready = [...form.elements].every((el) => !(el as HTMLInputElement).willValidate || (el as HTMLInputElement).validity.valid);
-      // data-solid: a short window's one main button stays filled; tapping it early says what's missing.
-      for (const button of form.querySelectorAll<HTMLButtonElement>("button[type=submit]:not([data-solid]), button:not([type]):not([data-solid])")) {
-        button.toggleAttribute("data-not-ready", !ready);
-      }
       if (ready) form.removeAttribute("data-missing");
       else if (form.hasAttribute("data-missing")) form.setAttribute("data-missing", missingKind(form));
     };

@@ -212,13 +212,16 @@ export async function CopiedNote({ facts: f, place = "event" }: { facts: CopyFac
   );
 }
 
-/** "Before you publish, check the copied steps: Details and Jobs and shifts." for the Ready card. */
+/**
+ * "Copied, and nobody has opened these steps yet: Details and Jobs and shifts." for the Ready card: the same steps,
+ * by the same rule, as the publish window and the phone line (still "Copied: check it").
+ */
 export function CopiedStepsLine({ facts: f, labels }: { facts: CopyFacts; labels: Record<string, string> }): ReactNode {
-  const left = f.check.steps.filter((s) => !s.confirmed).map((s) => labels[s.step] ?? s.step);
+  const left = f.check.unopened.map((s) => labels[s.step] ?? s.step);
   if (!left.length) return null;
   return (
     <p className="mt-2 text-sm">
-      Before you publish, check the copied {left.length === 1 ? "step" : "steps"}:{" "}
+      Copied, and nobody has opened {left.length === 1 ? "this step" : "these steps"} yet:{" "}
       {left.map((l, i) => (
         <span key={l}>
           {i > 0 && (i === left.length - 1 ? (left.length > 2 ? ", and " : " and ") : ", ")}

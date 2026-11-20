@@ -112,7 +112,8 @@ export function coordinatorStatus(c: {
         tone: "plain",
       };
     case "expired":
-      return { text: "Invitation expired · Send again", dot: true, tone: "warn" };
+      // The Send again button sits beside it, so the words don't repeat it.
+      return { text: `Invitation expired ${c.expires_at ? formatDate(c.expires_at.slice(0, 10)) : ""}`.trim(), dot: true, tone: "warn" };
     default:
       if (!planIncludes) return { text: "Not emailed · your plan doesn't include Coordinators", dot: false, tone: "plain" };
       // A full team: a freed spot doesn't send it on its own (round-2 decision): Send it once there's room.

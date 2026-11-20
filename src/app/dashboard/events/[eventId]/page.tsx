@@ -351,6 +351,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   // published, a line for anyone not emailed until they're sent or removed.
   const copyFacts: CopyFacts | null = access.isHost && event.status !== "published" ? await loadCopyFacts(eventId) : null;
   const copiedLive = access.isHost && event.status === "published" ? await loadCopiedPeople(eventId) : null;
+  const notEmailed = copiedLive?.team.coordinators_included ? copiedLive.people.filter((p) => p.status === "held" || p.status === "expired") : [];
 
   const past = today > event.ends_on;
   const published = event.status === "published";
@@ -1183,7 +1184,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           }
         />
       )}
-      {justPublished && <ScrollTo id="share" />}
+      {/* After publishing a copy with someone not emailed, stay at the top: that line sits right under the name, above the links to share. */}
+      {justPublished && !notEmailed.length && <ScrollTo id="share" />}
       {justCopied && <SuccessToast message={copyFacts ? "Duplicated. Check what came over, then publish." : "Your copy is ready. Check the dates on each step, then publish."} />}
       {demoEnded && <SuccessToast message="You're back on your own account. The demo people and sample data are gone." />}
       {/* Meetings set up in steps: the step bar is the one tracker, so no second checklist beside it (decisions 2026-11-08). */}
@@ -1233,7 +1235,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         {copiedLive && (
           <NotEmailedLine
             eventId={eventId}
-            people={copiedLive.people.filter((p) => (p.status === "held" || p.status === "expired") && copiedLive.team.coordinators_included)}
+            people={notEmailed}
             teamHref={`/dashboard/events/${eventId}/edit?section=team&tab=section-leads`}
           />
         )}

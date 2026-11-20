@@ -513,7 +513,7 @@ function publishEffectsBase(f: SetupFacts): string[] {
     return [
       "The festival page goes online for families and group directors.",
       f.registrationOpensOn
-        ? `Group registration opens on ${formatDate(f.registrationOpensOn)}${through}. Before then, the registration page says when it opens.`
+        ? `Group registration opens on ${formatDate(f.registrationOpensOn, { year: undefined })}${through}. Before then, the registration page says when it opens.`
         : `Group registration opens${through}.`,
       ...(f.stations > 0
         ? [f.volunteerSignupOpen ? "Volunteer sign-up opens right away (it was left on)." : "Volunteer sign-up stays closed until you open it."]

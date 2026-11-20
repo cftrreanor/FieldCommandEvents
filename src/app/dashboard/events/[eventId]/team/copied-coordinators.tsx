@@ -50,7 +50,7 @@ export function FixAddress({ eventId, person, send, onDone }: { eventId: string;
 
 /**
  * A duplicated event's copied Coordinators in Team setup: name, then email, then one status ladder ("Not emailed
- * yet · sent when you publish", "Invitation sent [date]", "Invitation expired · Send again", "Accepted"). Send now
+ * yet · sent when you publish", "Invitation sent [date]", "Invitation expired [date]" beside Send again, "Accepted"). Send now
  * asks first; Remove of someone not emailed has Undo instead of a question.
  */
 export function CopiedCoordinators({
@@ -196,7 +196,7 @@ export function NotEmailedLine({ eventId, people, teamHref }: { eventId: string;
   const [fixing, setFixing] = useState<string | null>(null);
   if (!people.length) return null;
   return (
-    <section aria-label="Not emailed yet" className="mt-6 rounded-lg border border-warning/50 bg-warning-soft px-4 py-3 text-sm leading-6">
+    <section id="not-emailed" aria-label="Not emailed yet" className="mt-6 scroll-mt-6 rounded-lg border border-warning/50 bg-warning-soft px-4 py-3 text-sm leading-6">
       <p className="font-semibold">
         {people.length === 1 ? `${people[0].name} wasn't emailed` : `${people.length} Coordinators weren't emailed`}
       </p>

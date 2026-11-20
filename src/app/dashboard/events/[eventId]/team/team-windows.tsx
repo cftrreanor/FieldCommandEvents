@@ -113,6 +113,8 @@ export type TeamOption = {
   now: string;
   /** Adding them takes a team spot (their event is over, so they no longer hold one). */
   takesSpot: boolean;
+  /** Already this role here through an invitation (a duplicated event's copied Coordinator): no Add button. */
+  invited?: string;
 };
 
 /**
@@ -197,9 +199,12 @@ export function AddToTeam({
                       <p className="text-sm font-medium [overflow-wrap:anywhere]">{o.name}</p>
                       <p className="text-sm text-muted">
                         {o.now}
-                        {o.takesSpot && " · Takes a team spot"}
+                        {o.invited ? ` · ${o.invited}` : o.takesSpot && " · Takes a team spot"}
                       </p>
                     </div>
+                    {o.invited ? (
+                      <span className="shrink-0 text-sm font-medium text-muted">Already invited</span>
+                    ) : (
                     <ActionForm
                       action={addAction}
                       resetOnSuccess={false}
@@ -224,6 +229,7 @@ export function AddToTeam({
                         Add
                       </SubmitButton>
                     </ActionForm>
+                    )}
                   </li>
                 );
               })}

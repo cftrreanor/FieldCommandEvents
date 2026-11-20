@@ -250,7 +250,11 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
         {/* No "Back to" link while setting up: it would jump ahead to Publish. The step bar is the way around. */}
         <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">Registration</h1>
         <SavedBy eventId={eventId} area="bands" className="mt-2" />
-        <p className="mt-2 max-w-3xl text-muted">What group directors fill in when they register their group. Registration opens when you publish.</p>
+        <p className="mt-2 max-w-3xl text-muted">What group directors fill in when they register their group.{" "}
+          {event.band_registration_opens_on && event.band_registration_opens_on > today
+            ? `Registration opens ${formatDate(event.band_registration_opens_on, { year: undefined })}, once you've published.`
+            : "Registration opens when you publish."}
+        </p>
         <a href={`/e/${event.slug}/${hasRooms(event.event_type) ? "register" : "bands"}`} target="_blank" className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4">
           Preview the form <span className="sr-only">(opens in a new tab)</span>
         </a>

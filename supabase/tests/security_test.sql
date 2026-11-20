@@ -11685,6 +11685,21 @@ begin
 end $$;
 reset role;
 
+-- A Co-host of one event is told whether their event could be published again (Event settings' Publishing card);
+-- the event's Volunteer Lead still isn't.
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000003"}';
+do $$ begin
+  assert public.org_can_publish('dc000000-0000-0000-0000-0000000000e2') is distinct from 'That event wasn''t found.',
+         'a Co-host of one event gets their event''s publishing reason';
+end $$;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000004"}';
+do $$ begin
+  assert public.org_can_publish('dc000000-0000-0000-0000-0000000000e2') = 'That event wasn''t found.',
+         'a Volunteer Lead doesn''t get the account''s publishing reasons';
+end $$;
+reset role;
+
 -- Clean up.
 set role service_role;
 select set_config('app.cleaning_up', 'on', false);

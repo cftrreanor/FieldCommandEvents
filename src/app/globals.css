@@ -248,8 +248,10 @@
 
 /* Not ready yet, but still pressable (it says what's missing): the button's own shape with a solid,
    muted fill and readable words, never a faded one that can't be read outdoors. Dashed outlines mean
-   open or empty times only (light check, 2026-11-08). */
-form [data-not-ready] {
+   open or empty times only (light check, 2026-11-08). A form with a box still invalid (form:invalid, the
+   browser's own required and format checks; never a noValidate form). data-solid: a short window's one main
+   button stays filled; tapping it early says what's missing. */
+form:not([novalidate]):invalid :is(button[type="submit"], button:not([type])):not([data-solid]) {
   background: color-mix(in srgb, var(--muted) 14%, var(--surface)) !important;
   color: var(--foreground) !important;
   border: 1.5px solid var(--field-border) !important;

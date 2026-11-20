@@ -62,6 +62,11 @@ export async function duplicateEvent(fromEventId: string, requestId: string, _pr
   }
   const result = data as DuplicateResult;
   const { failed } = await copyCopiedFiles(result.event_id, result.summary.files ?? []);
+  // A contest's copy lands on Band registration, so that step is opened by landing there (marked here, so every
+  // screen agrees from the first render).
+  if (result.summary.kind === "band_contest") {
+    await supabase.rpc("mark_copy_step", { p_event: result.event_id, p_step: "registration", p_confirmed: false });
+  }
 
   revalidatePath("/dashboard", "layout");
   const base = `/dashboard/events/${result.event_id}`;
@@ -214,6 +219,8 @@ export async function publishCopy(eventId: string, send: string[], signup?: "now
     if (sent === true) emailed.push({ name: p.name, email: p.email });
     else notEmailed.push({ invitationId: p.invitation_id, name: p.name, email: p.email, why: sent });
   }
+  // Everyone else still not emailed: unticked in the window, or couldn't be sent now. The message names them too.
+  const left = people.filter((p) => (p.status === "held" || p.status === "expired") && !ticked.includes(p));
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
   revalidatePath("/dashboard", "layout");
 
@@ -228,11 +235,24 @@ export async function publishCopy(eventId: string, send: string[], signup?: "now
         : "Published, and sign-up is open"
       : "Published";
   const names = (list: { name: string }[]) => joinNames(list.map((p) => p.name));
+  const wasnt = (n: number) => (n === 1 ? "wasn't" : "weren't");
   const parts = [
-    emailed.length ? `Invitations went to ${names(emailed)}.` : "",
-    notEmailed.length ? `${names(notEmailed)} ${notEmailed.length === 1 ? "wasn't" : "weren't"} emailed.` : "",
+    emailed.length ? `${emailed.length === 1 ? "An invitation went" : "Invitations went"} to ${names(emailed)}.` : "",
+    notEmailed.length === 1
+      ? `${notEmailed[0].name} wasn't emailed: ${lowerFirst(notEmailed[0].why)}`
+      : notEmailed.length
+        ? `${names(notEmailed)} weren't emailed. They're listed on the event page to send again.`
+        : "",
+    left.length
+      ? `${names(left)} ${wasnt(left.length)} emailed: send ${left.length === 1 ? "their invitation" : "their invitations"} from Team setup when you're ready.`
+      : "",
   ].filter(Boolean);
-  return { ok: true, message: [`${head}.`, ...parts].join(" "), emailed, notEmailed };
+  return {
+    ok: true,
+    message: [`${head}.`, ...parts].join(" "),
+    emailed,
+    notEmailed: [...notEmailed, ...left.map((p) => ({ invitationId: p.invitation_id, name: p.name, email: p.email, why: "Not ticked when publishing" }))],
+  };
 }
 
 /** "a, b, and c" */

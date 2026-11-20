@@ -128,7 +128,12 @@ export async function TeamRoles({
     ...st,
     lead_ids: (leadRows ?? []).filter((l) => l.station_id === st.id).map((l) => l.user_id),
   }));
-  const unled = stations.filter((s) => s.lead_ids.length === 0);
+  // A job with a copied Coordinator not accepted yet isn't "No Coordinator yet": they show in their own list above.
+  const heldJobs = new Set((copied?.people ?? []).filter((p) => p.status !== "accepted").flatMap((p) => p.jobs));
+  const unled = stations.filter((s) => s.lead_ids.length === 0 && !heldJobs.has(s.name));
+  // People on the account (its hosts) who lead a job here with no Coordinator role of their own: a duplicated
+  // event puts them straight on their jobs. They're current Coordinators too.
+  const hostLeads = hosts.filter((h) => !leads.some((l) => l.user_id === h.user_id) && stations.some((s) => s.lead_ids.includes(h.user_id)));
   const origin = await getOrigin();
   const options = (optionData ?? []) as OptionRow[];
 
@@ -207,10 +212,18 @@ export async function TeamRoles({
     if (tab === "hosts") hosts.forEach((h) => skip.add(h.user_id));
     if (tab === "volunteer-leads") [...hosts.map((h) => h.user_id), ...directors.map((d) => d.user_id)].forEach((id) => skip.add(id));
     if (tab === "section-leads") [...hosts.map((h) => h.user_id), ...leads.map((l) => l.user_id)].forEach((id) => skip.add(id));
-    const byPerson = new Map<string, { name: string; roles: string[]; holds: boolean }>();
+    // Copied Coordinators already invited here (held, sent, or expired): marked, not offered again.
+    const invitedAs = (email: string) => {
+      if (tab !== "section-leads") return undefined;
+      const p = (copied?.people ?? []).find((c) => c.status !== "accepted" && c.email.toLowerCase() === email.toLowerCase());
+      if (!p) return undefined;
+      const job = `${lead.one} for ${p.jobs.join(", ")}`;
+      return p.status === "held" ? `${job}, not emailed yet` : p.status === "expired" ? `${job}, invitation expired` : `${job}, invitation sent`;
+    };
+    const byPerson = new Map<string, { name: string; roles: string[]; holds: boolean; invited?: string }>();
     for (const o of options) {
       if (skip.has(o.user_id)) continue;
-      const entry = byPerson.get(o.user_id) ?? { name: o.full_name || o.email, roles: [], holds: o.holds_spot };
+      const entry = byPerson.get(o.user_id) ?? { name: o.full_name || o.email, roles: [], holds: o.holds_spot, invited: invitedAs(o.email) };
       const role =
         o.kind === "admin"
           ? "Co-host of every event"
@@ -226,7 +239,10 @@ export async function TeamRoles({
       if (tab === "hosts" && o.kind === "volunteer_director" && o.event_id === eventId) entry.roles.push("Co-host replaces their Volunteer Lead role here");
       byPerson.set(o.user_id, entry);
     }
-    return [...byPerson.entries()].map(([userId, p]) => ({ userId, name: p.name, now: p.roles.join(" · "), takesSpot: !p.holds }));
+    return [...byPerson.entries()]
+      .map(([userId, p]) => ({ userId, name: p.name, now: p.roles.join(" · "), takesSpot: !p.holds, invited: p.invited }))
+      // Already invited here: last, since there's nothing to add.
+      .sort((a, b) => Number(Boolean(a.invited)) - Number(Boolean(b.invited)));
   };
 
   // Everything one role's step needs.
@@ -247,12 +263,17 @@ export async function TeamRoles({
     return { pending, removed, canInvite, roleName };
   };
   const coHosts = hosts.filter((h) => h.kind !== "owner").length;
-  const count = { hosts: coHosts, "volunteer-leads": directors.length, "section-leads": leads.length };
+  const leadCount = leads.length + hostLeads.length;
+  // Copied Coordinators who accepted show in the copied list above, so not again under Current members (as before).
+  const acceptedCopy = (l: StaffRow) =>
+    (copied?.people ?? []).some((p) => p.status === "accepted" && p.email.toLowerCase() === (l.profiles?.email ?? "").toLowerCase());
+  const shownLeads = leads.filter((l) => !acceptedCopy(l));
+  const count = { hosts: coHosts, "volunteer-leads": directors.length, "section-leads": leadCount };
   const steps: Record<TeamTab, { title: string; status: string }> = {
     hosts: { title: "Co-hosts", status: plural(coHosts, "co-host", "co-hosts") },
     "volunteer-leads": { title: "Volunteer Leads", status: plural(directors.length, "Volunteer Lead", "Volunteer Leads") },
     // Optional: a sign-up runs fine without one.
-    "section-leads": { title: lead.many, status: plural(leads.length, lead.one, lead.many) },
+    "section-leads": { title: lead.many, status: plural(leadCount, lead.one, lead.many) },
   };
   // A link here can name a role (?tab=section-leads).
   const active: TeamTab = roles.find((r) => r === tabParam) ?? roles[0];
@@ -456,9 +477,20 @@ export async function TeamRoles({
           tabs={roles.map((r) => ({
             key: r,
             label: steps[r].title,
+            // Every tab has a phone label, so the three share a phone's width (wrapping) instead of running off it.
+            short: steps[r].title,
             // Copied Coordinators not emailed yet: a yellow mark with how many.
             ...(r === "section-leads" && notEmailed.length && copied?.team.coordinators_included
-              ? { status: `${notEmailed.length} not emailed yet`, mark: "todo" as const }
+              ? {
+                  // Held ones weren't emailed; expired ones were, so they're named as expired (as in their rows).
+                  status: [
+                    notEmailed.some((p) => p.status === "held") ? `${notEmailed.filter((p) => p.status === "held").length} not emailed yet` : "",
+                    notEmailed.some((p) => p.status === "expired") ? `${notEmailed.filter((p) => p.status === "expired").length} expired` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(", "),
+                  mark: "todo" as const,
+                }
               : { status: count[r] ? steps[r].status : "Optional", mark: count[r] ? ("done" as const) : undefined }),
             href: href(r),
             active: r === active,
@@ -598,16 +630,27 @@ export async function TeamRoles({
                 </section>
               )}
 
-              {tab === "section-leads" && !(copied && copied.people.length > 0 && leads.every((l) => copied.people.some((p) => p.status === "accepted" && p.email.toLowerCase() === (l.profiles?.email ?? "").toLowerCase()))) && (
+              {tab === "section-leads" && !(copied && copied.people.length > 0 && hostLeads.length === 0 && shownLeads.length === 0) && (
                 <div>
                   <h2 className="text-sm font-semibold">Current members</h2>
                   <p className="mt-1 text-sm leading-6 text-muted">
                     {lead.many} run one sign-up on the day, like {event.event_type === "fair" ? "Face Painting" : "Parking"}. They see who&apos;s on
                     their shifts; phone numbers unlock on event day.
                   </p>
-                  {leads.length > 0 ? (
+                  {hostLeads.length + shownLeads.length > 0 ? (
                     <ul className="mt-3 divide-y divide-border rounded-lg border border-border">
-                      {leads.map((l) => {
+                      {hostLeads.map((h) => (
+                        // On the account already: they lead their jobs without an invitation. Changed on the job itself.
+                        <PersonRow
+                          key={h.user_id}
+                          name={h.full_name || h.email}
+                          isYou={h.user_id === user.id}
+                          badge={lead.one}
+                          reach={`Leads ${jobsLed(h.user_id).join(", ")} · ${h.kind === "owner" ? "Account Host" : h.kind === "every" ? "Co-host of every event" : `Co-host of ${event.name}`}`}
+                          details={[h.email, formatPhone(h.phone)]}
+                        />
+                      ))}
+                      {shownLeads.map((l) => {
                         const led = jobsLed(l.user_id);
                         return (
                           <PersonRow

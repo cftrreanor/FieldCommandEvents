@@ -59,7 +59,7 @@ export type CopyCoordinator = {
   email: string;
   station_id: string | null;
   jobs: string[];
-  /** held: "Not emailed yet"; sent; expired: "Invitation expired · Send again"; accepted. */
+  /** held: "Not emailed yet"; sent; expired: "Invitation expired [date]"; accepted. */
   status: "held" | "sent" | "expired" | "accepted";
   sent_at: string | null;
   expires_at: string | null;
@@ -165,7 +165,9 @@ export async function loadCopyPublishCheck(eventId: string): Promise<CopyPublish
     created_at: raw.created_at,
     first_published_at: raw.first_published_at,
     steps: raw.steps ?? [],
-    unopened: (raw.steps ?? []).filter((s) => !s.opened).map((s) => ({ step: s.step, oldDates: oldDates[textFor(s.step)] ?? [] })),
+    // One rule everywhere (the publish window, the Ready card, the phone line): still "Copied: check it", that is,
+    // not opened and not saved or confirmed.
+    unopened: (raw.steps ?? []).filter((s) => !s.opened && !s.confirmed).map((s) => ({ step: s.step, oldDates: oldDates[textFor(s.step)] ?? [] })),
     oldDates,
     invitations,
     toOffer: invitations.filter((i) => (i.status === "held" || i.status === "expired") && i.can_send),

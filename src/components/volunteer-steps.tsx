@@ -67,7 +67,8 @@ export function SetupSteps({
             ? false
             : (facts.done?.[s.key] ?? (s.key === "volunteers" ? Boolean(facts.volunteersDone) : facts.middleDone)),
   );
-  const copiedSteps = steps.filter((s) => copiedState(s.key));
+  // Still "Copied: check it" (not opened yet): the same rule as the Ready card and the publish window.
+  const copiedSteps = steps.filter((s) => copiedState(s.key) === "copied");
   // The strip under each step: copied steps have their own look (outlined in the brand color, tinted).
   const strip = (s: (typeof steps)[number], i: number) =>
     i === here
@@ -183,7 +184,7 @@ export function SetupSteps({
       {copiedSteps.length > 0 && (
         // Phones name the copied steps in words too.
         <p className="mt-1 text-sm font-medium sm:hidden">
-          Copied, to check: {copiedSteps.map((s) => s.label).join(", ")}
+          Copied, not opened yet: {copiedSteps.map((s) => s.label).join(", ")}
         </p>
       )}
       <details className="group sm:hidden">

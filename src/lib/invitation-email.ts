@@ -65,7 +65,7 @@ export function invitationEmail(
   const copied =
     copy && inv.role === "section_lead"
       ? [
-          `You're the ${leadTitle} for ${station} at ${copy.sourceName} (${month}), and this is the same job on the new dates. If you can't help this time, let ${copy.hostFirst} know at ${copy.hostEmail}.`,
+          `You were the ${leadTitle} for ${station} at ${copy.sourceName} (${month}), and this is the same job on the new dates. If you can't help this time, let ${copy.hostFirst} know at ${copy.hostEmail}.`,
           ...(copy.early ? ["The event is still being set up. Once you accept, you can see it as it comes together."] : []),
         ]
       : [];
