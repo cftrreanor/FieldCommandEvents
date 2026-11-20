@@ -52,3 +52,19 @@ Owner decision: **all as recommended, build.**
   "Done", until saved or confirmed; the note's items are plain links); "Keep it a draft" disabled while publishing;
   success messages name anyone not emailed, with a line on the event page; a freed team spot doesn't send on its own;
   festivals built the same way (rooms, minutes per group, and walking time come over); the wording and layout fixes.
+
+## Built pages: light check (2026-11-20)
+
+Review: docs/design-reviews/2026-11-20-duplicate-event-built.md (UX, UI, Content, Product Owner, Software Engineer,
+consultant). Three findings rated 3. Owner decisions:
+
+| # | Finding | Severity | Decision | Notes |
+|---|---|---|---|---|
+| 1 | Opening a step clears its old-date warning | 3 | Owner: **fix it differently** | The owner's intent: everything comes over except volunteers, personal details, and dates. Structured dates still move to the new first day the organizer picks (owner confirmed). **Old dates typed into copied text (descriptions, shift and job notes, things to bring, director information, and the like) are blanked while copying and replaced with a marker, "[new date]".** The step shows "Add the new date" until every marker is filled in, and publishing waits until then (every publish path). Replaces round 2's "publishing stays allowed" for old dates |
+| 2 | Other publish buttons skip the copy's publish window | 3 | Take the advice | Until a copy is first published, every Publish button (event page, Jobs and shifts, Band or festival registration, Event settings) opens the same window with ticks for who gets emailed |
+| 3 | The Coordinator list can show the name of anyone with an account | 3 | Take the advice | A name only once they accept or when they're already on this account's team; otherwise the email. Security test |
+| — | The "[Step] looks right" link (added in building, not in the mock-ups) | 2 | Owner: **remove it** | Opening a copied step checks it off ("Copied: check it" → "Opened"); "[new date]" markers are the remaining check |
+| — | All other severity 2 and 1 findings | 2/1 | Take the advice | As written in the report. Kept from earlier decisions: "If you can't help this time, let [host] know" in the email (no decline link yet); the short message after publishing plus the line that stays on the event page; "Email settings, not copied" in the note |
+
+By the routing rule, the fixes get a light check from the roles that raised findings plus the Product Manager and
+Marketing Manager.
