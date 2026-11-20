@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { setPending, useLeaveGuard } from "@/components/pending-edits";
+import { NextLabel } from "@/components/next-label";
 
 // Setup steps that save themselves (lessons L3 and L18): a moment after each change the form is
 // sent, and one bar under it says Saving…, Saved, Not saved yet, or Not saved (Retry), with the
@@ -85,7 +86,8 @@ export function AutosaveBar({
   return (
     <div className="sticky bottom-[var(--day-bar,0px)] z-10 -mx-4 -mb-4 flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 rounded-b-lg border-t-2 border-border bg-surface px-4 py-3 shadow-[0_-6px_16px_rgb(0_0_0/0.10)] sm:-mx-6 sm:-mb-6 sm:px-6">
       {/* A long "not saved yet" note takes its own line on phones, above the button, instead of a narrow column. */}
-      <div className={`min-w-0 flex-1 text-sm ${todo || status.kind === "incomplete" ? "basis-full sm:basis-auto" : ""}`} role="status">
+      {/* Its own line above the button when the two don't fit side by side. */}
+      <div className={`min-w-[min(100%,9.5rem)] flex-1 text-sm ${todo || status.kind === "incomplete" ? "basis-full sm:basis-auto" : ""}`} role="status">
         {status.kind === "failed" ? (
           <p className="flex flex-wrap items-center gap-x-2 font-semibold text-danger">
             <span>
@@ -126,7 +128,7 @@ export function AutosaveBar({
             todo && status.kind !== "saved" ? "border border-field-border bg-surface hover:bg-background" : "bg-brand text-brand-foreground hover:bg-brand-hover"
           }`}
         >
-          {next.label} →
+          <NextLabel label={next.label} />
         </Link>
       )}
     </div>

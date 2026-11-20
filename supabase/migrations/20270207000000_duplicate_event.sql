@@ -48,6 +48,11 @@ alter table public.invitations add column if not exists extra_station_ids uuid[]
 -- When the email was accepted for delivery (the server sets it after sending). A copied Coordinator's invitation
 -- that was "sent" but never delivered (the send was cut off) reads as "Not emailed yet".
 alter table public.invitations add column if not exists delivered_at timestamptz;
+-- Invitations already sent before this column existed (or by an earlier version of this migration that didn't fill it
+-- in) were delivered: give them their send time, so they don't read "Not emailed yet" and get emailed again. Only
+-- fills blanks, so running it twice changes nothing; a held invitation (never sent) is left blank.
+update public.invitations set delivered_at = sent_at
+ where delivered_at is null and sent_at is not null and not held_for_publish;
 -- A held invitation has no token at all, so nobody (managers included) can see or use one.
 alter table public.invitations alter column token drop not null;
 do $$ begin
@@ -66,6 +71,14 @@ end $$;
 -- Managers read the new columns (only functions write them).
 grant select (held_for_publish, copied_from_event_id, extra_station_ids, delivered_at) on public.invitations to authenticated;
 grant select, insert, update, delete on public.invitations to service_role;
+-- A held invitation is the hosts' (is_event_admin): only they read it. A Volunteer Lead still reads the other
+-- Coordinator invitations of events they manage, as before.
+drop policy if exists "invitations: managers read" on public.invitations;
+create policy "invitations: managers read" on public.invitations
+  for select to authenticated
+  using (public.is_org_admin(organization_id)
+         or (not as_host and public.can_manage_volunteers(event_id)
+             and (not held_for_publish or public.is_event_admin(event_id))));
 -- A held invitation is the hosts' to send or remove: a Volunteer Lead can't delete one (they still cancel the
 -- Coordinator invitations they can see and send).
 drop policy if exists "invitations: directors cancel lead invites" on public.invitations;
@@ -351,6 +364,41 @@ create table if not exists public.copy_invitation_removals (
 alter table public.copy_invitation_removals enable row level security;
 -- Only the functions below use it (no policies: nobody reads it directly).
 grant select, insert, update, delete on public.copy_invitation_removals to service_role;
+-- Removals stored by an earlier version of this migration kept the link keys: drop them (Undo makes new ones).
+update public.copy_invitation_removals set invitation = invitation - 'token' - 'email_token'
+ where invitation ? 'token' or invitation ? 'email_token';
+
+-- Summaries written by earlier versions of this migration kept the copy's and the source's names, the held and
+-- skipped Coordinators (names and addresses), and each file's name and stored paths. Keep counts and ids only, the
+-- same as duplicate_event stores now: the source's name comes from its row, and a file's from its own (a retry
+-- finds the source file by its old path). Only touches summaries that still hold any of those, so running it twice
+-- changes nothing.
+update public.event_copies c
+   set summary = (c.summary - 'name')
+     || case when c.summary ? 'source' and jsonb_typeof(c.summary -> 'source') = 'object'
+             then jsonb_build_object('source', (c.summary -> 'source') - 'name') else '{}'::jsonb end
+     || case when jsonb_typeof(c.summary -> 'coordinators') = 'object'
+             then jsonb_build_object('coordinators', (
+                    select jsonb_object_agg(k, case when jsonb_typeof(v) = 'array' then to_jsonb(jsonb_array_length(v)) else v end)
+                      from jsonb_each(c.summary -> 'coordinators') t(k, v)))
+             else '{}'::jsonb end
+     || case when jsonb_typeof(c.summary -> 'files') = 'array'
+             then jsonb_build_object('files', (
+                    select coalesce(jsonb_agg(case when jsonb_typeof(x) = 'object' then jsonb_strip_nulls(jsonb_build_object(
+                                      'id', x -> 'id',
+                                      'source_id', coalesce(x -> 'source_id',
+                                                            (select to_jsonb(sf.id) from public.event_files sf
+                                                              where sf.path = x ->> 'from' limit 1))))
+                                                   else x end), '[]'::jsonb)
+                      from jsonb_array_elements(c.summary -> 'files') x))
+             else '{}'::jsonb end
+ where c.summary ? 'name'
+    or (jsonb_typeof(c.summary -> 'source') = 'object' and c.summary -> 'source' ? 'name')
+    or (jsonb_typeof(c.summary -> 'coordinators') = 'object'
+        and exists (select 1 from jsonb_each(c.summary -> 'coordinators') t(k, v) where jsonb_typeof(v) = 'array'))
+    or (jsonb_typeof(c.summary -> 'files') = 'array'
+        and exists (select 1 from jsonb_array_elements(c.summary -> 'files') x
+                     where jsonb_typeof(x) = 'object' and (x ? 'label' or x ? 'file_name' or x ? 'from' or x ? 'to')));
 
 -- The first publish is remembered (Delete and start over is only for a copy that was never published).
 create or replace function public.event_copies_note_publish()
@@ -388,7 +436,9 @@ create trigger event_copies_note_publish after update of status on public.events
 --         that day's weekday too); a time ("7:45"); a year on its own; a number that can't be a date ("13/40");
 --         a fraction ("1/2", "3/4"); grades ("Grades 4/5", "6/7/8"); a score out of 10 ("10/10", "9/10");
 --         lowercase "march" or "may" ("march 8 to 5", "you may 2"); a month name used as a name before a count
---         ("Ask Jan 2 hours before"); and anything inside a web address or a link.
+--         ("Ask Jan 2 hours before"); a number after "age(s)", "size(s)", "table(s)", "room(s)", or "#" ("Ages 5/6");
+--         a capitalized "March" after a grade or a count ("Grade 3 March", "1 March, 1 Chorale"); and anything inside
+--         a web address or a link.
 -- ---------------------------------------------------------------------------
 -- One stretch of text with no web address in it.
 create or replace function public.copy_blank_dates_part(p_text text, p_keep date[])
@@ -481,6 +531,17 @@ begin
       mon := m[2]::int; dy := m[3]::int; yr := m[4]::int;
     else
       dy := m[2]::int; mon := null;
+    end if;
+    -- A number after a label ("Ages 5/6", "Room 3/4", "#2/3"): not a date.
+    if kind between 2 and 5 and wday is null and left(rest, pos - 1) ~* '(\y(ages?|sizes?|tables?|rooms?)|#)\s*$' then
+      keep := true;
+    end if;
+    -- A capitalized "March" after a grade or a count is a piece of music ("Grade 3 March", "1 March, 1 Chorale").
+    if kind = 2 and wday is null and whole ~ '^\d{1,2}\s+March$'
+       and (left(rest, pos - 1) ~* '(\ygrades?|\ygr\.?)\s*$'
+            or after ~ '^\s*(,|and\y|&|\+)\s*\d+\s+[A-Z]'
+            or left(rest, pos - 1) ~ '\y\d+\s+[A-Z][A-Za-z]*\s*(,|and|&|\+)\s*$') then
+      keep := true;
     end if;
     -- Lowercase "march" and "may" are words ("march 8 to 5", "you may 2").
     if mtxt is not null and mtxt in ('march', 'may') then
@@ -1209,6 +1270,36 @@ $$;
 revoke execute on function public.duplicate_event(uuid, date, text, uuid) from public, anon;
 grant execute on function public.duplicate_event(uuid, date, text, uuid) to authenticated;
 
+-- What duplicating each event would bring, counted in the database (the Event settings panel, New event's "Start from
+-- one of your events", and the Duplicate page): jobs, shifts, things to bring, maps and documents, rooms, and
+-- Coordinators (and how many of them aren't account members, so they're asked again). Only for the account's hosts,
+-- and only its own events; an event that isn't theirs isn't listed.
+create or replace function public.duplicate_counts(p_org uuid, p_events uuid[])
+returns table (event_id uuid, jobs integer, shifts integer, items integer, files integer, rooms integer,
+               coordinators integer, invited integer)
+language plpgsql stable security definer set search_path = public
+as $$
+begin
+  if not coalesce(public.is_org_admin(p_org), false) then
+    raise exception 'You don''t have permission to do that.' using errcode = '42501';
+  end if;
+  return query
+    select e.id,
+           (select count(*)::int from stations st where st.event_id = e.id),
+           (select count(*)::int from shifts sh where sh.event_id = e.id),
+           (select count(*)::int from station_items si where si.event_id = e.id),
+           (select count(*)::int from event_files ef where ef.event_id = e.id),
+           (select count(*)::int from rooms r where r.event_id = e.id),
+           (select count(distinct sl.user_id)::int from station_leads sl where sl.event_id = e.id),
+           (select count(distinct sl.user_id)::int from station_leads sl where sl.event_id = e.id
+               and not exists (select 1 from organization_members m where m.organization_id = p_org and m.user_id = sl.user_id))
+      from events e
+     where e.organization_id = p_org and e.id = any (p_events);
+end;
+$$;
+revoke execute on function public.duplicate_counts(uuid, uuid[]) from public, anon;
+grant execute on function public.duplicate_counts(uuid, uuid[]) to authenticated;
+
 -- The server removes the row of a map or document whose stored file didn't copy (it reports which).
 create or replace function public.drop_uncopied_event_files(p_event uuid, p_ids uuid[])
 returns integer
@@ -1288,7 +1379,8 @@ grant execute on function public.copy_coordinators(uuid) to authenticated;
 
 -- The email didn't go out (Send now, or at publish): back to where it was, so nobody holds a link that was never
 -- delivered. One never emailed goes back to "Not emailed yet"; one that had expired (p_was_expired) goes back to
--- expired, never "Not emailed yet", since it was emailed once. Only straight after sending it.
+-- expired, never "Not emailed yet", since it was emailed once. Only straight after sending it. One still marked
+-- sent (Send a new invitation) never comes here: the server puts it back exactly as it was, first link and all.
 drop function if exists public.copy_invitation_not_sent(uuid);
 create or replace function public.copy_invitation_not_sent(p_id uuid, p_was_expired boolean default false)
 returns void
@@ -1335,10 +1427,12 @@ begin
      and not (inv.delivered_at is null and inv.sent_at < now() - interval '2 minutes') then
     raise exception 'This invitation was sent. Use Cancel invitation instead.' using errcode = 'P0001';
   end if;
-  -- Kept only while Undo works (10 minutes): a removed person's address isn't kept longer than that.
+  -- Undo works for 10 minutes. After that the row is deleted the next time any function here reads the removals,
+  -- or by the daily clean-up (purge_copy_invitation_removals), so a removed person's address is kept a day at most.
+  -- The link keys aren't kept at all: Undo gives the invitation new ones.
   delete from copy_invitation_removals where removed_at < now() - interval '10 minutes';
   insert into copy_invitation_removals (event_id, removed_by, invitation)
-  values (inv.event_id, auth.uid(), to_jsonb(inv))
+  values (inv.event_id, auth.uid(), to_jsonb(inv) - 'token' - 'email_token')
   returning id into rid;
   delete from invitations where id = p_id;
   return rid;
@@ -1379,7 +1473,8 @@ begin
                            created_at, expires_at, sent_at, held_for_publish, copied_from_event_id, as_host)
   values (inv.id, rem.event_id, inv.organization_id, inv.email, 'section_lead', inv.station_id,
           array(select x from unnest(inv.extra_station_ids) x where exists (select 1 from stations s where s.id = x and s.event_id = rem.event_id)),
-          inv.token, inv.invited_by, inv.created_at, inv.expires_at, inv.sent_at, inv.held_for_publish, inv.copied_from_event_id, false);
+          case when inv.held_for_publish then null else gen_random_uuid() end,
+          inv.invited_by, inv.created_at, inv.expires_at, inv.sent_at, inv.held_for_publish, inv.copied_from_event_id, false);
   delete from copy_invitation_removals where id = p_removal;
   return inv.id;
 end;
@@ -1462,7 +1557,13 @@ begin
               and i.role = 'section_lead' and i.accepted_at is null) then
     raise exception '% already has an invitation for this event.', addr using errcode = 'P0001';
   end if;
-  update invitations set email = addr where id = p_id;
+  -- New link keys with the new address: the one-tap link (email_token) and the invitation link (token) sent to the
+  -- old address stop working. A held one has no token until it's sent.
+  update invitations
+     set email = addr,
+         token = case when held_for_publish then null else gen_random_uuid() end,
+         email_token = gen_random_uuid()
+   where id = p_id;
 end;
 $$;
 revoke execute on function public.fix_copy_invitation_email(uuid, text) from public, anon;

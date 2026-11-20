@@ -228,10 +228,11 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
         ask_availability: boolean;
       } | null)
     : null;
-  const festivalForm = (next?: { href: string; label: string }, unmarked: string[] = []) => (
+  const festivalForm = (next?: { href: string; label: string }, unmarked: string[] = [], deadlineFirst = false) => (
     <FestivalRegistration
       eventId={eventId}
       unmarked={unmarked}
+      deadlineFirst={deadlineFirst}
       initial={{
         deadline: event.band_registration_deadline ?? "",
         maxGroups: festival?.max_groups ?? null,
@@ -257,6 +258,7 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
   // A festival before it's published: step 3 of its setup (the steps sit above, from the layout; board 5, 2026-11-11).
   if (roomsHere && !published) {
     const copyFacts = await loadCopyFacts(eventId);
+    const regPlace = copyFacts?.check.newDates.find((d) => d.step === "registration") ?? null;
     return (
       <div data-required-marks>
         {/* No "Back to" link while setting up: it would jump ahead to Publish. The step bar is the way around. */}
@@ -273,8 +275,10 @@ export default async function BandsPage({ params, searchParams }: PageProps<"/da
         {copyFacts && <CopiedNote facts={copyFacts} place="registration" />}
         <div className="mt-6">
           {festivalForm(
-            { href: `/dashboard/events/${eventId}/volunteering`, label: "Volunteers" },
+            // "[new date]" left on this step: Next goes to it first (after a blank deadline).
+            regPlace ? { href: newDateSpotHref(`/dashboard/events/${eventId}`, regPlace), label: "Add the new date" } : { href: `/dashboard/events/${eventId}/volunteering`, label: "Volunteers" },
             (copyFacts?.check.newDates ?? []).filter((d) => d.unmarked).map((d) => d.what),
+            Boolean(copyFacts),
           )}
         </div>
       </div>

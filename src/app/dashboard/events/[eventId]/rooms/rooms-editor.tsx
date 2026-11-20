@@ -359,8 +359,8 @@ export function RoomsEditor({
         <div className={`mt-3 grid gap-3 ${inPath ? "sm:grid-cols-[1fr_9rem_1fr]" : "sm:grid-cols-2"}`}>
           <label className="flex min-w-0 flex-col gap-1.5">
             <span className="text-sm font-semibold">Room name</span>
-            <NewDateNote value={r.name} spot="room-name" />
             <Input value={r.name} maxLength={80} onChange={(e) => set(r.key, { name: e.target.value })} placeholder={inPath ? "For example, Warm-up room" : "For example, Hospitality room"} className={EX} />
+            <NewDateNote value={r.name} spot="room-name" detail={r.name} />
           </label>
           {inPath && (
             <label className="flex min-w-0 flex-col gap-1.5">
@@ -370,8 +370,8 @@ export function RoomsEditor({
           )}
           <label className="flex min-w-0 flex-col gap-1.5">
             <span className="text-sm font-semibold">Where it is (optional)</span>
-            <NewDateNote value={r.note} spot="room-note" />
             <Input value={r.note} maxLength={200} onChange={(e) => set(r.key, { note: e.target.value })} placeholder={inPath ? "For example, Room 112, east hallway" : "For example, Library"} className={EX} />
+            <NewDateNote value={r.note} spot="room-note" detail={r.name} />
           </label>
         </div>
       </li>

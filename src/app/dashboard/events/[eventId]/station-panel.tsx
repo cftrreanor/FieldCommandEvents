@@ -3,7 +3,7 @@ import { VolunteerTags } from "@/components/volunteer-tags";
 import { kindLabel, type CheckpointKind } from "@/lib/contest-day";
 import { hasBands, leadWords } from "@/lib/event-types";
 import { formatPhone } from "@/lib/phone";
-import { formatDate, formatDateRange, formatTimeRange, utcToZonedDate, utcToZonedTime } from "@/lib/time";
+import { formatDate, formatDateRange, formatTime, formatTimeRange, utcToZonedDate, utcToZonedTime } from "@/lib/time";
 import {
   createItem,
   createShift,
@@ -108,10 +108,13 @@ export function StationPanel({
   teamHref,
   job,
   adultsNeeded = {},
+  newDateShifts = [],
 }: {
   eventId: string;
   station: Station;
   stationShifts: Shift[];
+  /** A copy: the start times ("10:30 AM") of this job's shifts listed as "[new date]" places (marked or too long to mark). */
+  newDateShifts?: string[];
   event: { timezone: string; starts_on: string; ends_on: string; event_type?: string };
   days: string[];
   windowLabel: string;
@@ -267,7 +270,7 @@ export function StationPanel({
               <h4 id="shifts-heading" className="text-base font-semibold">
                 {job ? "Shifts" : "Time slots"}
               </h4>
-              <ShiftList shifts={stationShifts} eventId={eventId} tz={tz} multiDay={multiDay} days={days} canManage job={Boolean(job)} adultsNeeded={adultsNeeded} />
+              <ShiftList shifts={stationShifts} eventId={eventId} tz={tz} multiDay={multiDay} days={days} canManage job={Boolean(job)} adultsNeeded={adultsNeeded} newDateShifts={newDateShifts} />
               {stationShifts.length > 0 ? (
                 // Once it has time slots, redoing or adding them is tucked away so it doesn't pull focus.
                 <details className="group mt-3">
@@ -432,9 +435,11 @@ function ShiftList({
   canManage,
   job = false,
   adultsNeeded = {},
+  newDateShifts = [],
 }: {
   shifts: Shift[];
   job?: boolean;
+  newDateShifts?: string[];
   /** Adults each shift still needs (its job saves spots for adults). */
   adultsNeeded?: Record<string, number>;
   eventId: string;
@@ -497,12 +502,16 @@ function ShiftList({
           </div>
           {canManage && (
             // Open when a copied shift's name or duties still hold "[new date]", so it's in sight.
-            <details className="mt-1" open={`${s.title} ${s.description ?? ""}`.includes("[new date]") || undefined}>
+            <details
+              className="mt-1"
+              open={`${s.title} ${s.description ?? ""}`.includes("[new date]") || newDateShifts.includes(formatTime(s.starts_at, tz).replace(/\s/g, " ")) || undefined}
+            >
               <summary className={`inline-flex min-h-11 cursor-pointer items-center text-sm font-medium ${job ? "text-brand underline underline-offset-4" : "text-muted hover:text-foreground"}`}>
                 {job ? "Edit shift" : "Edit time slot"}
               </summary>
               <div className="mt-3 pb-1">
                 <ShiftForm
+                  place={{ stationId: s.station_id, detail: formatTime(s.starts_at, tz).replace(/\s/g, " ") }}
                   action={updateShift.bind(null, eventId, s.id)}
                   days={days}
                   registered={s.registered_count}

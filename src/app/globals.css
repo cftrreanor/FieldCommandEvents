@@ -506,3 +506,9 @@ html:has(.sticky[class*="bottom-[var(--day-bar"]) {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
+
+/* A duplicated event's box that still holds "[new date]" (or an old date too long to mark): an amber border, with
+   its note under it (NewDateNote). A failed save's red still wins. */
+[data-new-date-box]:not([aria-invalid="true"]) {
+  border-color: var(--warning);
+}

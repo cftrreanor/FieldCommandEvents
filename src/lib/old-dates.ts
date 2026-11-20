@@ -29,6 +29,13 @@ const PATTERNS = [
 /** A month name used as a name before a count ("Ask Jan 2 hours before"). */
 const COUNTED =
   /^\s+(hours?|hrs?|minutes?|mins?|days?|weeks?|months?|years?|people|persons|volunteers?|kids|children|adults|parents|students|times|spots?|shifts?|tables?|chairs?|tents?|boxes|bags|cases|cups|pounds|lbs|feet|ft|miles|laps|more|or\s+more)\b/i;
+/** A number after a label that counts or names things ("Ages 5/6", "Size 7/8", "Table 11/12", "Room 3/4", "#2/3"). */
+const LABELLED = /(?:\b(?:ages?|sizes?|tables?|rooms?)|#)\s*$/i;
+/** A grade before a number ("Grade 3 March"). */
+const GRADE = /(\bgrades?|\bgr\.?)\s*$/i;
+/** "1 March" in a list of counts ("1 March, 1 Chorale", "2 Concert and 1 March"). */
+const COUNT_AFTER = /^\s*(?:,|and\b|&|\+)\s*\d+\s+[A-Z]/;
+const COUNT_BEFORE = /\b\d+\s+[A-Z][A-Za-z]*\s*(?:,|and|&|\+)\s*$/;
 /** Web addresses and links, left as they are. */
 const LINK = /\[[^\]\n]*\]\([^)\s]*\)|(?:https?:\/\/|www\.)[^\s<>"']+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|edu|gov|us|io|co|info)(?:\/[^\s<>"']*)?/i;
 
@@ -86,7 +93,7 @@ function blankPart(text: string, keep: string[]): { text: string; count: number 
         whole += chain;
         after = after.slice(chain.length);
         keepIt = true;
-      } else if (/(\bgrades?|\bgr\.?)\s*$/i.test(before) || /\d\/$/.test(before)) {
+      } else if (GRADE.test(before) || /\d\/$/.test(before)) {
         keepIt = true;
       } else if (year === null && (day === 10 || ([2, 3, 4, 8, 16].includes(day) && month < day))) {
         // A score out of 10 ("9/10"), or a fraction ("1/2", "3/4").
@@ -98,6 +105,12 @@ function blankPart(text: string, keep: string[]): { text: string; count: number 
       year = Number(m[4]);
     } else {
       day = Number(m[2]);
+    }
+    // A number after a label ("Ages 5/6", "Room 3/4", "#2/3"): not a date.
+    if (kind >= 2 && kind <= 5 && !wd && LABELLED.test(before)) keepIt = true;
+    // A capitalized "March" after a grade or a count is a piece of music ("Grade 3 March", "1 March, 1 Chorale").
+    if (kind === 2 && !wd && /^\d{1,2}\s+March$/.test(whole) && (GRADE.test(before) || COUNT_AFTER.test(after) || COUNT_BEFORE.test(before))) {
+      keepIt = true;
     }
     // Lowercase "march" and "may" are words ("march 8 to 5", "you may 2").
     if (monthText === "march" || monthText === "may") keepIt = true;

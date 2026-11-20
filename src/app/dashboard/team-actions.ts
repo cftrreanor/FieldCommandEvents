@@ -938,7 +938,9 @@ export async function stopCohosting(eventId: string): Promise<ActionState> {
 
 /**
  * An address that already has an invitation waiting. A duplicated event's copied Coordinator waiting to be emailed
- * with the copy (held) can't be resent here: a host sends it from Team setup (hosts get the link).
+ * with the copy (held) can't be resent here: a host sends it from Team setup (hosts get the link). Only the event's
+ * hosts can read a held invitation (the "invitations: managers read" policy hides it from a Volunteer Lead), so
+ * copy_invitation_is_held says it's there without showing it.
  */
 async function alreadyInvited(supabase: Awaited<ReturnType<typeof createClient>>, eventId: string, email: string): Promise<ActionState> {
   const { data: held } = await supabase.rpc("copy_invitation_is_held", { p_event: eventId, p_email: email });

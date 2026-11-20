@@ -541,6 +541,7 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                 items={currentItems}
                 itemSignups={itemSignups}
                 stationShifts={currentShifts}
+                newDateShifts={places.filter((p) => p.what === "shift" && p.station_id === current.id && p.detail).map((p) => p.detail!)}
                 event={event}
                 days={days}
                 windowLabel={windowLabel}

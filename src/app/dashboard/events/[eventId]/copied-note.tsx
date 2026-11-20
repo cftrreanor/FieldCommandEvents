@@ -127,11 +127,9 @@ export function NewDateList({
         const g = groupLabel(step);
         return (
           <div key={step}>
-            <p className="font-medium">
-              <Link href={g.href} className="underline underline-offset-4 hover:text-brand">
-                {g.label}
-              </Link>{" "}
-              <span className="font-normal text-muted">· {places(here.reduce((n, s) => n + s.count, 0))}</span>
+            {/* The page's name is a heading (its places below are the links). */}
+            <p className="font-semibold text-foreground">
+              {g.label} <span className="font-normal text-muted">· {places(here.reduce((n, s) => n + s.count, 0))}</span>
             </p>
             <ul className="mt-0.5 space-y-1 pl-4">{here.map(item)}</ul>
           </div>
@@ -245,13 +243,22 @@ export async function CopiedNote({ facts: f, place = "event" }: { facts: CopyFac
             ))}
           </ul>
         )}
+        {/* After the deadline line, in the page's order: each place one linked line. */}
         {here.length > 0 && (
-          <div className="mt-2">
-            <p className="font-medium text-warning">
-              <span aria-hidden>◆ </span>Add the new date
-            </p>
-            <NewDateList base={base} spots={here} />
-          </div>
+          <ul className="mt-2 space-y-1">
+            {here.map((s, i) => (
+              <li key={`${s.what}-${s.detail ?? i}`} className="font-medium [overflow-wrap:anywhere]">
+                <span aria-hidden className="text-warning">
+                  ◆{" "}
+                </span>
+                <Link href={newDateSpotHref(base, s)} className={LINK}>
+                  {s.unmarked ? "Change the old dates in " : "Add the new date in "}
+                  {lowerFirst(newDateSpotLabel({ ...s, unmarked: false }))}
+                </Link>
+                {s.count > 1 && <span className="font-normal text-muted"> · {places(s.count)}</span>}
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     );
@@ -271,13 +278,18 @@ export async function CopiedNote({ facts: f, place = "event" }: { facts: CopyFac
             </ul>
           )}
           {check.newDates.length > 0 && (
-            // The full list is in one place: the publish card, below.
+            // The full list is in one place: "Not ready to publish yet", below.
             <p className="font-medium text-warning">
-              <span aria-hidden>◆ </span>Dates typed into the copied text are left as &ldquo;[new date]&rdquo;, in{" "}
-              {places(check.newDates.reduce((n, d) => n + d.count, 0))}. Publishing waits until each is filled in.{" "}
+              <span aria-hidden>◆ </span>
+              {(() => {
+                const n = check.newDates.reduce((t, d) => t + d.count, 0);
+                return `${places(n)} ${n === 1 ? "needs" : "need"} the new date`;
+              })()}{" "}
+              (
               <a href="#publish" className={LINK}>
-                See them under Publish
+                below
               </a>
+              )
             </p>
           )}
           <p className="font-semibold">Check what came over</p>
@@ -337,3 +349,5 @@ export function CopiedStepsLine({ facts: f, labels }: { facts: CopyFacts; labels
     </p>
   );
 }
+
+const lowerFirst = (t: string) => (t ? t[0].toLowerCase() + t.slice(1) : t);

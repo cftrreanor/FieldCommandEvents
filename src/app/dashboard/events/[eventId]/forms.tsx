@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { LineIcon } from "@/components/line-icon";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { NumberInput } from "@/components/number-input";
@@ -17,11 +18,14 @@ import { StepNotice, useStepEdits } from "./volunteering/station-steps";
 import { copyDialog } from "@/components/confirm-dialog";
 import { CO_HOST_POWERS } from "@/lib/team-words";
 import { TimeField } from "@/components/time-field";
-import { NewDateNote } from "@/components/new-date-note";
+import { NewDateNote, useNewDatePlace, useNewDatePlaces } from "@/components/new-date-note";
+import { blankOldDates } from "@/lib/old-dates";
 
 type Action = (prev: ActionState, formData: FormData) => Promise<ActionState>;
 
 type StationValues = {
+  /** The job's id (to match a copy's places too long to mark). */
+  id?: string;
   name: string;
   checkpoint_kind: CheckpointKind | null;
   due_minutes_before_warm_up: number | null;
@@ -108,7 +112,7 @@ export function StationForm({
         className={signupKind ? "sm:col-span-2" : undefined}
       >
         <Input name="name" required maxLength={80} defaultValue={initial?.name} />
-        <NewDateNote value={initial?.name} spot="job-name" />
+        <NewDateNote value={initial?.name} spot="job-name" field="name" stationId={initial?.id ?? null} />
       </Field>
       {signupKind && (
         <div className="sm:col-span-2">
@@ -130,8 +134,8 @@ export function StationForm({
           <ZoneInput zones={zones} defaultValue={initial?.zone} />
         </Field>
       )}
-      <NewDateNote value={initial?.location} spot="location" className="sm:col-span-2" />
-      <Field label="Location" hint="Optional. Where volunteers should report." className="sm:col-span-2">
+      <div className="sm:col-span-2">
+      <Field label="Location" hint="Optional. Where volunteers should report.">
         <Input
           name="location"
           defaultValue={initial?.location ?? ""}
@@ -146,10 +150,14 @@ export function StationForm({
           </datalist>
         )}
       </Field>
-      <NewDateNote value={initial?.instructions} spot="instructions" className="sm:col-span-2" />
-      <Field label="Instructions for volunteers" hint="Optional. What to wear, bring, and do." className="sm:col-span-2">
-        <Textarea name="instructions" defaultValue={initial?.instructions ?? ""} />
-      </Field>
+      <NewDateNote value={initial?.location} spot="location" field="location" stationId={initial?.id ?? null} />
+      </div>
+      <div className="sm:col-span-2">
+        <Field label="Instructions for volunteers" hint="Optional. What to wear, bring, and do.">
+          <Textarea name="instructions" defaultValue={initial?.instructions ?? ""} />
+        </Field>
+        <NewDateNote value={initial?.instructions} spot="instructions" field="instructions" stationId={initial?.id ?? null} />
+      </div>
       <label className="flex items-start gap-3 text-sm sm:col-span-2">
         <input
           type="checkbox"
@@ -475,13 +483,19 @@ export function ShiftForm({
   initial,
   registered = 0,
   submitLabel = "Create shift",
+  place,
 }: {
   action: Action;
   days: string[];
   initial?: ShiftValues;
   registered?: number;
   submitLabel?: string;
+  /** A copy: which job and start time this shift is, to know if it's listed as too long to mark. */
+  place?: { stationId: string; detail: string };
 }) {
+  // A copied shift too long to mark: the note goes under whichever box holds a date (the duties, unless only the title does).
+  const oldPlace = useNewDatePlace("shift", place?.stationId ?? null, place?.detail ?? null);
+  const oldIn = !place || !oldPlace?.unmarked ? null : blankOldDates(initial?.description ?? "", []).count > 0 ? "description" : "title";
   // A new shift: the button turns green once every required answer is in.
   const setEdited = useStepEdits(initial ? undefined : "shifts");
   const unadded = useUnadded();
@@ -498,11 +512,13 @@ export function ShiftForm({
         unadded(f);
       }}
     >
-      <NewDateNote value={`${initial?.title ?? ""} ${initial?.description ?? ""}`} spot="shift" className="sm:col-span-2" />
       {initial && (
-        <Field label="Title" className="sm:col-span-2">
-          <Input name="title" required defaultValue={initial.title} placeholder="e.g. Morning parking crew" />
-        </Field>
+        <div className="sm:col-span-2">
+          <Field label="Title">
+            <Input name="title" required defaultValue={initial.title} placeholder="e.g. Morning parking crew" />
+          </Field>
+          <NewDateNote value={initial.title} spot="shift" field="title" unmarked={oldIn === "title"} />
+        </div>
       )}
       {days.length > 1 ? (
         <Field label="Day" className="sm:col-span-2">
@@ -530,9 +546,12 @@ export function ShiftForm({
         <NumberInput name="capacity" defaultValue={initial?.capacity ?? ""} placeholder="e.g. 4" required />
       </Field>
       {initial && (
-        <Field label="Duties" hint="Optional." className="sm:col-span-2">
-          <Textarea name="description" defaultValue={initial.description ?? ""} />
-        </Field>
+        <div className="sm:col-span-2">
+          <Field label="Duties" hint="Optional.">
+            <Textarea name="description" defaultValue={initial.description ?? ""} />
+          </Field>
+          <NewDateNote value={initial.description} spot="shift" field="description" unmarked={oldIn === "description"} />
+        </div>
       )}
       <AgeRules adultsOnly={initial?.adultsOnly ?? false} minAge={initial?.minAge ?? null} />
       <div className="space-y-3 sm:col-span-2">
@@ -808,6 +827,8 @@ const itemCols = (autosave: boolean) => (autosave ? "sm:grid-cols-[minmax(0,1fr)
 /** One thing to bring: its name and how many, saved with its Save button, or by itself a moment after a change. */
 function ItemRow({ item: it, autosave }: { item: EditableItem; autosave: boolean }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A copied item's name too long to mark (100 characters): this one, if its name still holds a date.
+  const oldName = useNewDatePlaces().some((p) => p.what === "item" && p.unmarked) && blankOldDates(it.name, []).count > 0;
   const formId = `item-${it.id}`;
   // A lost connection throws instead of answering: show it like any other failed save.
   const update: Action = async (prev, formData) => {
@@ -859,7 +880,6 @@ function ItemRow({ item: it, autosave }: { item: EditableItem; autosave: boolean
         className={autosave ? "contents" : `grid items-center gap-3 grid-cols-[minmax(0,1fr)_6rem] ${itemCols(false)}`}
       >
         {autosave && <input type="hidden" name="auto" value="1" />}
-        <NewDateNote value={it.name} spot="item" className="col-span-full" />
         <Input name="name" required maxLength={100} defaultValue={it.name} aria-label="Item" className={autosave ? "col-span-3 sm:col-span-1" : undefined} />
         {autosave && <NeededLabel />}
         <NumberInput name="needed" required defaultValue={it.needed} maxLength={3} aria-label={`How many ${it.name} needed`} />
@@ -882,6 +902,7 @@ function ItemRow({ item: it, autosave }: { item: EditableItem; autosave: boolean
           <DeleteButton action={it.remove} label={`Delete ${it.name}`} confirmMessage={`Delete “${it.name}”?`} />
         </span>
       )}
+      <NewDateNote value={it.name} spot="item" field="name" unmarked={oldName} className="col-span-full" />
     </li>
   );
 }
@@ -955,12 +976,12 @@ export function CoordinatorPicker({
               href={teamHref}
               className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-surface px-3 text-sm hover:border-brand"
             >
-              <span aria-hidden className="font-medium text-warning">◆</span>
+              {h.expired ? <span aria-hidden className="font-medium text-warning">◆</span> : <LineIcon name="timer" className="size-4 text-muted" />}
               {h.name} · {h.expired ? "invitation expired" : "not emailed yet"}
             </a>
           ) : (
             <span key={h.name} className="inline-flex min-h-9 items-center gap-2 rounded-full border border-border px-3 text-sm">
-              <span aria-hidden className="font-medium text-warning">◆</span>
+              {h.expired ? <span aria-hidden className="font-medium text-warning">◆</span> : <LineIcon name="timer" className="size-4 text-muted" />}
               {h.name} · {h.expired ? "invitation expired" : "not emailed yet"}
             </span>
           ),

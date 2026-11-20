@@ -1,5 +1,6 @@
 "use client";
 
+import { NewDateNote, useNewDatePlace } from "@/components/new-date-note";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { createPortal } from "react-dom";
@@ -282,7 +283,9 @@ export function ZoneHeader({
   remove: (moveTo: string | null) => Promise<ActionState>;
 }) {
   const router = useRouter();
-  const [renaming, setRenaming] = useState(false);
+  // A duplicated fair's zone whose name holds "[new date]" (or an old date too long to mark): its name box is open.
+  const place = useNewDatePlace("zone", undefined, name);
+  const [renaming, setRenaming] = useState(Boolean(place) || name.includes("[new date]"));
   const [asking, setAsking] = useState(false);
   const [moveTo, setMoveTo] = useState<string>(otherZones[0] ?? "");
   const [deleteBooths, setDeleteBooths] = useState(otherZones.length === 0);
@@ -329,9 +332,12 @@ export function ZoneHeader({
           onSuccess={() => setRenaming(false)}
           className="mt-3 flex flex-col gap-2 rounded-lg border border-border bg-background p-3 sm:flex-row sm:items-end"
         >
-          <Field label="Zone name" className="flex-1">
-            <Input name="name" required maxLength={60} defaultValue={name} autoFocus />
-          </Field>
+          <div className="flex-1">
+            <Field label="Zone name">
+              <Input name="name" required maxLength={60} defaultValue={name} autoFocus={!place} />
+            </Field>
+            <NewDateNote value={name} spot="zone" field="name" detail={name} unmarked={Boolean(place?.unmarked)} />
+          </div>
           <div className="flex gap-2">
             <SubmitButton pendingText="Saving…">Save name</SubmitButton>
             <Button type="button" variant="ghost" onClick={() => setRenaming(false)}>

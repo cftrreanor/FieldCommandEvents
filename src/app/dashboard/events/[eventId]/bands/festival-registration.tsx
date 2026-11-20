@@ -11,6 +11,7 @@ import { setPending, useLeaveGuard } from "@/components/pending-edits";
 import { Input, Textarea } from "@/components/ui";
 import { AutoField, marked, useAutosave, withClass } from "./registration-settings";
 import { NewDateNote } from "@/components/new-date-note";
+import { NextLabel } from "@/components/next-label";
 
 const CONNECTION = "Check your connection, then select Retry.";
 
@@ -37,7 +38,10 @@ export function FestivalRegistration({
   draft,
   today,
   festival,
+  deadlineFirst = false,
 }: {
+  /** A copy: while the deadline is blank, Next leads with it (it's first on the page), then the new dates. */
+  deadlineFirst?: boolean;
   /** Copied text too long to mark with "[new date]" (by field): its note says to change the dates by hand. */
   unmarked?: string[];
   eventId: string;
@@ -73,6 +77,7 @@ export function FestivalRegistration({
           ? `Pick a date before the festival (${festival.label}).`
           : null,
   });
+  const go = deadlineFirst && draft && !deadline.value ? { href: "#reg-deadline", label: "Add a deadline" } : next;
   const limit = useAutosave(eventId, "maxGroups", initial.maxGroups ? String(initial.maxGroups) : "", {
     check: (v) => (v.trim() && (Number(v) < 1 || Number(v) > 2000) ? "Use a number from 1 to 2,000, or leave it empty for no limit." : null),
   });
@@ -279,7 +284,6 @@ export function FestivalRegistration({
           </div>
         </fieldset>
 
-        <NewDateNote value={info.value} spot="director-info" unmarked={unmarked.includes("director-info")} />
         <AutoField
           id="reg-info"
           label="Information for directors (optional)"
@@ -287,6 +291,7 @@ export function FestivalRegistration({
           saver={info}
         >
           <Textarea value={info.value} onChange={(e) => info.change(e.target.value)} rows={5} maxLength={3000} {...withClass(marked("reg-info", info), "w-full")} />
+          <NewDateNote value={info.value} spot="director-info" unmarked={unmarked.includes("director-info")} />
         </AutoField>
 
         <AutoField id="reg-pay" label="Payment link (optional)" hint="If directors pay online, paste the full link. It shows as a “Pay the entry fee” button." saver={pay}>
@@ -296,7 +301,7 @@ export function FestivalRegistration({
 
       {/* Pinned to the bottom of the screen: whether everything is saved, and the way on (the same bar as the other steps). */}
       <div className="sticky bottom-[var(--day-bar,0px)] z-10 flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 rounded-b-lg border-t-2 border-border bg-surface px-4 py-3 shadow-[0_-6px_16px_rgb(0_0_0/0.10)] sm:px-6">
-        <div className="min-w-0 flex-1 text-sm" role="status">
+        <div className="min-w-[min(100%,9.5rem)] flex-1 text-sm" role="status">
           {failed ? (
             <p className="flex flex-wrap items-center gap-x-2 font-semibold text-danger">
               <span>
@@ -325,9 +330,9 @@ export function FestivalRegistration({
             <p className="text-muted">Saves as you go</p>
           )}
         </div>
-        {next && (
-          <Link href={next.href} className="ml-auto inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover">
-            Next up:&nbsp;{next.label} →
+        {go && (
+          <Link href={go.href} className="ml-auto inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover">
+            <NextLabel label={`Next up: ${go.label}`} />
           </Link>
         )}
         {draft && !deadline.value && (

@@ -662,9 +662,9 @@ function HostedCard({
           {/* A copy reads differently from the event it came from, until it's published. */}
           {copiedFrom && <p className="text-sm text-muted">Copied from {copiedFrom}</p>}
           {newDates > 0 ? (
-            <Link href={href} className="relative z-10 inline-flex min-h-11 items-center text-sm font-medium text-warning underline underline-offset-4">
-              <span aria-hidden>◆&nbsp;</span>Next: Add the new date ({newDates} {newDates === 1 ? "place" : "places"})
-            </Link>
+            <NextStep href={href} icon="needs">
+              Next: Add the new date ({newDates} {newDates === 1 ? "place" : "places"})
+            </NextStep>
           ) : (
             <DraftNext draft={draft} href={href} ask={ask ?? null} />
           )}
@@ -672,10 +672,27 @@ function HostedCard({
       ) : (
         <div className="space-y-1">
           {copiedFrom && <p className="text-sm text-muted">Copied from {copiedFrom}</p>}
-          <p className="text-sm font-medium">Next: Finish setup and publish</p>
+          <NextStep href={href}>Next: Finish setup and publish</NextStep>
         </div>
       )}
     </EventCard>
+  );
+}
+
+/**
+ * A draft card's next step: one look on every card (the same place and spacing), a brand-blue link above the card's
+ * own link, with color only on its leading mark (◆ needs doing, ✓ ready).
+ */
+function NextStep({ href, icon, children }: { href: string; icon?: "needs" | "ready"; children: ReactNode }) {
+  return (
+    <Link href={href} className="relative z-10 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-brand underline underline-offset-4">
+      {icon && (
+        <span aria-hidden className={`inline-block ${icon === "needs" ? "text-warning" : "text-success"}`}>
+          {icon === "needs" ? "◆" : "✓"}
+        </span>
+      )}
+      <span>{children}</span>
+    </Link>
   );
 }
 
@@ -699,15 +716,11 @@ function DraftNext({ draft: d, href, ask }: { draft: DraftStatus; href: string; 
   return (
     <div className="space-y-1 text-sm">
       {!c ? (
-        <p className="font-medium">Next: Finish setup and publish</p>
+        <NextStep href={href}>Next: Finish setup and publish</NextStep>
       ) : c.remaining.length ? (
         <>
           {/* The next step is a link of its own, above the card's link (light check, 2026-11-08). */}
-          {c.next ? (
-            <Link href={c.next.href} className="relative z-10 inline-flex min-h-11 items-center font-medium text-brand underline underline-offset-4">
-              Next: {c.next.label}
-            </Link>
-          ) : null}
+          {c.next ? <NextStep href={c.next.href}>Next: {c.next.label}</NextStep> : null}
           <p className="text-muted">
             {left} {d.planBlock ? "setup " : ""}
             {left === 1 ? "step" : "steps"} left{d.planBlock ? "" : " before you publish"}
@@ -718,15 +731,9 @@ function DraftNext({ draft: d, href, ask }: { draft: DraftStatus; href: string; 
           <span aria-hidden>✓</span> Setup done
         </p>
       ) : (
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 font-medium text-brand">
-          <span>
-            <span aria-hidden>✓</span> Ready to publish
-          </span>
-          {/* Above the card's own link, so it can be tapped on its own. */}
-          <Link href={`${href}#publish`} className="relative z-10 underline underline-offset-4">
-            Review and publish
-          </Link>
-        </p>
+        <NextStep href={`${href}#publish`} icon="ready">
+          Ready to publish: Review and publish
+        </NextStep>
       )}
       {d.pass && <p className="text-muted">{d.pass}</p>}
       {d.planBlock && (

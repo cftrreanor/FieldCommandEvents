@@ -90,7 +90,8 @@ export function DialogHost() {
     if (!el) return;
     if (request && !el.open) {
       el.showModal();
-      // A window whose safe choice is the main button starts there (Enter never takes the risky one).
+      // A confirm window starts on its way out ("Never mind"), so Enter straight after it opens never takes the
+      // action (a red Delete included); an ask window starts in its first box.
       el.querySelector<HTMLElement>("[data-autofocus]")?.focus();
     }
     if (!request && el.open) el.close();
@@ -191,14 +192,14 @@ function DialogBody({ request: r, close }: { request: Request; close: () => void
           className="mt-4 w-full rounded-sm border border-field-border bg-background px-3 py-2 text-sm"
         />
       )}
-      {/* Phones: one footer for every window, full width and stacked, the main button first and the quiet way out below. */}
+      {/* Phones: one footer for every window, full width and stacked, the main button on top and the quiet way out
+          below. The way out comes first in the page's order (and takes the first focus), so on wider screens Tab
+          follows the buttons left to right: "Never mind", then the action. */}
       <div
         className={
-          r.kind === "confirm" && r.cancelIsMain
+          r.kind === "confirm" || r.kind === "ask"
             ? "mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"
-            : r.kind === "confirm" || r.kind === "ask"
-              ? "mt-6 flex flex-col gap-2 sm:flex-row-reverse sm:justify-start"
-              : "mt-6 flex flex-wrap justify-end gap-2"
+            : "mt-6 flex flex-wrap justify-end gap-2"
         }
       >
         {r.kind === "confirm" && r.cancelIsMain ? (
@@ -256,11 +257,11 @@ function DialogBody({ request: r, close }: { request: Request; close: () => void
           </>
         ) : (
           <>
+            <Button type="button" variant="ghost" data-autofocus={r.kind === "confirm" ? true : undefined} onClick={close} className="max-sm:w-full">
+              {(r.kind === "confirm" && r.cancelLabel) || "Never mind"}
+            </Button>
             <Button type="submit" variant={r.kind === "confirm" && r.danger ? "warn" : undefined} className="max-sm:w-full">
               {r.confirmLabel || (r.kind === "ask" ? "Add" : "Continue")}
-            </Button>
-            <Button type="button" variant="ghost" onClick={close} className="max-sm:w-full">
-              {(r.kind === "confirm" && r.cancelLabel) || "Never mind"}
             </Button>
           </>
         )}

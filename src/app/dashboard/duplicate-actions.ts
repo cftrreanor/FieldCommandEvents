@@ -97,23 +97,37 @@ export async function sendCopyInvitationNow(eventId: string, invitationId: strin
   if (!person) return { error: "That invitation isn't on this event anymore. Refresh to see the team." };
   if (person.status === "accepted") return { error: `${person.name} has already accepted.` };
   // A sent one can be sent again too (a send cut off partway may never have been delivered): a new invitation.
-  const sent = await sendCopyInvitation(invitationId, person.status === "expired" || person.status === "sent");
+  const sent = await sendCopyInvitation(invitationId, person.status);
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
   if (sent !== true) return { error: sent };
   return { ok: true, message: `Invitation sent to ${person.name}.` };
 }
 
 /**
- * Sends one copied invitation. If the email didn't go out, it goes back to where it was: "Not emailed yet", or
- * expired for one emailed before (`wasSent`), so nobody holds a link that was never delivered. Returns true, or
- * why it wasn't sent.
+ * Sends one copied invitation. If the email didn't go out, it goes back to where it was, so nobody holds a link that
+ * was never delivered: one never emailed goes back to "Not emailed yet", and one that had expired to expired. One
+ * still marked sent (Send a new invitation) is left exactly as it was: its first email, and that link, still stand.
+ * Returns true, or why it wasn't sent.
  */
-async function sendCopyInvitation(invitationId: string, wasSent = false): Promise<true | string> {
+async function sendCopyInvitation(invitationId: string, was: "held" | "expired" | "sent" = "held"): Promise<true | string> {
+  // What a sent one looked like before: prepare_invitation_email gives it a new one-tap key and send time.
+  const admin = createAdminClient();
+  const before =
+    was === "sent"
+      ? (await admin.from("invitations").select("email_token, sent_at, delivered_at, expires_at").eq("id", invitationId).maybeSingle()).data
+      : null;
   const sent = await sendInvitation(invitationId);
   if (sent === true) return true;
   if (sent === false) {
-    const supabase = await createClient();
-    await supabase.rpc("copy_invitation_not_sent", { p_id: invitationId, p_was_expired: wasSent });
+    if (was === "sent") {
+      if (before) {
+        const { error } = await admin.from("invitations").update(before).eq("id", invitationId).is("accepted_at", null);
+        if (error) console.error("Putting back a sent invitation after a failed resend failed", error.message);
+      }
+    } else {
+      const supabase = await createClient();
+      await supabase.rpc("copy_invitation_not_sent", { p_id: invitationId, p_was_expired: was === "expired" });
+    }
     return "The email didn't go out. Check the address, then send it again.";
   }
   return sent;
@@ -129,9 +143,7 @@ export async function removeCopyCoordinator(eventId: string, invitationId: strin
   const { data, error } = await supabase.rpc("remove_copy_invitation", { p_id: invitationId });
   if (error) return { error: friendlyDbError(error) };
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
-  const who = person?.name ?? "them";
-  const job = person?.jobs.length ? ` from ${person.jobs.join(" and ")}` : "";
-  return { ok: true, message: `Removed ${who}${job}.`, undoId: data as string };
+  return { ok: true, message: `${person?.name ?? "They were"} removed.`, undoId: data as string };
 }
 
 export async function undoRemoveCopyCoordinator(eventId: string, removalId: string): Promise<ActionState> {
@@ -150,11 +162,12 @@ export async function fixCopyCoordinatorEmail(eventId: string, invitationId: str
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: "Please enter a valid email address.", fieldErrors: { email: "Please enter a valid email address." } };
   const supabase = await createClient();
+  const was = (await loadCopyCoordinators(eventId)).find((c) => c.invitation_id === invitationId)?.status === "expired" ? "expired" : "held";
   const { error } = await supabase.rpc("fix_copy_invitation_email", { p_id: invitationId, p_email: email });
   if (error) return { error: friendlyDbError(error), fieldErrors: { email: friendlyDbError(error) } };
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
   if (formData.get("send") !== "1") return { ok: true, message: `Saved ${email}.` };
-  const sent = await sendCopyInvitation(invitationId);
+  const sent = await sendCopyInvitation(invitationId, was);
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
   return sent === true ? { ok: true, message: `Saved, and the invitation went to ${email}.` } : { error: `Saved ${email}, but ${lowerFirst(sent)}` };
 }
@@ -224,7 +237,7 @@ export async function publishCopy(eventId: string, send: string[], signup?: "now
   // reason). The page allows enough time for a long list (maxDuration on the event page).
   for (let i = 0; i < ticked.length; i += 3) {
     const batch = ticked.slice(i, i + 3);
-    const results = await Promise.all(batch.map((p) => sendCopyInvitation(p.invitation_id, p.status === "expired")));
+    const results = await Promise.all(batch.map((p) => sendCopyInvitation(p.invitation_id, p.status === "expired" ? "expired" : "held")));
     results.forEach((sent, j) => {
       const p = batch[j];
       if (sent === true) emailed.push({ name: p.name, email: p.email });
@@ -246,24 +259,14 @@ export async function publishCopy(eventId: string, send: string[], signup?: "now
         ? "Published. Sign-up is closed until you open it"
         : "Published, and sign-up is open"
       : "Published";
-  const names = (list: { name: string }[]) => joinNames(list.map((p) => p.name));
-  // Short: the event page's card below Links to share says why, with the buttons to send or remove.
-  const missed = [...notEmailed, ...left];
-  const parts = [
-    emailed.length ? `${emailed.length === 1 ? "An invitation went" : "Invitations went"} to ${names(emailed)}.` : "",
-    missed.length ? `${names(missed)} ${missed.length === 1 ? "wasn't" : "weren't"} emailed.` : "",
-  ].filter(Boolean);
+  // Only what happened to the event: the amber card below Links to share names anyone not emailed, with the buttons to
+  // send or remove (one place for it, not two).
   return {
     ok: true,
-    message: [`${head}.`, ...parts].join(" "),
+    message: `${head}.`,
     emailed,
     notEmailed: [...notEmailed, ...left.map((p) => ({ invitationId: p.invitation_id, name: p.name, email: p.email, why: "Not ticked when publishing" }))],
   };
-}
-
-/** "a, b, and c" */
-function joinNames(items: string[]) {
-  return items.length > 2 ? `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}` : items.join(" and ");
 }
 
 function lowerFirst(s: string) {

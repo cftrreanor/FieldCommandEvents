@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { duplicateEvent } from "@/app/dashboard/duplicate-actions";
 import { DateField } from "@/components/date-field";
-import { IconTile, LineIcon } from "@/components/line-icon";
+import { IconTile } from "@/components/line-icon";
 import { toast } from "@/components/toaster";
 import { Button, Card, Field, FieldError, Input } from "@/components/ui";
 import { addDays, dayShort, daysBetween, listAnd, longRange, longWeekday, offsetWords, weekdays, type DuplicateCounts } from "@/lib/duplicate-words";
@@ -31,7 +31,7 @@ export type DuplicateSource = {
   copying: string[];
 };
 
-type Problem = { kind: "missing" } | { kind: "field"; text: string } | { kind: "failed"; text: string } | { kind: "dropped" };
+type Problem = { kind: "missing" } | { kind: "field"; text: string } | { kind: "failed"; text: string } | { kind: "dropped" } | { kind: "maybe" };
 
 /**
  * The Duplicate event form: the new name and first day, a preview of the new dates (days moved, a change of
@@ -66,6 +66,9 @@ export function DuplicateForm({
   const [problem, setProblem] = useState<Problem | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const requestId = useRef<string | null>(null);
+  // A dropped connection may have made the copy. A new name or date is a new request: say to check My events first.
+  const dropped = useRef(false);
+  const warned = useRef(false);
   const nameBox = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (selectName) nameBox.current?.select();
@@ -97,6 +100,11 @@ export function DuplicateForm({
     }
     // A past day: the box already says so, once (its own message, in the page's words).
     if (day < source.today) return;
+    if (dropped.current && requestId.current === null && !warned.current) {
+      warned.current = true;
+      setProblem({ kind: "maybe" });
+      return;
+    }
     // Made once and kept: a retry with the same id returns the copy the first try made.
     requestId.current ??= crypto.randomUUID();
     setBusy(true);
@@ -120,6 +128,8 @@ export function DuplicateForm({
     } catch {
       // No answer: it may or may not have been made. Trying again (same request id) opens it if it was.
       setBusy(false);
+      dropped.current = true;
+      warned.current = false;
       setProblem({ kind: "dropped" });
     }
   };
@@ -239,6 +249,21 @@ export function DuplicateForm({
               <p>Try again: if {newName} was made, it opens. Trying again never makes a second copy.</p>
             </div>
           )}
+          {problem?.kind === "maybe" && (
+            // After a dropped connection, a changed name or date would be a new copy: check first.
+            <div role="alert" className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm leading-6">
+              <p className="font-semibold">
+                <span aria-hidden className="text-warning">
+                  ◆{" "}
+                </span>
+                It may have been made: check{" "}
+                <Link href="/dashboard" target="_blank" className="text-brand underline underline-offset-4">
+                  My events<span className="sr-only"> (opens in a new tab)</span>
+                </Link>
+              </p>
+              <p>The connection dropped last time, so the first copy may be there. If it isn&apos;t, press Duplicate event again to make one with this name and date.</p>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-3">
             {busy ? (
               // Readable while busy: full strength, the words say what's happening (no fading, L7).
@@ -296,26 +321,33 @@ function DatePreview({ source, start, end, offset, pickDay }: { source: Duplicat
         {offsetWords(offset)}, at the same times of day. {source.name} was {source.dates}.
       </p>
       {weekdayChanged && (
-        <div className="flex gap-2">
-          <LineIcon name="warning" className="mt-0.5 size-5 shrink-0 text-warning" />
-          <p>
-            <span className="font-semibold">
-              Different days of the week: {weekdays(start, end)}, not {weekdays(source.startsOn, source.endsOn)}.
-            </span>{" "}
-            Shifts keep their order, so {longWeekday(source.startsOn)}&apos;s shifts move to {longWeekday(start)}.{" "}
+        // A warning: its own amber row with the warning diamond, and the fix as a button on its own line.
+        <div className="-mx-1 flex gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2">
+          <span aria-hidden className="font-semibold text-warning">
+            ◆
+          </span>
+          <div className="min-w-0">
+            <p>
+              <span className="font-semibold">
+                Different days of the week: {weekdays(start, end)}, not {weekdays(source.startsOn, source.endsOn)}.
+              </span>{" "}
+              Shifts keep their order, so {longWeekday(source.startsOn)}&apos;s shifts move to {longWeekday(start)}.
+            </p>
             {sameWeekday && (
-              <button type="button" onClick={() => pickDay(sameWeekday)} className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
+              <Button type="button" variant="secondary" onClick={() => pickDay(sameWeekday)} className="mt-2">
                 Use {dayShort(sameWeekday)} instead
-              </button>
+              </Button>
             )}
-          </p>
+          </div>
         </div>
       )}
       {deadlineWarning && (
         // A day close to now leaves directors little time: say so before copying, by the same rule as Band registration.
-        <div className="flex gap-2">
-          <LineIcon name="warning" className="mt-0.5 size-5 shrink-0 text-warning" />
-          <p>
+        <div className="-mx-1 flex gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2">
+          <span aria-hidden className="font-semibold text-warning">
+            ◆
+          </span>
+          <p className="min-w-0">
             <span className="font-semibold">{deadlineWarning.head}</span> {deadlineWarning.body}
           </p>
         </div>

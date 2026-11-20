@@ -17,7 +17,8 @@ import { ChipAdder } from "@/components/chip-adder";
 import { normalizePhone } from "@/lib/phone";
 import { formatDate } from "@/lib/time";
 import { DateField } from "@/components/date-field";
-import { NewDateNote } from "@/components/new-date-note";
+import { Marker, NewDateNote } from "@/components/new-date-note";
+import { NextLabel } from "@/components/next-label";
 
 /** How long after the last keystroke a field saves itself. */
 const SAVE_AFTER_MS = 900;
@@ -239,6 +240,8 @@ export function RegistrationSettings({
 }) {
   const counts = useLeaveGuard("A change to registration");
   const root = useRef<HTMLDivElement>(null);
+  // A copy with a blank deadline: Next leads with it, then the new dates (the page's order).
+  const deadlineFirstNext = (d: string) => (datesFirst && draft && !d ? { href: "#reg-deadline", label: "Next up: Add a deadline" } : next);
   const deadline = useAutosave(eventId, "deadline", initial.deadline, {
     immediate: true,
     restore: true,
@@ -249,6 +252,7 @@ export function RegistrationSettings({
           ? `Pick a date before contest day (${contest.label}).`
           : null,
   });
+  const go = deadlineFirstNext(deadline.value);
   // Two weeks before contest day: the rule every screen names (src/lib/contest-deadline.ts). The box allows up to the
   // day before (the database's rule) and says so when a later day is picked.
   const deadlineHint = `Registration should close two weeks before contest day (${contest.label}): by ${formatDate(contest.suggested, { year: undefined })}. Directors get their times two weeks before contest day, so they can book buses. Registration closes at 11:59 PM that day, your time.`;
@@ -589,8 +593,6 @@ export function RegistrationSettings({
 
         {!datesFirst && dates}
 
-        {/* A copy: a date typed into the information came over as "[new date]" (live: it goes once replaced). */}
-        <NewDateNote value={info.value} spot="director-info" unmarked={unmarked.includes("director-info")} />
         <AutoField
           id="reg-info"
           label="Information for directors"
@@ -598,6 +600,8 @@ export function RegistrationSettings({
           saver={info}
         >
           <Textarea value={info.value} onChange={(e) => info.change(e.target.value)} rows={5} maxLength={3000} {...withClass(marked("reg-info", info), "w-full")} />
+          {/* A copy: a date typed into the information came over as "[new date]" (live: it goes once replaced). */}
+          <NewDateNote value={info.value} spot="director-info" unmarked={unmarked.includes("director-info")} />
         </AutoField>
 
         <AutoField
@@ -649,9 +653,6 @@ export function RegistrationSettings({
                 <fieldset>
                   <legend className="text-sm font-semibold">Meal options</legend>
                   <p className="mt-1 text-sm text-muted">What bands can order. Directors enter how many of each.</p>
-                  <NewDateNote value={optionList.join(" ")} spot="meal-option" className="mt-1">
-                    Add the new date: remove the option that says &ldquo;[new date]&rdquo; with its ×, then add it again with the date
-                  </NewDateNote>
                   {optionList.length > 0 && (
                     <ul className="mt-2 flex flex-wrap gap-2" aria-label="Meal options">
                       {optionList.map((o) => (
@@ -669,6 +670,9 @@ export function RegistrationSettings({
                       ))}
                     </ul>
                   )}
+                  <NewDateNote value={optionList.join(" ")} spot="meal-option">
+                    Add the new date: remove the option that says <Marker /> with its ×, then add it again with the date
+                  </NewDateNote>
                   <div className="mt-2">
                     <ChipAdder
                       suggestions={[{ names: ["Regular", "Vegetarian", "Halal", "Gluten free", "Kosher", "Dairy free"] }]}
@@ -687,7 +691,6 @@ export function RegistrationSettings({
                     </p>
                   )}
                 </fieldset>
-                <NewDateNote value={mealDetails.value} spot="meal-details" unmarked={unmarked.includes("meal-details")} />
                 <AutoField
                   id="reg-meal-details"
                   label="Meal details"
@@ -702,6 +705,7 @@ export function RegistrationSettings({
                     placeholder="Pizza or a turkey sandwich, chips, and water, served from 11:00 AM. Pay with the entry fee."
                     {...withClass(marked("reg-meal-details", mealDetails), "w-full")}
                   />
+                  <NewDateNote value={mealDetails.value} spot="meal-details" unmarked={unmarked.includes("meal-details")} />
                 </AutoField>
               </div>
             )}
@@ -717,9 +721,9 @@ export function RegistrationSettings({
           </p>
           {/* Name and mobile side by side; the email gets a row of its own, so a long address shows in full. */}
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
-            <NewDateNote value={contactName.value} spot="contact" className="sm:col-span-2" />
             <AutoField id="reg-cname" label="Name" saver={contactName}>
               <Input value={contactName.value} onChange={(e) => contactName.change(e.target.value)} autoComplete="name" {...withClass(marked("reg-cname", contactName, false), "w-full")} />
+              <NewDateNote value={contactName.value} spot="contact" />
             </AutoField>
             <AutoField id="reg-cphone" label="Mobile" saver={contactPhone}>
               <Input type="tel" inputMode="tel" value={contactPhone.value} onChange={(e) => contactPhone.change(e.target.value)} {...withClass(marked("reg-cphone", contactPhone, false), "w-full")} />
@@ -740,7 +744,8 @@ export function RegistrationSettings({
       {/* Pinned to the bottom of the screen: whether everything is saved, and the way on. */}
       <div className="sticky bottom-[var(--day-bar,0px)] z-10 rounded-b-xl border-t-2 border-border bg-surface px-4 py-3 shadow-[0_-6px_16px_rgb(0_0_0/0.10)] sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          <div className="min-w-0 flex-1 text-sm" role="status">
+          {/* Its own line above the button when the two don't fit side by side. */}
+          <div className="min-w-[min(100%,9.5rem)] flex-1 text-sm" role="status">
             {failed ? (
               <p className="flex flex-wrap items-center gap-x-2 font-semibold text-danger">
                 <span>
@@ -776,9 +781,9 @@ export function RegistrationSettings({
               <p className="text-muted">Saves as you go</p>
             )}
           </div>
-          {next && (
-            <Link href={next.href} className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover">
-              {next.label} →
+          {go && (
+            <Link href={go.href} className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover">
+              <NextLabel label={go.label} />
             </Link>
           )}
         </div>

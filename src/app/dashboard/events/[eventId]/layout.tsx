@@ -14,8 +14,8 @@ import {
 import { SetupSteps } from "@/components/volunteer-steps";
 import { STEP_PATHS, type SetupStepFacts, type StepsKind } from "@/lib/setup-steps";
 import { hasConferences, hasRooms } from "@/lib/event-types";
-import { loadCopySteps } from "@/lib/duplicate-event";
-import { NewDateScroll } from "@/components/new-date-note";
+import { loadCopySteps, loadNewDatePlaces } from "@/lib/duplicate-event";
+import { NewDatePlaces, NewDateScroll } from "@/components/new-date-note";
 import { Suspense } from "react";
 
 /**
@@ -53,6 +53,8 @@ export default async function EventLayout({ children, params }: LayoutProps<"/da
       : null;
   // A duplicated draft: its copied steps say "Copied: check it" until opened, and "Add the new date" while one holds "[new date]".
   if (steps && kind && kind !== "meeting") Object.assign(steps, await loadCopySteps(eventId));
+  // Its "[new date]" places, for every field's note and box (a box for each one is always in sight).
+  const places = facts && !facts.published && kind !== "meeting" ? await loadNewDatePlaces(eventId) : [];
   return (
     <>
       {day && <DayBar day={day} />}
@@ -60,7 +62,7 @@ export default async function EventLayout({ children, params }: LayoutProps<"/da
       {/* A meetings draft's Meeting setup page only redirects to a step: no setup bar there either, or it flashes on the way. */}
       {/* Festivals: the step bar while setting up, the event page's next step once live; no setup strip (owner, 2026-11-11). */}
       {facts && facts.eventType !== "group_event" && <SetupStrip eventId={eventId} initial={setupChecklist(facts)} skip={kind ? (kind === "meeting" ? [...STEP_PATHS.meeting, "/conferences"] : STEP_PATHS[kind]) : undefined} />}
-      {children}
+      <NewDatePlaces spots={places}>{children}</NewDatePlaces>
       {/* A copy's "[new date]" links (#new-date): open the field and put the cursor on the marker. */}
       <Suspense fallback={null}>
         <NewDateScroll />

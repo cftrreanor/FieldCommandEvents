@@ -32,7 +32,7 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
     .eq("id", eventId)
     .maybeSingle();
   if (!ev) missing();
-  const back = duplicateBack(typeof from === "string" ? from : undefined, eventId, ev.event_type ?? "");
+  const back = duplicateBack(typeof from === "string" ? from : undefined, eventId, ev.event_type ?? "", ev.name);
   const header = (
     <>
       <Link href={back.href} className="mb-3 inline-flex min-h-11 items-center text-sm text-muted hover:text-foreground">
@@ -248,7 +248,7 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
               You choose who&apos;s emailed when you publish.{" "}
               {invited.length === 1 ? "They're asked again, so they can say yes for the new dates." : "Each is asked again, so they can say yes for the new dates."}
             </p>
-            <p className="text-muted">{who(invited)}</p>
+            <p className="text-muted">Asked again: {who(invited)}</p>
           </>
         )}
         {members.length > 0 && (

@@ -266,7 +266,11 @@ export function AddToTeam({
               )}
               {spotsLine && <p className="text-sm text-muted">{spotsLine}</p>}
               <div>
-                <SubmitButton pendingText="Sending…">Send invitation</SubmitButton>
+                {/* The normal secondary look whether or not an email is in yet (data-solid: never the grey "not ready"
+                    fill); pressing it early says the email is needed. */}
+                <SubmitButton variant="secondary" pendingText="Sending…" data-solid>
+                  Send invitation
+                </SubmitButton>
               </div>
             </ActionForm>
           </>

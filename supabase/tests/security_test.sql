@@ -11814,6 +11814,13 @@ begin
   assert public.copy_blank_dates('Saturday the 6th, Sunday 7 November 2027, 2027-11-07', k) = 'Saturday the 6th, Sunday 7 November 2027, 2027-11-07',
          'dup: blank: the copy''s own days stay, written any way';
   assert public.copy_blank_dates('Sunday the 6th', k) = '[new date]', 'dup: blank: the 6th is a Saturday';
+  assert public.copy_blank_dates('Ages 5/6 and Age 7/8. Sizes 10/12, Table 11/12, Room 3/4, Rooms 1/2, #2/3.', k)
+         = 'Ages 5/6 and Age 7/8. Sizes 10/12, Table 11/12, Room 3/4, Rooms 1/2, #2/3.', 'dup: blank: a number after ages, sizes, tables, rooms, or # stays';
+  assert public.copy_blank_dates('Grade 3 March. Play 1 March, 1 Chorale. 2 Overture and 1 March.', k)
+         = 'Grade 3 March. Play 1 March, 1 Chorale. 2 Overture and 1 March.', 'dup: blank: a March after a grade or a count stays';
+  assert public.copy_blank_dates('Due 1 March, then 3 March 2026 and the 1st March.', k) = 'Due [new date], then [new date] and [new date].',
+         'dup: blank: a March that is a date still goes';
+  assert public.copy_blank_dates('Pick up 11/2 at Room 3.', k) = 'Pick up [new date] at Room 3.', 'dup: blank: a date before a room still goes';
 end $$;
 
 -- dup: places. An old-style job's Location is a place (the job form shows its box while it holds one); a map's name
@@ -11915,6 +11922,145 @@ do $$ begin
          'dup: the Account Host sees the name of someone on the account''s team';
 end $$;
 reset role;
+
+-- dup: removal rows keep no link keys (Undo makes new ones).
+do $$ begin
+  assert not exists (select 1 from public.copy_invitation_removals where invitation ? 'token' or invitation ? 'email_token'),
+         'dup: a removed invitation''s link keys aren''t kept';
+end $$;
+
+-- dup: Change email gives the invitation new link keys: the first email's one-tap link (k) and invitation link
+-- (token) stop working.
+select set_config('dup.oldtok', (select token::text from public.invitations where event_id = current_setting('dup.cp')::uuid and email = 'dccoord@example.com'), false);
+select set_config('dup.oldk', (select email_token::text from public.invitations where event_id = current_setting('dup.cp')::uuid and email = 'dccoord@example.com'), false);
+select set_config('dup.fixid', (select id::text from public.invitations where event_id = current_setting('dup.cp')::uuid and email = 'dccoord@example.com'), false);
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000001","email":"dcowner@example.com"}';
+select public.fix_copy_invitation_email(current_setting('dup.fixid')::uuid, 'dccoord.fixed@example.com');
+reset role;
+do $$ begin
+  assert (select token is not null and token::text <> current_setting('dup.oldtok') and email_token::text <> current_setting('dup.oldk')
+            from public.invitations where id = current_setting('dup.fixid')::uuid), 'dup: Change email gives new link keys';
+  assert not exists (select 1 from public.invitations where token::text = current_setting('dup.oldtok')), 'dup: the old invitation link no longer matches';
+  assert not exists (select 1 from public.invitations where email_token::text = current_setting('dup.oldk')), 'dup: the old one-tap link (k) no longer matches';
+  assert not exists (select 1 from public.get_invitation(current_setting('dup.oldtok')::uuid)), 'dup: and the old link finds nothing';
+end $$;
+-- A held one changes its address with no token (it gets one when it's sent), and a new one-tap key.
+select set_config('dup.oldk', (select email_token::text from public.invitations where event_id = current_setting('dup.c1')::uuid and email = 'lu.litter@example.com'), false);
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000001","email":"dcowner@example.com"}';
+select public.fix_copy_invitation_email((select id from public.invitations where event_id = current_setting('dup.c1')::uuid and email = 'lu.litter@example.com'), 'lu.trail@example.com');
+reset role;
+do $$ begin
+  assert (select held_for_publish and token is null and email_token::text <> current_setting('dup.oldk')
+            from public.invitations where event_id = current_setting('dup.c1')::uuid and email = 'lu.trail@example.com'), 'dup: a held one stays without a token, with a new key';
+end $$;
+
+-- dup: a Volunteer Lead doesn't read held invitations (only the event's hosts do); they still read the rest.
+insert into public.event_staff (event_id, user_id, role) values (current_setting('dup.c1')::uuid, '000000dc-0000-0000-0000-000000000004', 'volunteer_director');
+insert into public.invitations (event_id, email, role, station_id, invited_by)
+select current_setting('dup.c1')::uuid, 'dcvisible@example.com', 'section_lead', st.id, '000000dc-0000-0000-0000-000000000001'
+  from public.stations st where st.event_id = current_setting('dup.c1')::uuid order by st.sort_order limit 1;
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000004","email":"dcvl@example.com"}';
+do $$ begin
+  assert public.can_manage_volunteers(current_setting('dup.c1')::uuid), 'dup: the Volunteer Lead manages the copy''s volunteers';
+  assert not exists (select 1 from public.invitations where event_id = current_setting('dup.c1')::uuid and held_for_publish),
+         'dup: a Volunteer Lead can''t read held invitations';
+  assert exists (select 1 from public.invitations where event_id = current_setting('dup.c1')::uuid and email = 'dcvisible@example.com'),
+         'dup: but still reads the event''s other Coordinator invitations';
+end $$;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000001","email":"dcowner@example.com"}';
+do $$ begin
+  assert exists (select 1 from public.invitations where event_id = current_setting('dup.c1')::uuid and held_for_publish), 'dup: the Account Host reads them';
+end $$;
+reset role;
+delete from public.invitations where email = 'dcvisible@example.com';
+delete from public.event_staff where event_id = current_setting('dup.c1')::uuid and user_id = '000000dc-0000-0000-0000-000000000004';
+
+-- dup: what duplicating would bring, counted in the database, only for the account's hosts and its own events.
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000001","email":"dcowner@example.com"}';
+do $$
+declare r record;
+begin
+  select * into r from public.duplicate_counts('dc000000-0000-0000-0000-000000000001',
+    array['dc000000-0000-0000-0000-0000000000e1', (select id from public.events where organization_id = 'dc000000-0000-0000-0000-000000000002' limit 1)]::uuid[]);
+  assert r.event_id = 'dc000000-0000-0000-0000-0000000000e1' and r.jobs = 5 and r.shifts = 4 and r.items = 1 and r.files = 1 and r.rooms = 0
+         and r.coordinators = 3 and r.invited = 2, format('dup: counts what duplicating brings (%s)', row_to_json(r));
+  assert (select count(*) from public.duplicate_counts('dc000000-0000-0000-0000-000000000001',
+            array['dc000000-0000-0000-0000-0000000000e1', (select id from public.events where organization_id = 'dc000000-0000-0000-0000-000000000002' limit 1)]::uuid[])) = 1,
+         'dup: another account''s event isn''t counted';
+end $$;
+do $$
+declare who text; ok boolean;
+begin
+  foreach who in array array['000000dc-0000-0000-0000-000000000003', '000000dc-0000-0000-0000-000000000004', '000000dc-0000-0000-0000-000000000005'] loop
+    perform set_config('request.jwt.claims', json_build_object('sub', who)::text, true);
+    ok := false;
+    begin
+      perform public.duplicate_counts('dc000000-0000-0000-0000-000000000001', array['dc000000-0000-0000-0000-0000000000e1']::uuid[]);
+    exception when insufficient_privilege then ok := true;
+    end;
+    assert ok, format('dup: %s can''t count what duplicating brings', who);
+  end loop;
+end $$;
+reset role;
+set role anon;
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.duplicate_counts('dc000000-0000-0000-0000-000000000001', array['dc000000-0000-0000-0000-0000000000e1']::uuid[]);
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'dup: anon can''t count what duplicating brings';
+end $$;
+reset role;
+
+-- dup: running the migration again (a database that ran an earlier version). Invitations already sent get their
+-- delivery time; held ones stay blank; summaries written by earlier versions lose names, addresses, and file names;
+-- removals lose their link keys. Twice, to show it's safe to run twice.
+insert into public.invitations (event_id, email, role, station_id, invited_by, sent_at)
+values ('dc000000-0000-0000-0000-0000000000e2', 'dcbackfill@example.com', 'section_lead', 'dc000000-0000-0000-0000-0000000005b1',
+        '000000dc-0000-0000-0000-000000000001', now() - interval '3 days');
+update public.invitations set delivered_at = null where email = 'dcbackfill@example.com';
+update public.event_copies c
+   set summary = c.summary
+     || jsonb_build_object('name', 'Privacy copy')
+     || jsonb_build_object('source', (c.summary -> 'source') || jsonb_build_object('name', 'Trail day'))
+     || jsonb_build_object('coordinators', jsonb_build_object(
+          'held', jsonb_build_array(jsonb_build_object('name', 'Coco Ordinator', 'email', 'dccoord@example.com')),
+          'added', jsonb_build_array(jsonb_build_object('name', 'Cohost Every')),
+          'skipped', '[]'::jsonb))
+     || jsonb_build_object('files', (select jsonb_agg(jsonb_build_object('id', ef.id, 'label', ef.label, 'file_name', ef.file_name,
+                                                                       'from', sf.path, 'to', ef.path))
+                                      from public.event_files ef
+                                      join public.event_files sf on sf.event_id = 'dc000000-0000-0000-0000-0000000000e1' and sf.label = 'Park map'
+                                     where ef.event_id = c.event_id and ef.file_name = 'Park map.pdf'))
+ where c.event_id = current_setting('dup.cp')::uuid;
+insert into public.copy_invitation_removals (event_id, removed_by, invitation)
+values (current_setting('dup.cp')::uuid, '000000dc-0000-0000-0000-000000000001',
+        jsonb_build_object('email', 'dcold@example.com', 'token', gen_random_uuid(), 'email_token', gen_random_uuid()));
+\ir ../migrations/20270207000000_duplicate_event.sql
+\ir ../migrations/20270207000000_duplicate_event.sql
+do $$
+declare sm jsonb := (select summary from public.event_copies where event_id = current_setting('dup.cp')::uuid);
+begin
+  assert (select delivered_at = sent_at from public.invitations where email = 'dcbackfill@example.com'), 'dup: an invitation already sent gets its delivery time';
+  assert not exists (select 1 from public.invitations where held_for_publish and delivered_at is not null), 'dup: a held one stays not emailed';
+  assert not (sm ? 'name') and not (sm -> 'source' ? 'name'), 'dup: an old summary loses the copy''s and the source''s names';
+  assert position('@' in sm::text) = 0 and position('Coco' in sm::text) = 0 and position('Cohost' in sm::text) = 0, 'dup: and the Coordinators'' names and addresses';
+  assert (sm -> 'coordinators' ->> 'held')::int = 1 and (sm -> 'coordinators' ->> 'added')::int = 1 and (sm -> 'coordinators' ->> 'skipped')::int = 0,
+         'dup: keeping how many';
+  assert position('Park map' in sm::text) = 0 and position('park-map' in sm::text) = 0, 'dup: and the file names and paths';
+  assert (sm -> 'files' -> 0 ->> 'source_id')::uuid = (select id from public.event_files where event_id = 'dc000000-0000-0000-0000-0000000000e1' and label = 'Park map')
+         and (sm -> 'files' -> 0 ->> 'id') is not null, 'dup: keeping each file''s id and its source''s, so a retry still finds them';
+  assert (sm -> 'source' ->> 'id') = 'dc000000-0000-0000-0000-0000000000e1', 'dup: and where it came from';
+  assert not exists (select 1 from public.copy_invitation_removals where invitation ? 'token' or invitation ? 'email_token'), 'dup: old removals lose their link keys';
+end $$;
+delete from public.copy_invitation_removals where invitation ->> 'email' = 'dcold@example.com';
+delete from public.invitations where email = 'dcbackfill@example.com';
 
 -- Clean up.
 set role service_role;

@@ -15,6 +15,7 @@ import { bringBackTitle, ReuseWindow } from "./reuse-window";
 import { SponsorWindow } from "./sponsor-window";
 import { ConfirmWindow, Window } from "./window";
 import { levelGets, listAnd, ordinal, plural, showLine, sponsorKindWords } from "./words";
+import { NextLabel } from "@/components/next-label";
 
 const OUTLINE = "inline-flex min-h-11 items-center justify-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand";
 
@@ -478,7 +479,7 @@ export function SponsorsManager({
       </Card>
 
       <div className="sticky bottom-[var(--day-bar,0px)] z-10 flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border-t-2 border-border bg-surface px-4 py-3 text-sm shadow-[0_-6px_16px_rgb(0_0_0/0.10)] sm:px-6">
-        <div className="min-w-0 flex-1" role="status">
+        <div className="min-w-[min(100%,9.5rem)] flex-1" role="status">
           {busy ? (
             <p className="text-muted">Saving…</p>
           ) : failure ? (
@@ -505,7 +506,7 @@ export function SponsorsManager({
             href={`/dashboard/events/${eventId}#publish`}
             className="ml-auto inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:bg-background"
           >
-            Next up:&nbsp;Publish →
+            <NextLabel label="Next up: Publish" />
           </Link>
         )}
       </div>

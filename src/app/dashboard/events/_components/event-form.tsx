@@ -158,9 +158,10 @@ export function EventForm({
           className="sm:col-span-2"
         >
           <Select name="timezone" required value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+            {/* "Central (Chicago, Dallas, Houston)": short enough to show whole in the box on a phone. */}
             {US_TIMEZONES.map((tz) => (
               <option key={tz.value} value={tz.value}>
-                {tz.label}
+                {tz.label.replace(" Time (", " (")}
               </option>
             ))}
           </Select>
@@ -222,11 +223,11 @@ export function EventForm({
       {initial.description != null && (
         // id: the copy's links land here (#new-date puts the cursor on the marker).
         <div id="description" className="scroll-mt-24 space-y-1.5">
-          <NewDateNote value={initial.description} spot="description" />
           <input type="hidden" name="descriptionField" value="1" />
           <Field label="Description" hint="Optional. Shown on your public page.">
             <Textarea name="description" maxLength={4000} rows={4} defaultValue={initial.description} />
           </Field>
+          <NewDateNote value={initial.description} spot="description" field="description" />
         </div>
       )}
 

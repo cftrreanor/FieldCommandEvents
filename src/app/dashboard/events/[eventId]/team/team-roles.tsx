@@ -589,6 +589,8 @@ export async function TeamRoles({
                 </div>
               )}
 
+              {/* A copy: after Remove, "Ana Silva removed. Undo" goes here, at the top of the tab (CopiedCoordinators). */}
+              {tab === "section-leads" && copied && <div id="copied-undo-slot" className="empty:hidden" />}
               {/* Kept on the page while it's a copy, even once its list is empty, so Undo stays in reach after a Remove. */}
               {tab === "section-leads" && copied && notEmailed.length > 0 && (!copied.team.coordinators_included || (copied.team.max != null && copied.team.free === 0)) && (
                 <section className="space-y-3">
@@ -706,7 +708,8 @@ export async function TeamRoles({
               {(canInvite || pending.length > 0 || (tab === "section-leads" && copiedWaiting.length > 0)) && (
               <section>
                 <h2 className="text-sm font-semibold">Pending</h2>
-                {tab === "section-leads" && copied && (copiedWaiting.length > 0 || !copied.published) && (
+                {/* Always on a copy's tab (its list can be empty): it puts "removed. Undo" at the top of the tab. */}
+                {tab === "section-leads" && copied && (
                   // A copy's Coordinators: one row per person, one status, one next action (and Undo after a Remove).
                   <div className="mt-2 space-y-2">
                     {copiedWaiting.length > 0 && (

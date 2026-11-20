@@ -64,7 +64,7 @@ import { CopiedNote, CopiedStepsLine, loadCopyFacts, NewDateList, type CopyFacts
 import { CopyPublish, PublishedNote } from "./copy-publish";
 import { NotEmailedLine } from "./team/copied-coordinators";
 import { loadCopiedPeople } from "@/lib/duplicate-event";
-import { copyStepLabel, copyStepPath, listAnd as listWords, mapsAndDocuments, newDateBlocker, newDateStepLabel, plural as pluralWords } from "@/lib/duplicate-words";
+import { copyStepLabel, copyStepPath, listAnd as listWords, mapsAndDocuments, newDateBlocker, newDateStepLabel, places, plural as pluralWords } from "@/lib/duplicate-words";
 
 export const metadata: Metadata = { title: "Event setup" };
 // Publishing a copy sends its Coordinators' invitations after it publishes, in small batches: room for a long list.
@@ -1236,7 +1236,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         {/* Just published a copy: what happened, below the header and clear of its buttons, closing on its own. */}
         {justPublished && query.copy === "1" && <PublishedNote eventId={eventId} />}
         {/* Just duplicated: what came over, in the same place (not over the step bar). */}
-        {justCopied && copyFacts && <PublishedNote eventId={eventId} text={copiedToast(copyFacts)} />}
+        {justCopied && copyFacts && <PublishedNote eventId={eventId} text={copiedToast(copyFacts)} tone="info" />}
         {copyFacts && <CopiedNote facts={copyFacts} />}
 
         {contestLive && inviteable ? (
@@ -1904,6 +1904,8 @@ function OpenClose({
       <ActionButton
         action={action as never}
         variant={on ? "quiet-stop" : "go"}
+        // A text button on its own phone row: its words line up with the text above (the 44 px target kept).
+        className={on ? "max-sm:-ml-3" : undefined}
         confirmMessage={on ? confirm : undefined}
         confirmLabel={on ? confirmLabel : undefined}
         pendingText={on ? "Closing…" : "Opening…"}
@@ -2223,9 +2225,15 @@ async function copyPublishParts(f: CopyFacts, previewHref: string, userId: strin
   };
 }
 
-/** "Duplicated: 3 jobs, 4 shifts, and 19 things to bring are ready on the new dates. Check what came over, then publish" */
+/**
+ * "Duplicated. Fill in the new date in 6 places, then publish." while any "[new date]" is left (the list is under
+ * "Not ready to publish yet"); otherwise "Duplicated: 3 jobs, 4 shifts, and 19 things to bring are ready on the new
+ * dates. Check what came over, then publish".
+ */
 function copiedToast(f: CopyFacts) {
   const { summary } = f;
+  const left = f.check.newDates.reduce((n, d) => n + d.count, 0);
+  if (left > 0) return `Duplicated. Fill in the new date in ${places(left)}, then publish.`;
   const parts = [
     summary.rooms ? pluralWords(summary.rooms, "room", "rooms") : "",
     summary.jobs ? pluralWords(summary.jobs, "job", "jobs") : "",

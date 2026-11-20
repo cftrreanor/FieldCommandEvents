@@ -1,7 +1,9 @@
 "use client";
 
+import { LineIcon } from "@/components/line-icon";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { fixCopyCoordinatorEmail, removeCopyCoordinator, sendCopyInvitationNow, undoRemoveCopyCoordinator } from "@/app/dashboard/duplicate-actions";
 import { cancelInvitation } from "@/app/dashboard/team-actions";
 import { ActionForm } from "@/components/action-form";
@@ -22,8 +24,10 @@ export type CopiedPerson = {
   status: "held" | "sent" | "expired" | "accepted";
   /** The ladder's words ("Not emailed yet · sent when you publish"). */
   statusText: string;
-  /** Needs something (not emailed yet, or expired): the ◆ marker, with the words. */
+  /** Needs something (expired, a full team, or not emailed after publishing): the ◆ marker, with the words. */
   dot: boolean;
+  /** Waiting to be emailed at publish: a neutral clock in muted text. */
+  wait?: boolean;
   tone: "warn" | "good" | "plain";
   canSend: boolean;
   /** A sent invitation's link, for Copy link. */
@@ -32,6 +36,8 @@ export type CopiedPerson = {
   until: string;
 };
 
+// A text button that starts a phone row lines its words up with the text above (its 44 px target kept).
+const TEXT_EDGE = "max-sm:-ml-3";
 const QUIET_LINK = "inline-flex min-h-11 items-center px-2 text-sm font-medium text-brand underline underline-offset-4";
 
 /** "Change email": a box for the right address, then Save and send (or Save, before publishing). */
@@ -117,6 +123,11 @@ export function CopiedCoordinators({
     }
   };
   const waiting = people.filter((p) => p.status !== "accepted");
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    const t = setTimeout(() => setSlot(document.getElementById("copied-undo-slot")), 0);
+    return () => clearTimeout(t);
+  }, []);
 
   const send = async (p: CopiedPerson) => {
     if (!published && p.status === "held" && !(await confirmEarly(p, eventName, leadTitle))) return;
@@ -140,32 +151,38 @@ export function CopiedCoordinators({
 
   return (
     <div className="space-y-3">
-      {undo && (
-        <UndoNote
-          until={undo.until}
-          minutes={10}
-          name={undo.name}
-          action={async () => {
-            const r = await undoRemoveCopyCoordinator(eventId, undo.removalId);
-            if (r.ok) setUndo(null);
-            return r;
-          }}
-        >
-          <p>{undo.message}</p>
-        </UndoNote>
-      )}
+      {undo &&
+        (() => {
+          const note = (
+            <UndoNote
+              until={undo.until}
+              minutes={10}
+              name={undo.name}
+              action={async () => {
+                const r = await undoRemoveCopyCoordinator(eventId, undo.removalId);
+                if (r.ok) setUndo(null);
+                return r;
+              }}
+            >
+              <p className="font-semibold">{`${undo.name} removed.`}</p>
+            </UndoNote>
+          );
+          // At the top of the Coordinators tab, where it's seen (focus moves there, which reads it out).
+          return slot ? createPortal(note, slot) : note;
+        })()}
       {waiting.length > 0 && (
         <ul className="divide-y divide-border rounded-lg border border-dashed border-field-border">
           {waiting.map((p) => (
             <li key={p.id} className="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
               <div className="min-w-0 flex-1 text-sm">
-                <p className="font-medium [overflow-wrap:anywhere]">{p.name}</p>
-                <p className="text-muted [overflow-wrap:anywhere]">
+                <p className="font-semibold [overflow-wrap:anywhere]">{p.name}</p>
+                <p className="font-normal text-muted [overflow-wrap:anywhere]">
                   {p.name !== p.email ? `${p.email} · ` : ""}
                   {leadTitle} for {listAnd(p.jobs)}
                 </p>
-                <p className={`mt-0.5 ${p.dot ? "font-medium text-warning" : ""}`}>
+                <p className={`mt-0.5 ${p.dot ? "font-medium text-warning" : p.wait ? "text-muted" : ""}`}>
                   {p.dot && <span aria-hidden>◆ </span>}
+                  {p.wait && <LineIcon name="timer" inline />}
                   {p.statusText}
                 </p>
               </div>
@@ -204,7 +221,7 @@ export function CopiedCoordinators({
                   ) : (
                     // Its own row on phones, apart from the send buttons.
                     <span className="max-sm:basis-full">
-                      <Button type="button" variant="quiet-danger" className={ROW_BUTTON} disabled={pending} onClick={() => remove(p)} aria-label={`Remove ${p.name}`}>
+                      <Button type="button" variant="quiet-danger" className={`${ROW_BUTTON} ${TEXT_EDGE}`} disabled={pending} onClick={() => remove(p)} aria-label={`Remove ${p.name}`}>
                         Remove
                       </Button>
                     </span>
@@ -230,7 +247,17 @@ export function NotEmailedLine({ eventId, people, teamHref }: { eventId: string;
   const [pending, start] = useTransition();
   const [fixing, setFixing] = useState<string | null>(null);
   const [sent, setSent] = useState<string[]>([]);
-  const [undo, setUndo] = useState<Undo | null>(null);
+  const [undo, setUndoState] = useState<Undo | null>(null);
+  // Kept for the tab too, so Team setup shows the same "removed. Undo" line after going there.
+  const setUndo = (u: Undo | null) => {
+    setUndoState(u);
+    try {
+      if (u) sessionStorage.setItem(UNDO_KEY(eventId), JSON.stringify(u));
+      else sessionStorage.removeItem(UNDO_KEY(eventId));
+    } catch {
+      // No storage: Undo still works here.
+    }
+  };
   if (!people.length && !sent.length && !undo) return null;
   const remove = (p: CopiedPerson) =>
     start(async () => {
@@ -276,7 +303,7 @@ export function NotEmailedLine({ eventId, people, teamHref }: { eventId: string;
               return r;
             }}
           >
-            <p>{undo.message}</p>
+            <p className="font-semibold">{`${undo.name} removed.`}</p>
           </UndoNote>
         </div>
       )}
@@ -291,11 +318,15 @@ export function NotEmailedLine({ eventId, people, teamHref }: { eventId: string;
           {people.map((p) => (
             <li key={p.id} className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <span className="min-w-0">
-                <span className="font-medium">{p.name}</span> · {listAnd(p.jobs)}
-                {p.name !== p.email && <span className="block text-muted [overflow-wrap:anywhere]">{p.email}</span>}
+                <span className="block font-semibold [overflow-wrap:anywhere]">{p.name}</span>
+                <span className="block font-normal text-muted [overflow-wrap:anywhere]">
+                  {p.name !== p.email ? `${p.email} · ` : ""}
+                  {listAnd(p.jobs)}
+                </span>
                 {(!p.canSend || p.status === "expired") && (
                   <span className={`block ${p.dot ? "font-medium text-warning" : "text-muted"}`}>
                     {p.dot && <span aria-hidden>◆ </span>}
+                    {p.wait && <LineIcon name="timer" inline />}
                     {p.statusText}
                   </span>
                 )}
@@ -328,7 +359,7 @@ export function NotEmailedLine({ eventId, people, teamHref }: { eventId: string;
                   )}
                   {/* Its own row on phones, apart from the send buttons. */}
                   <span className="max-sm:basis-full">
-                    <Button type="button" variant="quiet-danger" className={ROW_BUTTON} disabled={pending} onClick={() => remove(p)} aria-label={`Remove ${p.name}`}>
+                    <Button type="button" variant="quiet-danger" className={`${ROW_BUTTON} ${TEXT_EDGE}`} disabled={pending} onClick={() => remove(p)} aria-label={`Remove ${p.name}`}>
                       Remove
                     </Button>
                   </span>

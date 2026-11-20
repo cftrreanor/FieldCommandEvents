@@ -79,8 +79,12 @@ automated test.
 - **Duplicated events (20270207000000_duplicate_event.sql):** duplicating an event never copies volunteers, families,
   children, or anyone's details, and Coordinators copied with it get no access until they accept their invitation.
   Dates typed into the copied text are replaced with "[new date]". The copy's record of where it came from
-  (event_copies) keeps counts and ids only: no names, email addresses, or file names. A removed Coordinator's address
-  is kept only for the 10 minutes Undo works: it's cleared whenever that record is read and by the daily clean-up.
+  (event_copies) keeps counts and ids only: no names, email addresses, or file names (summaries written before this
+  rule are cleaned by the same database update). A removed Coordinator's address is kept only while Undo works (10
+  minutes): it's cleared whenever that record is read and by the daily clean-up, so it's gone within a day at most, and
+  their invitation's link keys aren't kept at all. Changing a copied Coordinator's email gives the invitation new link
+  keys, so links in an email to the old address stop working. Invitations waiting to be emailed with a copy are seen
+  only by the event's hosts (not Volunteer Leads).
   A copied Coordinator's name is shown only once they accept or when they're already on the account's team
   (otherwise their email address); a Co-host of only the copy sees names only for that event's team.
 - **Visiting directors:** see their own registration, never other schools' contact details.

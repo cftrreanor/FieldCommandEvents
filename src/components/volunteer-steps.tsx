@@ -84,8 +84,11 @@ export function SetupSteps({
               ? "h-1.5 border-[1.5px] border-dashed border-muted bg-surface"
               : "h-1.5 border border-field-border bg-surface";
   // What a required step still needs ("Add your hours"), from its own note or the middle step's.
+  const ownNote = (key: string, i: number) => (facts.notes && key in facts.notes ? (facts.notes[key] ?? null) : i === 1 ? facts.middleNote : null);
+  // A copied contest's or festival's blank deadline comes first, as on its page (the dates sit above the text).
+  const deadlineFirst = (key: string, i: number) => newDates(key) > 0 && /deadline/i.test(ownNote(key, i) ?? "");
   const stepNote = (key: string, i: number) =>
-    newDates(key) > 0 ? "Add the new date" : facts.notes && key in facts.notes ? (facts.notes[key] ?? null) : i === 1 ? facts.middleNote : null;
+    deadlineFirst(key, i) ? `${ownNote(key, i)}, then the new date` : newDates(key) > 0 ? "Add the new date" : ownNote(key, i);
   const doneCount = done.filter(Boolean).length;
   // Required steps that still need something, named: shown in words on phones too, not only on wider screens.
   const needsWork = steps.filter(
@@ -131,7 +134,7 @@ export function SetupSteps({
                       {s.label}
                     </span>
                   ) : (
-                    <Link href={facts.newDateHrefs?.[s.key] ?? `${base}${s.path}`} className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4 [text-wrap:balance] hover:text-brand">
+                    <Link href={(!deadlineFirst(s.key, i) && facts.newDateHrefs?.[s.key]) || `${base}${s.path}`} className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4 [text-wrap:balance] hover:text-brand">
                       {s.label}
                     </Link>
                   )}
@@ -161,7 +164,7 @@ export function SetupSteps({
         </p>
         {/* Team, emails, and maps are in Event settings: in reach from every step (the Publish step has its own button). */}
         {!preview && here < last && (
-          <Link href={`${base}/edit?section=details`} className="inline-flex min-h-11 items-center text-sm font-medium text-brand underline underline-offset-4">
+          <Link href={`${base}/edit?section=details`} className="ml-auto inline-flex min-h-11 items-center text-sm font-medium text-brand underline underline-offset-4">
             Event settings
           </Link>
         )}
@@ -194,6 +197,11 @@ export function SetupSteps({
           Copied: check it · {copiedSteps.map((s) => s.label).join(", ")}
         </p>
       )}
+      {(() => {
+        // Phones say "Opened" in words too (the strip's color alone doesn't).
+        const opened = steps.filter((s, i) => i !== here && copiedState(s.key) === "opened" && done[i]);
+        return opened.length > 0 ? <p className="mt-1 text-sm text-muted sm:hidden">Opened: {opened.map((s) => s.label).join(", ")}</p> : null;
+      })()}
       <details className="group sm:hidden">
         <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-brand">
           <span aria-hidden className="inline-block transition-transform group-open:rotate-90">

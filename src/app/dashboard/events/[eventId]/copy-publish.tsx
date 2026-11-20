@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { publishCopy } from "@/app/dashboard/duplicate-actions";
+import { LineIcon } from "@/components/line-icon";
 import { toast } from "@/components/toaster";
 import { Button } from "@/components/ui";
 import { listAnd } from "@/lib/duplicate-words";
@@ -335,7 +336,7 @@ const NOTE_KEY = (eventId: string) => `published-note:${eventId}`;
  * below the event's header, clear of its buttons. It closes on its own after a little while, or with its ×. The
  * not-emailed card below Links to share has the details and the buttons.
  */
-export function PublishedNote({ eventId, text: given }: { eventId: string; text?: string }) {
+export function PublishedNote({ eventId, text: given, tone = "success" }: { eventId: string; text?: string; tone?: "success" | "info" }) {
   const [message, setMessage] = useState<string | null>(null);
   const close = () => {
     setMessage(null);
@@ -365,10 +366,18 @@ export function PublishedNote({ eventId, text: given }: { eventId: string; text?
   }, [eventId, given]);
   if (!message) return null;
   return (
-    <div role="status" className="mt-4 flex items-start gap-3 rounded-lg border border-success/40 bg-success-soft px-4 py-3 text-sm leading-6">
-      <span aria-hidden className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-success text-xs font-bold text-success-foreground">
-        ✓
-      </span>
+    // "Duplicated" is news, not success (the work still to do is amber below it): the neutral info look.
+    <div
+      role="status"
+      className={`mt-4 flex items-start gap-3 rounded-lg border px-4 py-3 text-sm leading-6 ${tone === "info" ? "border-brand/25 bg-brand-soft" : "border-success/40 bg-success-soft"}`}
+    >
+      {tone === "info" ? (
+        <LineIcon name="note" className="mt-0.5 size-5 shrink-0" />
+      ) : (
+        <span aria-hidden className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-success text-xs font-bold text-success-foreground">
+          ✓
+        </span>
+      )}
       <p className="min-w-0 flex-1">{message}</p>
       <button
         type="button"

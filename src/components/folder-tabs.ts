@@ -19,5 +19,5 @@ export function folderTab(active: boolean) {
 
 /** The line under a tab's name: amber with a diamond when something there needs doing. */
 export function folderTabNote(needs = false) {
-  return `text-xs tabular-nums ${needs ? "font-medium text-warning" : "font-normal text-muted"}`;
+  return `text-xs ${needs ? "font-medium text-warning" : "font-normal text-muted"}`;
 }

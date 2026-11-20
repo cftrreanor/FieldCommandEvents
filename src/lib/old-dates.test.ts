@@ -33,6 +33,13 @@ test("things that aren't dates stay: grades, scores, words, names, links", () =>
   assert.equal(blank("Nov 1 at https://x.org/a and Nov 2"), "[new date] at https://x.org/a and [new date]");
 });
 
+test("numbers after a label, and a March that's music, stay", () => {
+  assert.equal(blank("Ages 5/6 and Age 7/8. Sizes 10/12, Table 11/12, Room 3/4, Rooms 1/2, #2/3."), "Ages 5/6 and Age 7/8. Sizes 10/12, Table 11/12, Room 3/4, Rooms 1/2, #2/3.");
+  assert.equal(blank("Grade 3 March. Play 1 March, 1 Chorale. 2 Overture and 1 March."), "Grade 3 March. Play 1 March, 1 Chorale. 2 Overture and 1 March.");
+  assert.equal(blank("Due 1 March, then 3 March 2026 and the 1st March."), "Due [new date], then [new date] and [new date].");
+  assert.equal(blank("Pick up 11/2 at Room 3."), "Pick up [new date] at Room 3.");
+});
+
 test("more ways of writing a date are caught", () => {
   assert.equal(
     blank("On 8 November, the 8th of November, 2026-11-08, 11-8-2026, and Saturday the 8th."),

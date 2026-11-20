@@ -213,6 +213,8 @@ export type CopiedPersonView = {
   status: CopyCoordinator["status"];
   statusText: string;
   dot: boolean;
+  /** Waiting for publishing (a neutral clock, not the ◆). */
+  wait?: boolean;
   tone: "warn" | "good" | "plain";
   canSend: boolean;
   url: string | null;
@@ -248,6 +250,7 @@ export async function loadCopiedPeople(eventId: string): Promise<{ people: Copie
       status: c.status,
       statusText: s.text,
       dot: s.dot,
+      wait: s.wait,
       tone: s.tone,
       canSend: c.can_send,
       url: token ? `${origin}/invite/${token}` : null,
@@ -265,28 +268,21 @@ export async function loadCopiedPeople(eventId: string): Promise<{ people: Copie
 export async function duplicateCounts(eventIds: string[], orgId: string): Promise<Map<string, DuplicateCounts>> {
   const out = new Map<string, DuplicateCounts>();
   if (!eventIds.length) return out;
+  // Counted in the database (duplicate_counts: one row per event, never every job or shift fetched here).
   const supabase = await createClient();
-  const [{ data: stations }, { data: shifts }, { data: items }, { data: files }, { data: leads }, { data: rooms }, { data: members }] = await Promise.all([
-    supabase.from("stations").select("event_id").in("event_id", eventIds),
-    supabase.from("shifts").select("event_id").in("event_id", eventIds),
-    supabase.from("station_items").select("event_id").in("event_id", eventIds),
-    supabase.from("event_files").select("event_id").in("event_id", eventIds),
-    supabase.from("station_leads").select("event_id, user_id").in("event_id", eventIds),
-    supabase.from("rooms").select("event_id").in("event_id", eventIds),
-    supabase.from("organization_members").select("user_id").eq("organization_id", orgId),
-  ]);
-  const member = new Set((members ?? []).map((m) => m.user_id as string));
-  const n = (rows: { event_id: string }[] | null, id: string) => (rows ?? []).filter((r) => r.event_id === id).length;
+  const { data, error } = await supabase.rpc("duplicate_counts", { p_org: orgId, p_events: eventIds });
+  if (error) console.error("Counting what a duplicate brings failed", error.code, error.message);
+  const rows = (data ?? []) as ({ event_id: string } & Required<DuplicateCounts>)[];
   for (const id of eventIds) {
-    const people = new Set((leads ?? []).filter((l) => l.event_id === id).map((l) => l.user_id as string));
+    const r = rows.find((x) => x.event_id === id);
     out.set(id, {
-      jobs: n(stations, id),
-      shifts: n(shifts, id),
-      items: n(items, id),
-      files: n(files, id),
-      rooms: n(rooms, id),
-      coordinators: people.size,
-      invited: [...people].filter((u) => !member.has(u)).length,
+      jobs: r?.jobs ?? 0,
+      shifts: r?.shifts ?? 0,
+      items: r?.items ?? 0,
+      files: r?.files ?? 0,
+      rooms: r?.rooms ?? 0,
+      coordinators: r?.coordinators ?? 0,
+      invited: r?.invited ?? 0,
     });
   }
   return out;

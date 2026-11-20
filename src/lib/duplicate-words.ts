@@ -11,14 +11,16 @@ export const canDuplicateKind = (type: string | null | undefined): type is Dupli
 
 /** Where Duplicate event was opened from, for its back link. */
 export type DuplicateFrom = "new" | "events" | "settings" | "event";
-export function duplicateBack(from: string | undefined, eventId: string, kind: string): { href: string; label: string } {
+export function duplicateBack(from: string | undefined, eventId: string, kind: string, eventName = "the event"): { href: string; label: string } {
+  // The same words as every other back link to that place: "← My events" (as on New event and each event's page),
+  // "← Back to [event]", "← Back to Event settings".
   switch (from) {
     case "new":
       return { href: `/dashboard/events/new?type=${kind}`, label: "Back to New event" };
     case "events":
-      return { href: "/dashboard", label: "Back to My events" };
+      return { href: "/dashboard", label: "My events" };
     case "event":
-      return { href: `/dashboard/events/${eventId}`, label: "Back to the event" };
+      return { href: `/dashboard/events/${eventId}`, label: `Back to ${eventName}` };
     default:
       return { href: `/dashboard/events/${eventId}/edit?section=more`, label: "Back to Event settings" };
   }
@@ -101,7 +103,7 @@ export function coordinatorStatus(c: {
   accepted_at: string | null;
   can_send: boolean;
   why_not: string | null;
-}, published: boolean, planIncludes: boolean, tz = "America/Chicago"): { text: string; dot: boolean; tone: "warn" | "good" | "plain" } {
+}, published: boolean, planIncludes: boolean, tz = "America/Chicago"): { text: string; dot: boolean; tone: "warn" | "good" | "plain"; wait?: boolean } {
   const day = (iso: string | null) => (iso ? formatDate(utcToZonedDate(iso, tz), { weekday: undefined, year: undefined }) : "");
   switch (c.status) {
     case "accepted":
@@ -118,7 +120,8 @@ export function coordinatorStatus(c: {
       if (!planIncludes) return { text: "Not emailed · your plan doesn't include Coordinators", dot: false, tone: "plain" };
       // A full team: a freed spot doesn't send it on its own (round-2 decision): send it once there's room.
       if (!c.can_send) return { text: "Not emailed yet · needs a free team spot", dot: true, tone: "warn" };
-      return { text: published ? "Not emailed yet" : "Not emailed yet · sent when you publish", dot: true, tone: "warn" };
+      // Before publishing it's waiting, not a problem: a neutral clock (the ◆ is for what blocks or needs doing).
+      return published ? { text: "Not emailed yet", dot: true, tone: "warn" } : { text: "Not emailed yet · sent when you publish", dot: false, tone: "plain", wait: true };
   }
 }
 
@@ -209,7 +212,7 @@ export function newDateSpotHref(base: string, s: NewDateSpot) {
           : s.step === "rooms"
             ? `${base}/rooms`
             : s.what === "zone"
-              ? `${base}/booths`
+              ? `${base}/booths${s.detail ? `?zone=${encodeURIComponent(s.detail)}` : ""}`
               : `${base}/volunteering${s.station_id ? `?station=${s.station_id}` : ""}`;
   const spot = s.what === "document" ? "file" : s.what;
   return `${path}#new-date-${spot}`;
@@ -233,9 +236,9 @@ export type DuplicateCounts = { jobs: number; shifts: number; items: number; fil
 /** "1 map or document", "3 maps and documents". */
 export const mapsAndDocuments = (n: number) => (n === 1 ? "1 map or document" : `${n} maps and documents`);
 
-/** "2 Coordinators (1 invited again)", "1 Coordinator", in the event's own word for the role. */
+/** "2 Coordinators (1 asked again)", "1 Coordinator", in the event's own word for the role (one phrase: "asked again"). */
 export function coordinatorWords(total: number, invited: number, one = "Coordinator", many = "Coordinators") {
-  return `${plural(total, one, many)}${invited > 0 && invited < total ? ` (${invited} invited again)` : invited > 0 && invited === total ? (total === 1 ? " (invited again)" : " (all invited again)") : ""}`;
+  return `${plural(total, one, many)}${invited > 0 && invited < total ? ` (${invited} asked again)` : invited > 0 && invited === total ? (total === 1 ? " (asked again)" : " (all asked again)") : ""}`;
 }
 
 /** What a duplicate brings, in one list for the panel, New event, the Duplicate page, and the copy. */
