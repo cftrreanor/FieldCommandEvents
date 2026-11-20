@@ -65,6 +65,8 @@ export type SetupStepFacts = {
   notes?: Partial<Record<string, string | null>>;
   /** The optional Sponsors step (band contests and festivals): skipped unless the account has the add-on. */
   sponsorsOn?: boolean;
+  /** Said beside the Publish step's "Now" or "Not yet" (a volunteer event's "Sign-up opens Jan 4"). */
+  publishNote?: string | null;
   /** Steps this event doesn't have (a one-day meetings event has no More options: owner, 2026-11-09). */
   skip?: string[];
   /**

@@ -30,6 +30,7 @@ export function CopyPublish({
   previewHref,
   opensOn,
   deadline,
+  signupOpensOn = null,
   people,
   blocked,
   alreadySent,
@@ -43,6 +44,8 @@ export function CopyPublish({
   /** A contest's or festival's registration opening day, when it's after today. */
   opensOn: string | null;
   deadline: string | null;
+  /** A volunteer event's day sign-up opens by itself, when it's after today: "now" opens it on that day. */
+  signupOpensOn?: string | null;
   /** Not emailed yet (or expired), and can be sent: ticked to start. */
   people: PublishPerson[];
   /** Not emailed yet, and can't be sent now (with why). */
@@ -90,16 +93,21 @@ export function CopyPublish({
   const who = listAnd(going.map((p) => p.name));
   const count = `${going.length} ${going.length === 1 ? "Coordinator" : "Coordinators"}`;
   // Contests and festivals: the title asks one thing (publish, and email); the sentence says when registration opens.
-  const doing = version === "now" ? "open sign-up" : version === "later" ? "open sign-up later" : "";
+  const onDay = version === "now" && signupOpensOn ? `with sign-up opening ${formatDate(signupOpensOn, { year: undefined })}` : null;
+  const doing = onDay ?? (version === "now" ? "open sign-up" : version === "later" ? "open sign-up later" : "");
   const title = going.length
     ? `Publish ${eventName}${doing ? `, ${doing},` : ""} and email ${who}?`
-    : doing
-      ? `Publish ${eventName} and ${doing}?`
+    : onDay
+      ? `Publish ${eventName}, ${onDay}?`
+      : doing
+        ? `Publish ${eventName} and ${doing}?`
       : `Publish ${eventName}?`;
   const label = going.length
     ? `Publish${doing ? `, ${doing},` : ""} and email ${count}`
     : version === "now"
-      ? "Publish and open sign-up"
+      ? signupOpensOn
+        ? `Publish, sign-up opens ${formatDate(signupOpensOn, { weekday: undefined, year: undefined })}`
+        : "Publish and open sign-up"
       : version === "later"
         ? "Publish, open sign-up later"
         : version === "register"
@@ -109,7 +117,9 @@ export function CopyPublish({
           : "Publish event";
   const sentence =
     version === "now"
-      ? "Your public page goes online and volunteer sign-up opens right away. Volunteers aren't emailed."
+      ? signupOpensOn
+        ? `Your public page goes online, and volunteer sign-up opens on ${formatDate(signupOpensOn, { year: undefined })}. Before then, the sign-up page says when it opens. Volunteers aren't emailed.`
+        : "Your public page goes online and volunteer sign-up opens right away. Volunteers aren't emailed."
       : version === "later"
         ? "Your public page goes online. Sign-up stays closed until you open it, so people can see the event but can't sign up yet. Volunteers aren't emailed."
         : version === "register"
@@ -162,18 +172,21 @@ export function CopyPublish({
         <div className="mt-5 space-y-3">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <button type="button" onClick={() => open("now")} className={go}>
-              Publish and open sign-up
+              {signupOpensOn ? `Publish, sign-up opens ${formatDate(signupOpensOn, { weekday: undefined, year: undefined })}` : "Publish and open sign-up"}
             </button>
             <a href={previewHref} target="_blank" className="inline-flex min-h-11 items-center text-sm font-medium text-brand underline-offset-4 hover:underline">
               Preview the sign-up page
             </a>
           </div>
+          {/* With a day set, the day is the "later": no second button. */}
+          {!signupOpensOn && (
           <div className="text-sm">
             <p className="text-muted">Not ready for sign-ups yet? Publish now and open sign-up later. People can see the event but can&apos;t sign up.</p>
             <Button type="button" variant="secondary" className="mt-2" onClick={() => open("later")}>
               Publish, open sign-up later
             </Button>
           </div>
+          )}
         </div>
       ) : (
         <div className="mt-5">

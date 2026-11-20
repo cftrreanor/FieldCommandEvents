@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { signupOpensLaterOn } from "@/lib/volunteer-signup";
 import { friendlyDbError, type ActionState } from "@/lib/action-state";
 import { requireUser } from "@/lib/auth";
 import { copyCopiedFiles, loadCopyCoordinators, type CopiedFile, type DuplicateResult } from "@/lib/duplicate-event";
@@ -212,7 +213,11 @@ export type PublishCopyState = ActionState & {
 export async function publishCopy(eventId: string, send: string[], signup?: "now" | "later"): Promise<PublishCopyState> {
   await requireUser();
   const supabase = await createClient();
-  const { data: ev } = await supabase.from("events").select("event_type, name, timezone, band_registration_opens_on").eq("id", eventId).maybeSingle();
+  const { data: ev } = await supabase
+    .from("events")
+    .select("event_type, name, timezone, band_registration_opens_on, volunteer_signup_opens_on")
+    .eq("id", eventId)
+    .maybeSingle();
   if (!ev) return { error: "Only the event's host can publish it." };
   const signsUp = ev.event_type === "volunteer" || ev.event_type === "fair";
   const registers = ev.event_type === "band_contest" || ev.event_type === "group_event";
@@ -249,6 +254,7 @@ export async function publishCopy(eventId: string, send: string[], signup?: "now
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
   revalidatePath("/dashboard", "layout");
 
+  const signupLater = signsUp && signup === "now" ? signupOpensLaterOn({ timezone: ev.timezone || "America/Chicago", volunteer_signup_opens_on: ev.volunteer_signup_opens_on }) : null;
   const opensLater = ev.band_registration_opens_on && ev.band_registration_opens_on > utcToZonedDate(new Date().toISOString(), ev.timezone || "America/Chicago");
   const head = registers
     ? opensLater
@@ -257,7 +263,9 @@ export async function publishCopy(eventId: string, send: string[], signup?: "now
     : signsUp && signup
       ? signup === "later"
         ? "Published. Sign-up is closed until you open it"
-        : "Published, and sign-up is open"
+        : signupLater
+          ? `Published. Volunteer sign-up opens ${formatDate(signupLater, { year: undefined })}`
+          : "Published, and sign-up is open"
       : "Published";
   // Only what happened to the event: the amber card below Links to share names anyone not emailed, with the buttons to
   // send or remove (one place for it, not two).

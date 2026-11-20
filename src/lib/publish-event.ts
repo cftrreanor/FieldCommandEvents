@@ -25,7 +25,12 @@ export async function changePublished(eventId: string, publish: boolean, signupO
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("events")
-    .update(publish ? { status: "published", ...(signupOpen === undefined ? {} : { volunteer_signup_open: signupOpen }) } : { status: "draft", volunteer_signup_open: false })
+    // Publishing with sign-up closed ("open sign-up later") clears any opening day, so nothing opens by itself.
+    .update(
+      publish
+        ? { status: "published", ...(signupOpen === undefined ? {} : signupOpen ? { volunteer_signup_open: true } : { volunteer_signup_open: false, volunteer_signup_opens_on: null }) }
+        : { status: "draft", volunteer_signup_open: false },
+    )
     .eq("id", eventId)
     .select("id, event_type");
   if (error) {

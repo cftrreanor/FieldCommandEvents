@@ -41,6 +41,8 @@ export type SetupFacts = {
   invitesPending: number;
   files: number;
   volunteerSignupOpen: boolean;
+  /** The day volunteer sign-up opens by itself, when it's still to come (null: no day, or it's here). */
+  volunteerSignupOpensOn?: string | null;
   bandRegistrationOpen: boolean;
   scheduleShared: boolean;
   /** Band contests: finals times exist, are published, and finalist names are revealed. */
@@ -349,7 +351,10 @@ export function setupChecklist(f: SetupFacts): SetupChecklist {
     after.push({
       id: "signup",
       label: "Open volunteer sign-up",
-      hint: "Then share the sign-up link or QR code.",
+      hint:
+        f.published && f.volunteerSignupOpen && f.volunteerSignupOpensOn
+          ? `Opens ${formatDate(f.volunteerSignupOpensOn, { year: undefined })}. Share the sign-up link or QR code now: until then, the page says when it opens.`
+          : "Then share the sign-up link or QR code.",
       href: `${base}/volunteering`,
       done: f.published && f.volunteerSignupOpen,
       required: false,
@@ -515,9 +520,7 @@ function publishEffectsBase(f: SetupFacts): string[] {
       f.registrationOpensOn
         ? `Group registration opens on ${formatDate(f.registrationOpensOn, { year: undefined })}${through}. Before then, the registration page says when it opens.`
         : `Group registration opens${through}.`,
-      ...(f.stations > 0
-        ? [f.volunteerSignupOpen ? "Volunteer sign-up opens right away (it was left on)." : "Volunteer sign-up stays closed until you open it."]
-        : []),
+      ...(f.stations > 0 ? [volunteerSignupEffect(f)] : []),
       "Nobody is emailed. Share the registration link with directors when you're ready.",
       "After registration closes, you set the groups' order and post the schedule.",
       "You can unpublish from Event settings.",
@@ -542,11 +545,7 @@ function publishEffectsBase(f: SetupFacts): string[] {
     ];
   }
   if (f.stations > 0 || f.eventType === "volunteer") {
-    lines.push(
-      f.volunteerSignupOpen
-        ? "Volunteer sign-up opens right away (it was left on)."
-        : "Volunteer sign-up stays closed until you open it.",
-    );
+    lines.push(volunteerSignupEffect(f));
   }
   if (f.eventType === "band_contest") {
     lines.push(
@@ -573,3 +572,13 @@ function publishEffectsBase(f: SetupFacts): string[] {
   lines.push("You can keep editing everything, and unpublish at any time.");
   return lines;
 }
+
+/** What publishing does to volunteer sign-up: opens now, on its day, or stays closed. */
+export function volunteerSignupEffect(f: Pick<SetupFacts, "volunteerSignupOpen" | "volunteerSignupOpensOn">): string {
+  if (f.volunteerSignupOpen && f.volunteerSignupOpensOn) return signupOpensOnEffect(f.volunteerSignupOpensOn);
+  return f.volunteerSignupOpen ? "Volunteer sign-up opens right away (it was left on)." : "Volunteer sign-up stays closed until you open it.";
+}
+
+/** The "When you publish" line for sign-up that opens on a set day. */
+export const signupOpensOnEffect = (day: string) =>
+  `Volunteer sign-up opens on ${formatDate(day, { year: undefined })}. Before then, the sign-up page says when it opens.`;

@@ -9,6 +9,7 @@ import { tooLongRooms, type Room } from "@/lib/rooms";
 import { isSponsorKind } from "@/lib/sponsors";
 import { loadEventSponsors } from "@/lib/sponsors-data";
 import { utcToZonedDate } from "@/lib/time";
+import { signupOpensLaterOn } from "@/lib/volunteer-signup";
 
 /**
  * Everything the setup checklist ticks from, read fresh for one event.
@@ -21,7 +22,7 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
   const { data: event } = await supabase
     .from("events")
     .select(
-      "id, organization_id, status, event_type, volunteer_signup_open, band_registration_open, performance_order_published, director_info, band_registration_deadline, band_registration_opens_on, classifications, finals_published, finalists_revealed, parent_registration_open, parent_registration_closes_at, venue_address, timezone, starts_on",
+      "id, organization_id, status, event_type, volunteer_signup_open, volunteer_signup_opens_on, band_registration_open, performance_order_published, director_info, band_registration_deadline, band_registration_opens_on, classifications, finals_published, finalists_revealed, parent_registration_open, parent_registration_closes_at, venue_address, timezone, starts_on",
     )
     .eq("id", eventId)
     .maybeSingle();
@@ -82,6 +83,8 @@ export async function loadSetupFacts(eventId: string): Promise<SetupFacts | null
     invitesPending: invites,
     files,
     volunteerSignupOpen: event.volunteer_signup_open,
+    // Only a day still to come: one that's here already just means "open".
+    volunteerSignupOpensOn: signupOpensLaterOn(event),
     bandRegistrationOpen: Boolean(event.band_registration_open),
     scheduleShared: Boolean(event.performance_order_published),
     finalsSlots,

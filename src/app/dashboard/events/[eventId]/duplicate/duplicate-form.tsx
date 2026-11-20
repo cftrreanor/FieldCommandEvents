@@ -26,6 +26,8 @@ export type DuplicateSource = {
   shifts: { job: string; day: string; time: string }[];
   deadline: string | null;
   opensOn: string | null;
+  /** The day volunteer sign-up opened by itself (volunteer events and fairs), or null. */
+  signupOpensOn: string | null;
   counts: DuplicateCounts;
   /** What's copied, in the same words as Event settings and New event ("3 jobs, 4 shifts, and 1 map or document"). */
   copying: string[];
@@ -306,6 +308,9 @@ function DatePreview({ source, start, end, offset, pickDay }: { source: Duplicat
   const deadlineBlank = Boolean(deadlineTo && (deadlineTo < source.today || deadlineTo >= start));
   const opensTo = moved(source.opensOn);
   const opensBlank = Boolean(opensTo && (opensTo < source.today || !deadlineTo || deadlineBlank || opensTo > deadlineTo));
+  // Sign-up's opening day: left blank if it would be past, or after the new last day (copy_event_setup).
+  const signupTo = moved(source.signupOpensOn);
+  const signupBlank = Boolean(signupTo && (signupTo < source.today || signupTo > end));
   const weekdayChanged = offset % 7 !== 0;
   // The nearest day on the same weekday as before (not in the past), offered in the warning.
   const back = ((offset % 7) + 7) % 7;
@@ -317,7 +322,8 @@ function DatePreview({ source, start, end, offset, pickDay }: { source: Duplicat
         <p className="font-semibold">That&apos;s today. People would have only today to sign up.</p>
       )}
       <p>
-        <span className="font-semibold">{longRange(start, end)}.</span> Every shift{contest && (source.deadline || source.opensOn) ? " and registration date" : ""} moves{" "}
+        <span className="font-semibold">{longRange(start, end)}.</span> Every shift
+        {contest && (source.deadline || source.opensOn) ? " and registration date" : source.signupOpensOn ? " and the day sign-up opens" : ""} moves{" "}
         {offsetWords(offset)}, at the same times of day. {source.name} was {source.dates}.
       </p>
       {weekdayChanged && (
@@ -370,6 +376,16 @@ function DatePreview({ source, start, end, offset, pickDay }: { source: Duplicat
                 : `moves to ${formatDate(opensTo!)}`}
             </li>
           )}
+        </ul>
+      )}
+      {!contest && source.signupOpensOn && (
+        <ul className="list-disc space-y-1 pl-5">
+          <li>
+            <span className="font-semibold">Sign-up opens:</span>{" "}
+            {signupBlank
+              ? `${dayShort(source.signupOpensOn)} would move to ${formatDate(signupTo!)}, which ${signupTo! < source.today ? "has passed" : "comes after the new last day"}, so it's left blank. Sign-up opens when you publish.`
+              : `moves to ${formatDate(signupTo!)}`}
+          </li>
         </ul>
       )}
       {source.shifts.length > 0 && (

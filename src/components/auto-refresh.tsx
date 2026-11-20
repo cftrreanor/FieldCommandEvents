@@ -80,3 +80,20 @@ export function AutoRefresh({ seconds = 30, status = false, className = "" }: { 
     </p>
   );
 }
+
+/**
+ * Refreshes the page once, when a moment on the clock comes (sign-up's opening day starting at midnight in the
+ * event's time zone), so every line about it changes together (design lesson L19). Only within the next day:
+ * further off, someone reloading the page is enough.
+ */
+export function RefreshAt({ at }: { at: string }) {
+  const router = useRouter();
+  useEffect(() => {
+    const wait = new Date(at).getTime() - Date.now();
+    if (!(wait > 0) || wait > 24 * 60 * 60 * 1000) return;
+    // A moment after, so the server's clock has passed it too.
+    const t = setTimeout(() => router.refresh(), wait + 2000);
+    return () => clearTimeout(t);
+  }, [at, router]);
+  return null;
+}

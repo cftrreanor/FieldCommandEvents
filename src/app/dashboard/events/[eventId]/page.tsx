@@ -41,7 +41,10 @@ import { groupDay, groupDaySummary, type GroupCheckin, type GroupSlot } from "@/
 import { closesAtLabel, parentRegistrationClosed } from "@/lib/parents";
 import { parentStats, type ParentStats } from "@/lib/parent-stats";
 import { filesFor, uploadedLines, type EventFile } from "@/lib/event-files";
-import { bandRegistrationMissing, publishEffects, setupChecklist, twoWeeksBefore, type SetupFacts } from "@/lib/setup-checklist";
+import { bandRegistrationMissing, publishEffects, setupChecklist, signupOpensOnEffect, twoWeeksBefore, type SetupFacts } from "@/lib/setup-checklist";
+import { signupDay, signupDayShort, signupOpensAt, signupOpensLaterOn } from "@/lib/volunteer-signup";
+import { SignupOpensField } from "./signup-opens-field";
+import { RefreshAt } from "@/components/auto-refresh";
 import { volunteerTotals } from "@/lib/volunteer-totals";
 import { deadlinePassed, opensLater, registrationIsOpen } from "@/lib/bands";
 import { SetupGuide } from "@/components/setup-guide";
@@ -103,7 +106,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   const { data: event } = await supabase
     .from("events")
     .select(
-      "id, organization_id, slug, name, status, event_type, ready_minutes_before, volunteer_signup_open, parent_registration_open, parent_registration_closes_at, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, band_registration_open, band_registration_deadline, band_registration_opens_on, classifications, performance_order_published, director_info, finals_published, finalists_revealed",
+      "id, organization_id, slug, name, status, event_type, ready_minutes_before, volunteer_signup_open, volunteer_signup_opens_on, parent_registration_open, parent_registration_closes_at, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, band_registration_open, band_registration_deadline, band_registration_opens_on, classifications, performance_order_published, director_info, finals_published, finalists_revealed",
     )
     .eq("id", eventId)
     .maybeSingle();
@@ -374,6 +377,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   // Links to share: one row for each kind of person the event has a public page for, at the top
   // once it's live. A page that isn't usable yet says why instead of offering a dead link.
   const base = `/dashboard/events/${eventId}`;
+  // Volunteer sign-up switched on and waiting for its day (in the event's time zone), or null.
+  const signupLater = published && event.volunteer_signup_open ? signupOpensLaterOn(event) : null;
   const shareRows: ShareRow[] = [
     groupsHere
       ? {
@@ -419,7 +424,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
       ? [
           {
             who: "Volunteers",
-            what: event.event_type === "volunteer" ? "Sign-up: shifts and things to bring" : "Sign-up",
+            // Opening on a set day: the link already works (it says when sign-up opens), so it's there to share.
+            what: signupLater ? `Sign-up opens ${signupDay(signupLater)}` : event.event_type === "volunteer" ? "Sign-up: shifts and things to bring" : "Sign-up",
             url: `${publicUrl}/volunteer`,
             on: event.volunteer_signup_open,
             off: "Sign-up is closed",
@@ -951,8 +957,8 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
               {/* Hosts get open/closed with its switch at the bottom of the card; everyone else, here. */}
               {/* A draft says so once, at the top of the page: no second "not published" here. */}
               {published && !(access.isHost && !past) && (
-                <Badge tone={published && event.volunteer_signup_open ? "live" : "neutral"}>
-                  {!published ? "Event not published" : event.volunteer_signup_open ? "Sign-up open" : "Sign-up closed"}
+                <Badge tone={published && event.volunteer_signup_open && !signupLater ? "live" : "neutral"}>
+                  {!published ? "Event not published" : signupLater ? `Sign-up opens ${signupDayShort(signupLater)}` : event.volunteer_signup_open ? "Sign-up open" : "Sign-up closed"}
                 </Badge>
               )}
               {!noJobsYet && (
@@ -1013,7 +1019,33 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
             needs={needsPeople}
           />
           )}
-          {access.isHost && published && !past && stations.length > 0 && (
+          {access.isHost && published && !past && stations.length > 0 && signupLater && (
+            // Waiting for its day: say so, with Open now and where to change the day (no "Close" before it opens).
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+              <p className="flex flex-wrap items-center gap-2 text-sm">
+                <Badge tone="neutral">Sign-up opens {signupDayShort(signupLater)}</Badge>
+                <a href="#share" className="text-muted underline-offset-4 hover:underline">
+                  {contestLive ? "Link is in Get the word out" : "Link is in Links to share"}
+                </a>
+                <RefreshAt at={signupOpensAt(signupLater, tz).toISOString()} />
+              </p>
+              <div className="flex flex-wrap items-center gap-x-3">
+                <ActionButton
+                  action={setVolunteerSignupOpen.bind(null, eventId, true)}
+                  variant="secondary"
+                  pendingText="Opening…"
+                  confirmMessage={`Open volunteer sign-up now? Volunteers can sign up from today instead of ${signupDay(signupLater)}. Nobody is emailed.`}
+                  confirmLabel="Open sign-up now"
+                >
+                  Open sign-up now
+                </ActionButton>
+                <Link href={`/dashboard/events/${eventId}/volunteering#signup-opens`} className="inline-flex min-h-11 items-center px-2 text-sm font-semibold text-brand underline underline-offset-4">
+                  Change the day
+                </Link>
+              </div>
+            </div>
+          )}
+          {access.isHost && published && !past && stations.length > 0 && !signupLater && (
             <OpenClose
               shareName={contestLive ? "word" : "links"}
               on={event.volunteer_signup_open}
@@ -1050,6 +1082,12 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         remaining={checklist.remaining}
         previewHref={conferenceHere ? `/e/${event.slug}/book` : `/e/${event.slug}/volunteer`}
         festival={fest ? { previewHref: publicUrl } : undefined}
+        // Volunteer events and fairs: the optional day sign-up opens by itself (owner decision 2, 2026-11-20).
+        signupDay={
+          access.isHost && (event.event_type === "volunteer" || event.event_type === "fair")
+            ? { initial: event.volunteer_signup_opens_on ?? "", today, lastDay: event.ends_on }
+            : undefined
+        }
         // A one-day meetings event's optional contact email lives here (it has no More options step: owner, 2026-11-09).
         contact={conferenceHere && access.isHost && conference?.schedule !== "weekly" ? { initial: conference?.contact_email ?? null, meeting: event.event_type === "meeting" } : undefined}
         copy={copyFacts ? await copyPublishParts(copyFacts, conferenceHere ? `/e/${event.slug}/book` : fest ? publicUrl : `/e/${event.slug}/volunteer`, user.id, user.email ?? "") : undefined}
@@ -1182,7 +1220,9 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           message={
             fest
               ? "Published. Group registration is open: share the registration link at the top."
-              : `Published. Your ${conferenceHere ? "booking" : "event"} page is live; the links to share are at the top.`
+              : signupLater
+                ? `Published. Your event page is live, and volunteer sign-up opens ${signupDay(signupLater)}; the links to share are at the top.`
+                : `Published. Your ${conferenceHere ? "booking" : "event"} page is live; the links to share are at the top.`
           }
         />
       )}
@@ -1342,7 +1382,10 @@ function PublishPanel({
   contact,
   festival,
   copy,
+  signupDay: day,
 }: {
+  /** Volunteer events and fairs: the "Sign-up opens" box, beside the publish buttons. */
+  signupDay?: { initial: string; today: string; lastDay: string };
   /** A duplicated draft: its publish window in place of the buttons, what's left to look over, and any "[new date]" left. */
   copy?: { buttons: ReactNode; readyLine: ReactNode; effect: string | null; newDates: { title: string; list: ReactNode } | null };
   /** A festival: its page, to preview before publishing. */
@@ -1380,11 +1423,15 @@ function PublishPanel({
   // Doesn't stop publishing, but posting the schedule waits for it.
   const festFix = festival && !festRooms && facts.roomTwoAtOnce ? facts.roomTwoAtOnce : null;
   const blocked = needsJob || Boolean(bandMissing) || meetingTodo.length > 0 || Boolean(festRooms || festReg) || Boolean(copy?.newDates);
+  // The day sign-up opens by itself, when one is set (saving it switches sign-up on).
+  const opensOn = facts.volunteerSignupOpen ? (facts.volunteerSignupOpensOn ?? null) : null;
   // A volunteer event says what its own button opens (it chooses when sign-up opens), as band contests do.
   const effects = [
     ...publishEffects(facts).map((line) =>
       jobsHere && line.startsWith("Volunteer sign-up")
-        ? "With Publish and open sign-up, volunteers can pick a shift or an item right away."
+        ? opensOn
+          ? signupOpensOnEffect(opensOn)
+          : "With Publish and open sign-up, volunteers can pick a shift or an item right away."
         : copy?.effect && line.startsWith("Nobody is emailed")
           ? "Volunteers aren't emailed. People only find out when you share your link."
           : line,
@@ -1538,6 +1585,20 @@ function PublishPanel({
           </ul>
         </>
       )}
+      {!blocked && !facts.planBlock && day && (
+        <SignupOpensField
+          eventId={facts.eventId}
+          initial={day.initial}
+          today={day.today}
+          lastDay={day.lastDay}
+          hint={
+            jobsHere
+              ? "Leave blank to open sign-up when you publish"
+              : "Leave blank to keep sign-up closed until you open it. With a day, sign-up opens by itself that day, once you've published."
+          }
+          className="mt-5"
+        />
+      )}
       {blocked ? null : facts.planBlock ? (
         // Say why before they try, and what they can do: not an error after the click.
         <div className="mt-5 rounded-md border border-brand/25 bg-brand-soft p-4 text-sm leading-6">
@@ -1566,8 +1627,18 @@ function PublishPanel({
       ) : copy ? (
         copy.buttons
       ) : (
-        jobsHere ? (
-          <div className="mt-5 space-y-3">
+        jobsHere && opensOn ? (
+          // A day is set: one button, and the day is the "later" (owner decision 2, 2026-11-20).
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <ActionButton action={publishAndOpenSignups.bind(null, facts.eventId)} variant="go" pendingText="Publishing…">
+              Publish, sign-up opens {signupDayShort(opensOn)}
+            </ActionButton>
+            <a href={previewHref} target="_blank" className="inline-flex min-h-11 items-center text-sm font-medium text-brand underline-offset-4 hover:underline">
+              Preview the sign-up page
+            </a>
+          </div>
+        ) : jobsHere ? (
+          <div className="mt-3 space-y-3">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <ActionButton action={publishAndOpenSignups.bind(null, facts.eventId)} variant="go" pendingText="Publishing…">
                 Publish and open sign-up
@@ -2178,7 +2249,11 @@ async function copyPublishParts(f: CopyFacts, previewHref: string, userId: strin
   const base = `/dashboard/events/${event.id}`;
   const label = (step: string) => copyStepLabel(step, event.event_type);
   const labels = Object.fromEntries(check.steps.map((s) => [s.step, label(s.step)]));
-  const { data: reg } = await supabase.from("events").select("band_registration_opens_on, band_registration_deadline").eq("id", event.id).maybeSingle();
+  const { data: reg } = await supabase
+    .from("events")
+    .select("band_registration_opens_on, band_registration_deadline, volunteer_signup_open, volunteer_signup_opens_on")
+    .eq("id", event.id)
+    .maybeSingle();
   const today = utcToZonedDate(new Date().toISOString(), event.timezone || "America/Chicago");
   const coordinators = check.invitations.length;
   return {
@@ -2211,6 +2286,7 @@ async function copyPublishParts(f: CopyFacts, previewHref: string, userId: strin
         previewHref={previewHref}
         opensOn={reg?.band_registration_opens_on && reg.band_registration_opens_on > today ? reg.band_registration_opens_on : null}
         deadline={reg?.band_registration_deadline ?? null}
+        signupOpensOn={reg?.volunteer_signup_open && reg.volunteer_signup_opens_on && reg.volunteer_signup_opens_on > today ? reg.volunteer_signup_opens_on : null}
         people={check.toOffer.map((p) => ({ id: p.invitation_id, name: p.name, email: p.email, jobs: p.jobs, expired: p.status === "expired" }))}
         blocked={check.cantSend.map((p) => ({
           name: p.name,

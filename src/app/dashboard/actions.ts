@@ -17,7 +17,7 @@ import { slugify } from "@/lib/slug";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { asksChildName } from "@/lib/conference-settings";
 import { FILES_BUCKET } from "@/lib/event-files";
-import { formatDate, eachDate, isValidTimezone, utcToZonedTime, zonedToUtc } from "@/lib/time";
+import { formatDate, eachDate, isValidTimezone, utcToZonedDate, utcToZonedTime, zonedToUtc } from "@/lib/time";
 import { planShifts, toMinutes } from "@/lib/shift-plan";
 import { loadCalendarEntries, sendShiftUpdates } from "@/lib/volunteer-emails";
 
@@ -349,12 +349,16 @@ export async function publishSignupLater(eventId: string): Promise<ActionState> 
   redirect(`/dashboard/events/${eventId}?published=1`);
 }
 
+/**
+ * Open volunteer sign-up now, or close it. Either way any opening day is cleared: opening now starts today, and
+ * closing never leaves a day behind that would open it again by itself.
+ */
 export async function setVolunteerSignupOpen(eventId: string, open: boolean): Promise<ActionState> {
   await requireUser();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("events")
-    .update({ volunteer_signup_open: open })
+    .update({ volunteer_signup_open: open, volunteer_signup_opens_on: null })
     .eq("id", eventId)
     .select("id");
   if (error) return { error: friendlyDbError(error) };
@@ -370,6 +374,45 @@ export async function setVolunteerSignupOpen(eventId: string, open: boolean): Pr
       "Send this link to your volunteers, or put the QR code on a flyer. They pick a shift and sign up.",
     ),
   };
+}
+
+export type SignupDaySave = { ok?: true; error?: string; retry?: boolean };
+
+/**
+ * The day volunteer sign-up opens by itself (volunteer events and fairs; owner decision 2, 2026-11-20). A day
+ * switches sign-up on, waiting for that day in the event's time zone (no background job: the database works it
+ * out when anyone signs up). Clearing it leaves sign-up off: on a draft, it opens when you publish with sign-up
+ * open; once published, it stays closed until it's opened.
+ */
+export async function saveVolunteerSignupOpensOn(eventId: string, day: string): Promise<SignupDaySave> {
+  await requireUser();
+  const value = day.trim();
+  if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) return { error: "Pick a valid date." };
+  const supabase = await createClient();
+  const { data: ev } = await supabase
+    .from("events")
+    .select("status, timezone, ends_on, volunteer_signup_open, volunteer_signup_opens_on")
+    .eq("id", eventId)
+    .maybeSingle();
+  if (!ev) return { error: "Only the event's host can change when sign-up opens." };
+  const today = utcToZonedDate(new Date().toISOString(), ev.timezone);
+  const live = ev.status === "published";
+  const openNow = live && ev.volunteer_signup_open && (!ev.volunteer_signup_opens_on || ev.volunteer_signup_opens_on <= today);
+  if (value && openNow) return { error: "Sign-up is already open. To open it on a later day, close it first." };
+  if (value && value !== ev.volunteer_signup_opens_on && value < today) return { error: "Pick today or a later date." };
+  if (value && value > ev.ends_on) {
+    return { error: `Pick a day on or before the event's last day (${formatDate(ev.ends_on, { weekday: undefined, year: undefined })}).` };
+  }
+  const { data, error } = await supabase
+    .from("events")
+    .update(value ? { volunteer_signup_opens_on: value, volunteer_signup_open: true } : { volunteer_signup_opens_on: null, volunteer_signup_open: false })
+    .eq("id", eventId)
+    .select("id");
+  if (error) return { error: friendlyDbError(error), retry: !error.code };
+  if (!data?.length) return { error: "Only the event's host can change when sign-up opens." };
+  revalidatePath(`/dashboard/events/${eventId}`, "layout");
+  revalidatePath("/dashboard");
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+import { signupIsOpen } from "@/lib/volunteer-signup";
 import type { Metadata } from "next";
 import { PublicNav } from "@/components/public-nav";
 import { EventBanners } from "@/components/event-banners";
@@ -120,7 +121,7 @@ export default async function MyShiftsPage({ searchParams }: PageProps<"/my">) {
     knownIds.length || pass.e.length
       ? await (await createClient())
           .from("events")
-          .select("id, slug, name")
+          .select("id, slug, name, status, timezone, volunteer_signup_open, volunteer_signup_opens_on")
           .eq("status", "published")
           .eq("volunteer_signup_open", true)
           .or(
@@ -132,7 +133,8 @@ export default async function MyShiftsPage({ searchParams }: PageProps<"/my">) {
               .join(","),
           )
       : { data: [] };
-  const signupLinks = new Map((openEvents ?? []).map((e) => [e.id, { slug: e.slug as string, name: e.name as string }]));
+  // Sign-up waiting for its opening day isn't open yet: no "Sign up for more" or switching until then.
+  const signupLinks = new Map((openEvents ?? []).filter((e) => signupIsOpen(e)).map((e) => [e.id, { slug: e.slug as string, name: e.name as string }]));
   const eventsWithoutShifts = [...signupLinks.entries()].filter(([id]) => !byEvent.has(id) && !itemsByEvent.has(id));
 
   // Shifts each one could switch to: open spots, allowed for their age, in an event still taking sign-ups (pass holders only).

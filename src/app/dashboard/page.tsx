@@ -30,6 +30,7 @@ import { loadSetupFacts } from "@/lib/setup-facts";
 import { SuccessToast } from "@/components/toaster";
 import { IconTile, LineIcon } from "@/components/line-icon";
 import type { IconName } from "@/lib/icons";
+import { signupDay, signupOpensLaterOn } from "@/lib/volunteer-signup";
 
 export const metadata: Metadata = { title: "My events" };
 
@@ -44,6 +45,9 @@ type EventSummary = {
   venue_address: string;
   event_type: string | null;
   organization_id: string;
+  volunteer_signup_open: boolean;
+  /** The day volunteer sign-up opens by itself (volunteer events and fairs), or null. */
+  volunteer_signup_opens_on?: string | null;
   /** A meetings or conferences draft whose day and hours aren't picked yet: its dates are only placeholders. */
   timesUnset?: boolean;
 };
@@ -98,7 +102,7 @@ const MAX_DRAFT_STEPS = 6;
 
 type StaffEvent = { role: "volunteer_director" | "section_lead" | "co_host"; events: EventSummary | null };
 
-const EVENT_COLUMNS = "id, organization_id, name, status, timezone, starts_on, ends_on, venue_name, venue_address, event_type";
+const EVENT_COLUMNS = "id, organization_id, name, status, timezone, starts_on, ends_on, venue_name, venue_address, event_type, volunteer_signup_open, volunteer_signup_opens_on";
 
 /** Has the event ended, in its own time zone? */
 function isPast(e: { ends_on: string; timezone: string }) {
@@ -625,6 +629,8 @@ function HostedCard({
   const today = isToday(e) && e.status === "published";
   const day = DAY_SCREEN[e.event_type ?? "band_contest"];
   const past = isPast(e);
+  // Volunteer sign-up switched on and waiting for its day (a draft's opens that day once published).
+  const opensOn = e.volunteer_signup_open ? signupOpensLaterOn(e) : null;
   return (
     <EventCard
       title={e.name}
@@ -653,6 +659,8 @@ function HostedCard({
         <div className="space-y-2">
           <div className="space-y-1 text-sm">
             <p className="font-medium">{signupLine(e.event_type, signups)}</p>
+            {/* Waiting for its opening day: said the same way as the event's own pages (lesson L19). */}
+            {opensOn && <p className="text-muted">Volunteer sign-up opens {signupDay(opensOn)}</p>}
             {spot && <p className="text-muted">Uses your one free conference spot through {formatDate(spot, { weekday: undefined, year: undefined })}</p>}
           </div>
           {duplicable && <DuplicateButton event={e} />}
@@ -668,6 +676,7 @@ function HostedCard({
           ) : (
             <DraftNext draft={draft} href={href} ask={ask ?? null} />
           )}
+          {opensOn && <p className="text-sm text-muted">Volunteer sign-up opens {signupDay(opensOn)}, once you publish</p>}
         </div>
       ) : (
         <div className="space-y-1">

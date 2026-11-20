@@ -3,7 +3,7 @@ import { newDateSpotHref } from "@/lib/duplicate-words";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Card } from "@/components/ui";
+import { Badge, Card } from "@/components/ui";
 import { SettingsNav, type SettingsSection } from "./settings-nav";
 import { TeamRoles } from "../team/team-roles";
 import { EVENT_TYPES, bookingWords, eventTypeLabel, groupWords, leadWords, hasBands, hasBooths, hasConferences, hasEnsembles, hasParents, hasRooms, isMeeting, usesJobs, volunteerAreaName } from "@/lib/event-types";
@@ -27,6 +27,8 @@ import { deleteEvent, publishAndOpen, setEventPublished, setEventShowBrand, setE
 import { DeleteEventButton } from "../delete-event";
 import { DuplicatePanel } from "./duplicate-panel";
 import { PublishCopyLink } from "../copy-publish";
+import { SignupOpensField } from "../signup-opens-field";
+import { eventToday, signupBadge, signupState } from "@/lib/volunteer-signup";
 import { isUnpublishedCopy } from "@/lib/duplicate-event";
 import { reopenBandRegistration, setBandRegistrationOpen } from "../../../band-actions";
 import { ReopenRegistration } from "../bands/reopen-registration";
@@ -87,7 +89,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const { data: event } = await supabase
     .from("events")
     .select(
-      "id, organization_id, name, status, event_type, created_by, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng, band_registration_open, band_registration_deadline, band_registration_opens_on, public_notes",
+      "id, organization_id, name, status, event_type, created_by, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng, band_registration_open, band_registration_deadline, band_registration_opens_on, public_notes, volunteer_signup_open, volunteer_signup_opens_on",
     )
     .eq("id", eventId)
     .maybeSingle();
@@ -293,6 +295,10 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
     { id: "more", label: "Publishing and more", done: event.status === "published", status: event.status === "published" ? "Live" : "Draft" },
   ];
   const published = event.status === "published";
+  // Volunteer sign-up's state and opening day, for Publishing (volunteer events and fairs).
+  const signupDayHere = event.event_type === "volunteer" || event.event_type === "fair";
+  const signupNow = signupState(event);
+  const signupNowBadge = signupBadge(event);
   // Could it be published again after unpublishing? Not after a plan ends, or once another event takes a one-at-a-time spot.
   const republishBlocked = published && section === "more" ? await republishReason(supabase, eventId) : null;
   // A live event: how many people are in it (booked, signed up, or registered), so unpublishing and deleting
@@ -610,6 +616,32 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                   <Link href={`/dashboard/events/${eventId}#publish`} className="inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand">
                     Go to Publish
                   </Link>
+                )}
+                {/* Volunteer events and fairs: the day sign-up opens by itself, whenever it isn't open now (owner decision 2, 2026-11-20). */}
+                {signupDayHere && signupNow !== "open" && (
+                  <div className="mt-5 border-t border-border pt-4">
+                    {signupNow !== "draft" && (
+                      <p className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+                        <Badge tone={signupNowBadge.tone}>{signupNowBadge.text}</Badge>
+                        <span className="text-muted">Volunteer sign-up</span>
+                      </p>
+                    )}
+                    <SignupOpensField
+                      eventId={eventId}
+                      initial={event.volunteer_signup_opens_on ?? ""}
+                      today={eventToday(event.timezone)}
+                      lastDay={event.ends_on}
+                      hint={
+                        signupNow === "draft"
+                          ? event.event_type === "volunteer"
+                            ? "Leave blank to open sign-up when you publish"
+                            : "Leave blank to keep sign-up closed until you open it. With a day, sign-up opens by itself that day, once you've published."
+                          : signupNow === "later"
+                            ? "Sign-up opens by itself that day. Clear it to keep sign-up closed."
+                            : "Leave blank to keep sign-up closed until you open it"
+                      }
+                    />
+                  </div>
                 )}
               </Panel>
 
