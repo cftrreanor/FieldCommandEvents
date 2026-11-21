@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { startTransition, useActionState, useState } from "react";
+import { startTransition, useActionState, useState, type ReactNode } from "react";
 import { ActionPendingContext } from "@/components/action-form";
 import { BotCheck } from "@/components/bot-check";
 import { NumberInput } from "@/components/number-input";
@@ -11,6 +11,14 @@ import { Badge, Button, Card, Field, FormMessage, Input } from "@/components/ui"
 import { GUARDIAN_CONSENT, MAX_OTHERS, groupProgress, ineligibleReason, shiftsOverlap } from "@/lib/group-signup";
 import type { SignupPayload, SignupState } from "./actions";
 import { folderTab, folderTabNote, folderTabRow } from "@/components/folder-tabs";
+import { SignedUpContext } from "./more-ways-block";
+
+/** How long details are kept, said the same way on the form and the confirm step. */
+export function retentionLine(keepsHistory: boolean) {
+  return keepsHistory
+    ? "Phone numbers are deleted 10 days after the event; the organizer keeps adults' names, emails, and how many shifts each person volunteered until 2 years after their last event, to thank and invite back returning volunteers."
+    : "Everyone's details are deleted 10 days after the event.";
+}
 
 export type PublicShift = {
   id: string;
@@ -67,6 +75,10 @@ export function SignupForm({
   lead = "Coordinator",
   keepsHistory = false,
   via,
+  more,
+  moreBelow = false,
+  initialShift,
+  prefill,
 }: {
   action: (prev: SignupState, formData: FormData) => Promise<SignupState>;
   /** Spots left on each shift right now (checked again on the review screen). */
@@ -84,6 +96,14 @@ export function SignupForm({
   keepsHistory?: boolean;
   /** Where the visitor came from (the link's ?via=), sent on for the names-free count of sign-ups by source. */
   via?: string;
+  /** "More ways to help" (streamed in by the page), shown below the form and below "You're signed up". */
+  more?: ReactNode;
+  /** The account's organization page is on: a full shift points down to "More ways to help". */
+  moreBelow?: boolean;
+  /** A shift to start ticked (arriving from another event's "More ways to help" or the organization page). */
+  initialShift?: string;
+  /** Details this device remembers (name and email only: the phone number stays on the server). */
+  prefill?: { name: string; email: string };
 }) {
   const [state, formAction, pending] = useActionState(action, {});
   const pathname = usePathname();
@@ -91,8 +111,8 @@ export function SignupForm({
   const [step, setStep] = useState<Step>({ kind: "pick", i: BOOKER });
   const [problem, setProblem] = useState<string | null>(null);
   // The booker.
-  const [me, setMe] = useState({ name: "", email: "", phone: "", minor: false, age: "" });
-  const [mine, setMine] = useState<string[]>([]);
+  const [me, setMe] = useState({ name: prefill?.name ?? "", email: prefill?.email ?? "", phone: "", minor: false, age: "" });
+  const [mine, setMine] = useState<string[]>(() => (initialShift && stations.some((st) => st.shifts.some((sh) => sh.id === initialShift && sh.spotsLeft > 0)) ? [initialShift] : []));
   // Items to bring they've picked, with what they'll bring ("Brownies"). Just for the booker.
   const [pickedItems, setPickedItems] = useState<Map<string, string>>(new Map());
   const [people, setPeople] = useState<Person[]>([]);
@@ -153,7 +173,18 @@ export function SignupForm({
   };
   const setPerson = (i: number, change: Partial<Person>) => setPeople((prev) => prev.map((p, j) => (j === i ? { ...p, ...change } : p)));
 
-  if (state.confirmed) return <Confirmed confirmed={state.confirmed} pathname={pathname} />;
+  const below = (
+    <SignedUpContext value={{ confirmed: Boolean(state.confirmed), booked: state.confirmed?.booked ?? [], carries: state.confirmed?.carriesOver ?? false }}>
+      {more}
+    </SignedUpContext>
+  );
+  if (state.confirmed)
+    return (
+      <>
+        <Confirmed confirmed={state.confirmed} pathname={pathname} />
+        {below}
+      </>
+    );
 
   // The group's count shows once someone's been added.
   const progress = people.length > 0 && (
@@ -218,6 +249,7 @@ export function SignupForm({
     const i = step.i;
     const p = people[i];
     return (
+      <>
       <form
         className="space-y-6"
         onSubmit={(e) => {
@@ -262,6 +294,8 @@ export function SignupForm({
           </Button>
         </div>
       </form>
+      {below}
+      </>
     );
   }
 
@@ -276,6 +310,7 @@ export function SignupForm({
     const toggle = (id: string) =>
       setPerson(i, { shifts: p.shifts.includes(id) ? p.shifts.filter((x) => x !== id) : [...p.shifts, id] });
     return (
+      <>
       <form className="space-y-6" onSubmit={onPicked(i)}>
         {progress}
         <div>
@@ -323,6 +358,8 @@ export function SignupForm({
         <FormMessage error={problem} />
         {nextButtons(i)}
       </form>
+      {below}
+      </>
     );
   }
 
@@ -416,6 +453,7 @@ export function SignupForm({
       );
     };
     return (
+      <>
       <form
         className="space-y-6"
         onSubmit={(e) => {
@@ -475,18 +513,19 @@ export function SignupForm({
           ) : null}
           <p className="text-center text-xs text-muted">
             Contact details are shared only with the event team.{hasItems ? " If you bring something, others see your first name (never for anyone under 18) and what you're bringing." : ""}{" "}
-            {keepsHistory
-              ? "Phone numbers are deleted 10 days after the event; the organizer keeps adults' names, emails, and how many shifts each person volunteered until 2 years after their last event, to thank and invite back returning volunteers."
-              : "Everyone's details are deleted 10 days after the event."}
+            {retentionLine(keepsHistory)}
           </p>
         </ActionPendingContext>
       </form>
+      {below}
+      </>
     );
   }
 
   // -------------------------------------------------------------------------
   // The booker: their shifts (and items), and their details.
   return (
+    <>
     <BookerStep
       stations={stations}
       hasItems={hasItems}
@@ -506,7 +545,10 @@ export function SignupForm({
       disabled={disabled}
       waiting={opensOn}
       grouped={people.length > 0}
+      moreBelow={moreBelow}
     />
+    {below}
+    </>
   );
 }
 
@@ -529,6 +571,7 @@ function BookerStep({
   disabled,
   waiting,
   grouped,
+  moreBelow,
 }: {
   stations: PublicStation[];
   hasItems: boolean;
@@ -549,6 +592,7 @@ function BookerStep({
   /** Sign-up opens that day ("Mon, Jan 4"): read-only until then. */
   waiting?: string;
   grouped: boolean;
+  moreBelow?: boolean;
 }) {
   const [activeId, setActiveId] = useState(stations[0]?.id);
   // Tabs only once there are six or more jobs; up to five sit one under the other, so none hides.
@@ -562,6 +606,8 @@ function BookerStep({
       return next;
     });
   const set = (change: Partial<typeof me>) => setMe((prev) => ({ ...prev, ...change }));
+  // The first full shift points down to "More ways to help" (once, not under every full row).
+  const firstFull = moreBelow && !waiting ? stations.flatMap((st) => st.shifts).find((sh) => spotsFor(sh.id) <= 0 && !mine.includes(sh.id))?.id : undefined;
 
   return (
     <form onSubmit={onSubmit} className="space-y-8">
@@ -688,7 +734,16 @@ function BookerStep({
               </ul>
             )}
             {st.shifts.length > 0 && (
-              <ShiftChoices shifts={st.shifts} chosen={mine} onToggle={toggle} spotsFor={spotsFor} whyNot={whyNot} disabled={disabled} readOnly={Boolean(waiting)} />
+              <ShiftChoices
+                shifts={st.shifts}
+                chosen={mine}
+                onToggle={toggle}
+                spotsFor={spotsFor}
+                whyNot={whyNot}
+                disabled={disabled}
+                readOnly={Boolean(waiting)}
+                fullNoteOn={firstFull}
+              />
             )}
           </Card>
         ))}
@@ -756,6 +811,7 @@ function ShiftChoices({
   whyNot,
   disabled,
   readOnly = false,
+  fullNoteOn,
 }: {
   shifts: PublicShift[];
   chosen: string[];
@@ -765,6 +821,8 @@ function ShiftChoices({
   disabled?: boolean;
   /** Before sign-up opens: each shift with what's left, and nothing to tick. */
   readOnly?: boolean;
+  /** The full shift that points down to "More ways to help". */
+  fullNoteOn?: string;
 }) {
   if (readOnly)
     return (
@@ -820,6 +878,14 @@ function ShiftChoices({
               </span>
               <span className="shrink-0 text-sm font-medium">{left <= 0 && !isChosen ? "Full" : `${Math.max(left, 0)} left`}</span>
             </label>
+            {s.id === fullNoteOn && (
+              <p className="mt-1 px-1 text-sm">
+                This shift is full. Pick another time, or{" "}
+                <a href="#more" className="font-semibold text-brand underline underline-offset-4">
+                  see more ways to help below
+                </a>
+              </p>
+            )}
           </li>
         );
       })}
@@ -827,7 +893,7 @@ function ShiftChoices({
   );
 }
 
-function Confirmed({ confirmed: c, pathname }: { confirmed: NonNullable<SignupState["confirmed"]>; pathname: string }) {
+export function Confirmed({ confirmed: c, pathname }: { confirmed: NonNullable<SignupState["confirmed"]>; pathname: string }) {
   return (
     <Card className="space-y-4" role="status">
       <h2 className="text-xl font-semibold">{c.people.length ? "Everyone's signed up" : "You're signed up"}</h2>
@@ -898,7 +964,7 @@ function Confirmed({ confirmed: c, pathname }: { confirmed: NonNullable<SignupSt
         ) : (
           <>Save this page or take a screenshot so you have your sign-up.</>
         )}{" "}
-        This device will remember your signup, so you can come back anytime to view or cancel it. No login needed.
+        This device will remember your sign-up, so you can come back to view or cancel it. No login needed.
       </p>
       <div className="flex flex-wrap gap-3">
         <Link
@@ -909,7 +975,7 @@ function Confirmed({ confirmed: c, pathname }: { confirmed: NonNullable<SignupSt
         </Link>
         {/* A full reload brings back a fresh form with up-to-date open spots. */}
         <a href={pathname} className="inline-flex min-h-11 items-center rounded-md border border-brand px-4 text-sm font-medium text-brand hover:bg-brand-soft">
-          Sign up for more
+          Add another shift here
         </a>
       </div>
     </Card>

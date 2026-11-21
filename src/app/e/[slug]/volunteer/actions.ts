@@ -1,5 +1,8 @@
 "use server";
 
+import { createHash } from "node:crypto";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { z } from "zod";
 import type { ActionState } from "@/lib/action-state";
@@ -13,7 +16,7 @@ import { googleCalendarUrl } from "@/lib/ics";
 import { normalizePhone } from "@/lib/phone";
 import { isSchemaError } from "@/lib/schema-check";
 import { createAdminClient } from "@/lib/supabase/server";
-import { formatDate, formatTimeRange, utcToZonedDate } from "@/lib/time";
+import { formatDate, formatTime, formatTimeRange, utcToZonedDate } from "@/lib/time";
 import {
   icsDownloadUrl,
   loadCalendarEntries,
@@ -24,7 +27,8 @@ import {
   type GroupLine,
   type ItemLine,
 } from "@/lib/volunteer-emails";
-import { addToPass } from "@/lib/volunteer-pass";
+import { addToPass, forgetPass, readPass } from "@/lib/volunteer-pass";
+import { passContact } from "./remembered";
 
 /** One added person's line on the confirmation screen. */
 export type GroupConfirmation = { name: string; shifts: string[]; emailed: string | null };
@@ -39,6 +43,10 @@ export type SignupState = ActionState & {
     items: ItemLine[];
     /** Everyone they added, each with their own shifts. */
     people: GroupConfirmation[];
+    /** When the shifts just booked run, so "More from [Org]" leaves out anything at the same time. */
+    booked: { startsAt: string; endsAt: string }[];
+    /** An adult booked: their details carry over to another sign-up from this device. */
+    carriesOver: boolean;
   };
 };
 
@@ -122,6 +130,42 @@ export async function signUpVolunteer(eventId: string, _prev: SignupState, formD
   if (anyMinor && !consent) return { error: "Please tick the box to confirm you can sign up everyone under 18." };
   if (!(await passesBotCheck(formData))) return { error: BOT_CHECK_FAILED };
 
+  const result = await saveSignup(
+    eventId,
+    { booker: { name: booker.name, email: booker.email, phone, minor: booker.minor, age: booker.minor ? booker.age : null }, shiftIds, items, people, others, consent: anyMinor },
+    helpLinkSource(formData.get("via")),
+  );
+  delete result.code;
+  return result;
+}
+
+type Other = { name: string; minor: boolean; age: number | null; email: string; phone: string; shift_ids: string[] };
+
+/**
+ * Saves a checked sign-up (sign_up_group), then remembers this device, sends the confirmation emails, and counts
+ * where it came from. Shared by the sign-up form and the confirm step. `code` is the database's refusal code
+ * (P0002: the shift just filled up).
+ */
+async function saveSignup(
+  eventId: string,
+  {
+    booker,
+    shiftIds,
+    items,
+    people,
+    others,
+    consent: anyMinor,
+  }: {
+    booker: { name: string; email: string; phone: string; minor: boolean; age: number | null };
+    shiftIds: string[];
+    items: SignupPayload["items"];
+    people: SignupPayload["people"];
+    others: Other[];
+    consent: boolean;
+  },
+  source: ReturnType<typeof helpLinkSource>,
+): Promise<SignupState & { code?: string }> {
+  const phone = booker.phone;
   const admin = createAdminClient();
 
   // Fairs close online sign-up on the day itself: helpers who show up go to the volunteer desk.
@@ -154,7 +198,7 @@ export async function signUpVolunteer(eventId: string, _prev: SignupState, formD
     p_consent: anyMinor ? GUARDIAN_CONSENT : null,
   });
   if (error) {
-    if (["P0001", "P0002", "P0003", "P0005", "P0006"].includes(error.code ?? "")) return { error: error.message };
+    if (["P0001", "P0002", "P0003", "P0005", "P0006"].includes(error.code ?? "")) return { error: error.message, code: error.code };
     if (isSchemaError(error)) {
       return { error: "Sign-up isn't available right now while the organizers finish an update. Please try again later." };
     }
@@ -257,7 +301,6 @@ export async function signUpVolunteer(eventId: string, _prev: SignupState, formD
   // The names-free count of sign-ups by where they came from (a "More ways to help" link, the organization page,
   // or direct): one per sign-up that booked something new. Only the source and the day are kept.
   if (fresh.length + freshItems.length + added.length > 0) {
-    const source = helpLinkSource(formData.get("via"));
     after(async () => {
       const { error: countError } = await admin.rpc("bump_help_link_signup", { p_event: eventId, p_source: source });
       if (countError && !isSchemaError(countError)) console.error("Counting the sign-up failed", countError.message);
@@ -295,6 +338,8 @@ export async function signUpVolunteer(eventId: string, _prev: SignupState, formD
       alreadySignedUp: booked.length - fresh.length,
       items: itemLines,
       people: theirLines,
+      booked: entries.filter((e) => freshIds.has(e.assignment_id)).map((e) => ({ startsAt: e.starts_at, endsAt: e.ends_at })),
+      carriesOver: !booker.minor,
     },
   };
 }
@@ -308,4 +353,112 @@ async function loadCalendarEntriesAll(assignmentIds: string[]): Promise<Calendar
     return [];
   }
   return (data ?? []) as CalendarEntry[];
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The confirm step: arriving from "More ways to help" or the organization page with ?shift=, details carried over
+// from the sign-up this device remembers. Its own action (owner decision, 2026-11-20): no 2.5-second timer (a
+// remembered parent can confirm at once), an invisible bot check, and a limit per device.
+// ---------------------------------------------------------------------------------------------------------------
+
+export type ConfirmState = SignupState & {
+  /** The shift filled up before they confirmed: nothing was saved. */
+  filled?: { job: string; at: string };
+};
+
+const CONFIRM_WINDOW_MS = 10 * 60 * 1000;
+const CONFIRM_LIMIT = 6;
+const recentConfirms = new Map<string, number[]>();
+
+/** A few confirms per device in ten minutes (this server's memory: a first line, with the per-email check below). */
+function overConfirmLimit(key: string) {
+  const now = Date.now();
+  const times = (recentConfirms.get(key) ?? []).filter((t) => now - t < CONFIRM_WINDOW_MS);
+  if (times.length >= CONFIRM_LIMIT) return true;
+  recentConfirms.set(key, [...times, now]);
+  if (recentConfirms.size > 5000) recentConfirms.delete(recentConfirms.keys().next().value!);
+  return false;
+}
+
+/** Shifts booked under one email in the last ten minutes, everywhere (the limit that survives restarts). */
+async function recentBookings(email: string) {
+  const since = new Date(Date.now() - CONFIRM_WINDOW_MS).toISOString();
+  const { data } = await createAdminClient()
+    .from("volunteers")
+    .select("volunteer_assignments!inner(id)")
+    .eq("email", email)
+    .gte("volunteer_assignments.created_at", since);
+  return ((data ?? []) as { volunteer_assignments: unknown[] }[]).reduce((n, v) => n + (v.volunteer_assignments?.length ?? 0), 0);
+}
+
+const confirmSchema = z.object({
+  shift: uuid,
+  fresh: z.boolean(),
+  name: z.string().trim().max(200),
+  email: z.string().trim().toLowerCase().max(320),
+  phone: z.string().trim().max(40),
+});
+
+/**
+ * Signs the remembered person (pass_contact, read again here: never from the page) up for one shift, filling in
+ * only what the device doesn't have (name, email, phone) from the form. Minors never come here (they use the full
+ * form). Through sign_up_group like every sign-up; the new shift joins this device's pass, the usual confirmation
+ * email goes out, and the sign-up is counted by source.
+ */
+export async function confirmWithPass(eventId: string, _prev: ConfirmState, formData: FormData): Promise<ConfirmState> {
+  // The bot trap field still applies; the timer doesn't.
+  if (String(formData.get("website") ?? "")) return { error: "Something went wrong. Please try again." };
+  const parsed = confirmSchema.safeParse({
+    shift: formData.get("shift"),
+    fresh: formData.get("fresh") === "1",
+    name: formData.get("name") ?? "",
+    email: formData.get("email") ?? "",
+    phone: formData.get("phone") ?? "",
+  });
+  if (!parsed.success) return { error: "Something went wrong. Please try again." };
+  const { shift, fresh, name, email, phone: typedPhone } = parsed.data;
+
+  const pass = await readPass();
+  const remembered = fresh ? null : await passContact(pass);
+  if (remembered?.minor) return { error: "Please use the sign-up form for anyone under 18." };
+  const who = {
+    name: remembered?.fullName ?? name,
+    email: remembered?.email ?? email,
+    phone: remembered?.phone ?? typedPhone,
+  };
+  if (who.name.length < 2) return { error: "Please enter your first and last name." };
+  if (!z.string().email().safeParse(who.email).success) return { error: "Please enter a valid email address." };
+  const phone = normalizePhone(who.phone);
+  if (!phone) return { error: who.phone ? "Please enter a 10-digit mobile phone number." : "Please enter your mobile phone number." };
+
+  const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
+  const key = pass.v.length || pass.a.length ? `pass:${createHash("sha256").update([...pass.v, ...pass.a].sort().join(",")).digest("hex")}` : `ip:${ip}`;
+  if (overConfirmLimit(key) || (await recentBookings(who.email)) >= 12) {
+    return { error: "That's a lot of sign-ups in a few minutes. Please wait a little, then try again." };
+  }
+  if (!(await passesBotCheck(formData))) return { error: BOT_CHECK_FAILED };
+
+  const admin = createAdminClient();
+  const { data: picked } = await admin.from("shifts").select("id, event_id, starts_at, stations(name)").eq("id", shift).maybeSingle();
+  if (!picked || picked.event_id !== eventId) return { error: "That shift isn't part of this event. Please pick another." };
+
+  const result = await saveSignup(
+    eventId,
+    { booker: { name: who.name, email: who.email, phone, minor: false, age: null }, shiftIds: [shift], items: [], people: [], others: [], consent: false },
+    helpLinkSource(formData.get("via")),
+  );
+  if (result.code === "P0002") {
+    const { data: ev } = await admin.from("events").select("timezone").eq("id", eventId).maybeSingle();
+    const job = (picked.stations as unknown as { name: string } | null)?.name ?? "This shift";
+    return { filled: { job, at: formatTime(picked.starts_at, ev?.timezone ?? "America/Chicago") } };
+  }
+  delete result.code;
+  return result;
+}
+
+/** "Forget this device" on the confirm step: drops this browser's pass, then shows the step again with empty fields. */
+export async function forgetDevice(formData: FormData) {
+  await forgetPass();
+  const back = String(formData.get("back") ?? "");
+  redirect(/^\/e\/[a-z0-9-]+\/volunteer(\?[\w=&%-]*)?$/.test(back) ? back : "/my");
 }

@@ -41,9 +41,10 @@ function loadTurnstile() {
  * Put inside a public form, above its submit button. Cloudflare's check (about 1.5 MB) loads only once
  * someone starts using the form (a tap, a click, or a key in it), not when the page opens: pages stay fast,
  * and the check still has the seconds it takes to fill the form in to finish. If they send before it's
- * ready, the server says to wait a moment and try again (BOT_CHECK_FAILED).
+ * ready, the server says to wait a moment and try again (BOT_CHECK_FAILED). `eager`: load straight away, for a
+ * one-button step (the confirm step) where the first tap is the send.
  */
-export function BotCheck() {
+export function BotCheck({ eager = false }: { eager?: boolean } = {}) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -63,7 +64,7 @@ export function BotCheck() {
     };
     const firstUse = ["focusin", "pointerdown", "keydown"] as const;
     // A form with no wrapper (shouldn't happen): load straight away, as before.
-    if (!form) start();
+    if (!form || eager) start();
     else for (const type of firstUse) form.addEventListener(type, start, { once: true });
     // Each pass works once: after the form is sent, get a fresh one for the next try.
     const onSubmit = () => {
@@ -77,7 +78,7 @@ export function BotCheck() {
       form?.removeEventListener("submit", onSubmit);
       if (id !== undefined) window.turnstile?.remove(id);
     };
-  }, []);
+  }, [eager]);
   if (!SITE_KEY) return null;
   return <div ref={ref} />;
 }

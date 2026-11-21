@@ -14,6 +14,13 @@ import { eventPhase, sortStations } from "@/lib/contest-day";
 import { hasBooths, leadWords } from "@/lib/event-types";
 import { SignupForm, type PublicStation } from "./signup-form";
 import { helpLinkSource } from "@/lib/help-link-source";
+import { Suspense } from "react";
+import { formatTime } from "@/lib/time";
+import { confirmWithPass, forgetDevice } from "./actions";
+import { ConfirmStep, type ConfirmShift } from "./confirm-step";
+import { MoreWays } from "./more-ways";
+import type { MoreMode } from "./more-ways-block";
+import { loadRemembered, phoneEnding } from "./remembered";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -38,15 +45,35 @@ async function keepsVolunteerHistory(eventId: string) {
   return org?.plan_tiers?.volunteer_history === true;
 }
 
+/** The account's organization page is on (a full shift then points down to "More ways to help"). */
+async function orgPageOn(eventId: string) {
+  const { data, error } = await createAdminClient().from("events").select("organizations(org_page_on)").eq("id", eventId).maybeSingle();
+  if (error) return false;
+  return (data?.organizations as { org_page_on?: boolean } | null | undefined)?.org_page_on === true;
+}
+
+/** Who to ask when sign-up is closed: the page's contact, or a reply-to the organizer typed; never a sign-in email. */
+async function closedContact(eventId: string) {
+  const { data, error } = await createAdminClient().rpc("signup_closed_contact", { p_event: eventId });
+  return error ? null : ((data as string | null) ?? null);
+}
+
+const isUuid = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v);
+
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const event = await loadEvent((await params).slug);
   return { title: event ? `Volunteer: ${event.name}` : "Volunteer sign-up" };
 }
 
-export default async function VolunteerSignupPage({ params, searchParams }: Params & { searchParams: Promise<{ via?: string | string[] }> }) {
+export default async function VolunteerSignupPage({
+  params,
+  searchParams,
+}: Params & { searchParams: Promise<{ via?: string | string[]; shift?: string | string[]; fresh?: string | string[] }> }) {
   const { slug } = await params;
+  const query = await searchParams;
   // Where the visitor came from ("More ways to help" or the organization page), for the names-free count.
-  const via = helpLinkSource((await searchParams).via);
+  const via = helpLinkSource(query.via);
+  const viaShort = via === "more_ways" ? "more" : via === "org_page" ? "org" : null;
   const event = await loadEvent(slug);
   if (!event) missing();
 
@@ -131,9 +158,52 @@ export default async function VolunteerSignupPage({ params, searchParams }: Para
     ...(event.venue_place_id ? { query_place_id: event.venue_place_id } : {}),
   })}`;
 
-  // With the account's color, the event name sits on a full-width band of it.
+  // Every shift (and thing to bring) taken: the page leads with "More ways to help" instead of a form.
+  const allTaken =
+    publicStations.length > 0 &&
+    publicStations.every((st) => st.shifts.every((sh) => sh.spotsLeft <= 0) && st.items.every((it) => it.left <= 0));
+  const published = event.status === "published";
+  const closed = published && !isOpen && !opensOn;
+  const mode: MoreMode = closed ? "closed" : isOpen && allTaken ? "full" : "open";
+  const [keepsHistory, pageOn, contact] = await Promise.all([
+    keepsVolunteerHistory(event.id),
+    published ? orgPageOn(event.id) : false,
+    closed && !fairDay ? closedContact(event.id) : null,
+  ]);
+  const more = published ? (
+    <Suspense fallback={null}>
+      <MoreWays eventId={event.id} mode={mode} />
+    </Suspense>
+  ) : null;
+
+  // The confirm step: another event's "More ways to help" (or the organization page) chose a shift here.
+  const shiftList: ConfirmShift[] = publicStations.flatMap((st) =>
+    st.shifts.map((sh) => ({
+      id: sh.id,
+      job: st.name,
+      when: `${formatDate(utcToZonedDate(sh.startsAt, tz), { year: undefined })} · ${formatTimeRange(sh.startsAt, sh.endsAt, tz)}`,
+      clock: formatTime(sh.startsAt, tz),
+      spotsLeft: sh.spotsLeft,
+      startsAt: sh.startsAt,
+    })),
+  );
+  const wanted = viaShort && isOpen && isUuid(query.shift) ? shiftList.find((sh) => sh.id === query.shift) : undefined;
+  const fresh = query.fresh === "1";
+  const remembered = viaShort && !fresh ? await loadRemembered() : null;
+  // Under-18s (and anyone adding people) use the full form, with the shift ticked.
+  const confirmStep = wanted && !remembered?.minor;
+  const stepHref = (extra: Record<string, string>) => `/e/${slug}/volunteer?${new URLSearchParams({ ...(wanted ? { shift: wanted.id } : {}), via: viaShort ?? "", ...extra })}`;
+
+  // With the account's color, the event name sits on a full-width band of it. The confirm step's band is short, so
+  // its button shows without scrolling on a phone.
   const band = !!(await loadEventBrand(slug)).color;
-  const heading = (
+  const heading = confirmStep ? (
+    <EventHeading band={band} title={event.name} compact>
+      <p className="mt-1 text-sm text-muted">
+        {formatDateRange(event.starts_on, event.ends_on)} · {[event.venue_name, event.venue_address].filter(Boolean).join(" · ")}
+      </p>
+    </EventHeading>
+  ) : (
     <EventHeading band={band} eyebrow="Volunteer sign-up" title={event.name}>
       <p className="mt-2 text-muted">
         {formatDateRange(event.starts_on, event.ends_on)} · All times {zoneName(tz)}
@@ -146,6 +216,62 @@ export default async function VolunteerSignupPage({ params, searchParams }: Para
       </p>
       {event.public_notes && <p className="mt-4 leading-7">{event.public_notes}</p>}
     </EventHeading>
+  );
+
+  const alreadySigned = (
+    <p className="mt-10 text-center text-sm text-muted">
+      Already signed up?{" "}
+      <Link href="/my" className="font-medium text-brand underline-offset-4 hover:underline">
+        Go to My volunteering
+      </Link>
+    </p>
+  );
+
+  if (confirmStep && wanted) {
+    return (
+      <>
+        <EventHeaderBar slug={slug} />
+        {band && heading}
+        <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-4 sm:py-10">
+          {!band && heading}
+          <div className={band ? "" : "mt-5"}>
+            <ConfirmStep
+              action={confirmWithPass.bind(null, event.id)}
+              forget={forgetDevice}
+              shift={wanted}
+              shifts={shiftList}
+              remembered={
+                remembered
+                  ? {
+                      name: remembered.fullName,
+                      email: remembered.email,
+                      phoneEnding: phoneEnding(remembered.phone),
+                      from: remembered.eventId === event.id ? null : remembered.eventName,
+                    }
+                  : null
+              }
+              needs={{ name: !remembered, email: !remembered, phone: !remembered?.phone }}
+              via={viaShort!}
+              keepsHistory={keepsHistory}
+              eventName={event.name}
+              pickHref={`/e/${slug}/volunteer?via=${viaShort}`}
+              differentHref={stepHref({ fresh: "1" })}
+              backHref={stepHref({})}
+              startsFull={wanted.spotsLeft <= 0}
+              more={more}
+            />
+          </div>
+          {alreadySigned}
+        </main>
+      </>
+    );
+  }
+
+  const topNote = (title: string, body: React.ReactNode) => (
+    <Card className="mt-8 bg-brand-soft">
+      <p className="font-medium">{title}</p>
+      {body && <div className="mt-1 text-sm leading-6">{body}</div>}
+    </Card>
   );
 
   return (
@@ -174,51 +300,102 @@ export default async function VolunteerSignupPage({ params, searchParams }: Para
           <RefreshAt at={signupOpensAt(opensOn, tz).toISOString()} />
         </Card>
       )}
-      {!isOpen && !opensOn && (
-        <Card className="mt-8 bg-brand-soft">
-          <p className="font-medium">
-            {fairDay
-              ? "Online sign-up is closed on fair day."
-              : event.status === "published"
-                ? "Volunteer sign-up is closed."
-                : "Preview: this page isn't public yet."}
-          </p>
-          <p className="mt-1 text-sm text-muted">
-            {fairDay
-              ? "Want to help today? Find the volunteer desk at the fair, and they'll add you to a shift."
-              : event.status === "published"
-                ? "Please contact the event organizers if you'd like to help."
-              : "Only your team can see it. Publish the event and open volunteer sign-up to start taking sign-ups."}
-          </p>
-        </Card>
+      {!published &&
+        topNote(
+          "Preview: this page isn't public yet.",
+          <p className="text-muted">Only your team can see it. Publish the event and open volunteer sign-up to start taking sign-ups.</p>,
+        )}
+      {closed &&
+        topNote(
+          fairDay ? "Online sign-up is closed on fair day." : "Volunteer sign-up is closed.",
+          fairDay ? (
+            <p>Want to help today? Find the volunteer desk at the fair, and they&apos;ll add you to a shift.</p>
+          ) : contact ? (
+            <p>
+              Questions? Email the organizer at{" "}
+              <a href={`mailto:${contact}`} className="font-semibold text-brand underline underline-offset-4 [overflow-wrap:anywhere]">
+                {contact}
+              </a>
+            </p>
+          ) : null,
+        )}
+      {mode === "full" && topNote("Every shift is full.", <p>Thank you to everyone who signed up.</p>)}
+
+      {mode !== "open" ? (
+        // Full or closed: "More ways to help" right under the note; this event's shifts read-only behind a disclosure.
+        <>
+          {more}
+          {publicStations.length > 0 && <ClosedShifts stations={publicStations} />}
+        </>
+      ) : (
+        <div className="mt-8">
+          {publicStations.length === 0 ? (
+            <>
+              <Card>
+                <p className="text-muted">Nothing is open for sign-up right now.</p>
+              </Card>
+              {more}
+            </>
+          ) : (
+            <SignupForm
+              action={signUpVolunteer.bind(null, event.id)}
+              spots={currentSpots.bind(null, event.id)}
+              stations={publicStations}
+              disabled={!isOpen}
+              opensOn={opensOn ? signupDay(opensOn) : undefined}
+              lead={leadWords(event.event_type).one}
+              keepsHistory={keepsHistory}
+              via={via === "direct" ? undefined : via}
+              more={more}
+              moreBelow={pageOn}
+              initialShift={wanted?.id}
+              // Remembered details fill in the form from these links (name and email; the phone stays on the server).
+              prefill={remembered && !remembered.minor ? { name: remembered.fullName, email: remembered.email } : undefined}
+            />
+          )}
+        </div>
       )}
 
-      <div className="mt-8">
-        {publicStations.length === 0 ? (
-          <Card>
-            <p className="text-muted">Nothing is open for sign-up right now.</p>
-          </Card>
-        ) : (
-          <SignupForm
-            action={signUpVolunteer.bind(null, event.id)}
-            spots={currentSpots.bind(null, event.id)}
-            stations={publicStations}
-            disabled={!isOpen}
-            opensOn={opensOn ? signupDay(opensOn) : undefined}
-            lead={leadWords(event.event_type).one}
-            keepsHistory={await keepsVolunteerHistory(event.id)}
-            via={via === "direct" ? undefined : via}
-          />
-        )}
-      </div>
-
-      <p className="mt-10 text-center text-sm text-muted">
-        Already signed up?{" "}
-        <Link href="/my" className="font-medium text-brand underline-offset-4 hover:underline">
-          Go to My volunteering
-        </Link>
-      </p>
+      {alreadySigned}
     </main>
     </>
+  );
+}
+
+/** Full or closed: this event's shifts and things to bring, read-only, behind "See the shifts". */
+function ClosedShifts({ stations }: { stations: PublicStation[] }) {
+  return (
+    <details className="group mt-10 rounded-lg border border-border bg-surface">
+      <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 px-4 py-3 font-semibold [&::-webkit-details-marker]:hidden">
+        <span className="flex-1">See the shifts</span>
+        <svg aria-hidden viewBox="0 0 20 20" className="size-5 shrink-0 text-muted transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </summary>
+      <div className="space-y-4 border-t border-border p-4">
+        {stations.map((st) => (
+          <div key={st.id}>
+            <h3 className="font-semibold">{st.name}</h3>
+            <ul className="mt-2 space-y-2">
+              {st.shifts.map((s) => (
+                <li key={s.id} className="flex min-h-14 items-center gap-3 rounded-lg border border-border px-3 py-2.5">
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium">{s.when}</span>
+                    <span className="block text-sm text-muted">{s.title}</span>
+                  </span>
+                  <span className="shrink-0 text-sm font-medium">{s.spotsLeft <= 0 ? "Full" : `${s.spotsLeft} left`}</span>
+                </li>
+              ))}
+              {st.items.map((it) => (
+                <li key={it.id} className="flex min-h-11 items-center gap-3 rounded-lg border border-border px-3 py-2.5">
+                  <span className="min-w-0 flex-1 font-medium">{it.name}</span>
+                  <span className="shrink-0 text-sm font-medium">{it.left <= 0 ? "Covered" : `${it.left} of ${it.needed} still needed`}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
