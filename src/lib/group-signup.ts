@@ -32,3 +32,9 @@ export function groupProgress(others: number) {
   const left = MAX_OTHERS - others;
   return `${who} · ${left <= 0 ? "Group full" : `${left} spot${left === 1 ? "" : "s"} left`}`;
 }
+
+/**
+ * Sent as the booker's phone when the form uses the number this device's earlier sign-up gave ("Phone ending 0142"):
+ * the server reads the real number again (pass_contact) and never takes it from the page.
+ */
+export const PHONE_ON_FILE = "on-file";

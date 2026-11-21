@@ -1,6 +1,7 @@
 import { groupWords, hasBooths, hasConferences, hasEnsembles, hasParents, hasRooms, isMeeting } from "@/lib/event-types";
 import { formatDate } from "@/lib/time";
 import { signupOpensClock } from "@/lib/volunteer-signup";
+import { NOBODY_EMAILED_SHOWN } from "@/lib/org-page-words";
 
 /**
  * The host's setup checklist for one event: what to do before publishing,
@@ -24,6 +25,8 @@ export type SetupStep = {
 
 export type SetupFacts = {
   eventId: string;
+  /** Volunteer events and fairs: it will be shown on the account's organization page (page on, event switched on). */
+  orgPageShown?: boolean;
   eventType: string;
   published: boolean;
   stations: number;
@@ -571,7 +574,8 @@ function publishEffectsBase(f: SetupFacts): string[] {
     );
   }
   if (hasBooths(f.eventType)) lines.push("Booths you've listed publicly appear on your event page.");
-  lines.push("Nobody is emailed or notified. People only find out when you share your link.");
+  // Once it's shown on the organization page, people find it there and on the account's other sign-up pages too.
+  lines.push(f.orgPageShown ? NOBODY_EMAILED_SHOWN : "Nobody is emailed or notified. People only find out when you share your link.");
   lines.push("You can keep editing everything, and unpublish at any time.");
   return lines;
 }

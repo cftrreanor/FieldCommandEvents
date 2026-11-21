@@ -67,6 +67,8 @@ import { CopiedNote, CopiedStepsLine, loadCopyFacts, NewDateList, type CopyFacts
 import { CopyPublish, PublishedNote } from "./copy-publish";
 import { NotEmailedLine } from "./team/copied-coordinators";
 import { loadCopiedPeople } from "@/lib/duplicate-event";
+import { PublishOrgLine } from "@/components/org-page-switch";
+import { loadEventOrgPage } from "@/lib/org-page-summary";
 import { copyStepLabel, copyStepPath, listAnd as listWords, mapsAndDocuments, newDateBlocker, newDateStepLabel, places, plural as pluralWords } from "@/lib/duplicate-words";
 
 export const metadata: Metadata = { title: "Event setup" };
@@ -353,6 +355,9 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
   const dayActions = await loadDayActions(eventId);
   // Hosts: the setup checklist and what publishing will do (the same facts every event page's strip uses).
   const setup: SetupFacts | null = access.isHost ? await loadSetupFacts(eventId) : null;
+  // Volunteer events and fairs: whether publishing puts it on the organization page (the Publish step's line, with its switch).
+  const orgPage = setup && event.status !== "published" ? await loadEventOrgPage(supabase, event) : null;
+  if (setup && orgPage) setup.orgPageShown = orgPage.status.page_on && orgPage.status.on_org_page;
   const checklist = setup ? setupChecklist(setup) : null;
   // A duplicated event (Duplicate event, 2026-11-20): its "Copied from" note and publish window while a draft; once
   // published, a line for anyone not emailed until they're sent or removed.
@@ -1098,6 +1103,14 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
         }
         // A one-day meetings event's optional contact email lives here (it has no More options step: owner, 2026-11-09).
         contact={conferenceHere && access.isHost && conference?.schedule !== "weekly" ? { initial: conference?.contact_email ?? null, meeting: event.event_type === "meeting" } : undefined}
+        orgLine={
+          orgPage
+            ? {
+                shown: Boolean(setup?.orgPageShown),
+                node: <PublishOrgLine eventId={eventId} eventName={event.name} orgName={orgPage.orgName} orgId={event.organization_id} status={orgPage.status} />,
+              }
+            : undefined
+        }
         copy={copyFacts ? await copyPublishParts(copyFacts, conferenceHere ? `/e/${event.slug}/book` : fest ? publicUrl : `/e/${event.slug}/volunteer`, user.id, user.email ?? "") : undefined}
       /> : null;
 
@@ -1394,7 +1407,10 @@ function PublishPanel({
   festival,
   copy,
   signupDay: day,
+  orgLine,
 }: {
+  /** Volunteer events and fairs: whether it goes on the organization page, with its switch (just before "Nobody is emailed"). */
+  orgLine?: { node: ReactNode; shown: boolean };
   /** Volunteer events and fairs: the "Sign-up opens" box, beside the publish buttons. */
   signupDay?: { initial: string; today: string; lastDay: string; rangeMessage: string; firstDay: string | null };
   /** A duplicated draft: its publish window in place of the buttons, what's left to look over, and any "[new date]" left. */
@@ -1444,7 +1460,9 @@ function PublishPanel({
           ? signupOpensOnEffect(opensOn, facts.timezone)
           : "With Publish and open sign-up, volunteers can pick a shift or an item right away."
         : copy?.effect && line.startsWith("Nobody is emailed")
-          ? "Volunteers aren't emailed. People only find out when you share your link."
+          ? facts.orgPageShown
+            ? "Volunteers aren't emailed. People find it from your link, your organization page, and your other sign-up pages."
+            : "Volunteers aren't emailed. People only find out when you share your link."
           : line,
     ),
     ...(copy?.effect ? [copy.effect] : []),
@@ -1588,10 +1606,21 @@ function PublishPanel({
           <p className="mt-4 text-sm font-semibold">When you publish:</p>
           <ul className="mt-2 space-y-1.5 text-sm text-muted">
             {effects.map((line) => (
-              <li key={line} className="flex gap-2">
-                <span aria-hidden className="text-success">✓</span>
-                <span>{line}</span>
-              </li>
+              <Fragment key={line}>
+                {orgLine && /^(Nobody is emailed|Volunteers aren't emailed)/.test(line) && (
+                  <li className="flex gap-2">
+                    {/* The same width as the ticks, so every line starts in one column. */}
+                    <span aria-hidden className={`w-4 shrink-0 text-center ${orgLine.shown ? "text-success" : "text-muted"}`}>
+                      {orgLine.shown ? "✓" : "–"}
+                    </span>
+                    <div className="min-w-0 flex-1 text-foreground">{orgLine.node}</div>
+                  </li>
+                )}
+                <li className="flex gap-2">
+                  <span aria-hidden className="w-4 shrink-0 text-center text-success">✓</span>
+                  <span>{line}</span>
+                </li>
+              </Fragment>
             ))}
           </ul>
         </>

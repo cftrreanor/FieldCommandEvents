@@ -12337,4 +12337,1048 @@ select set_config('app.cleaning_up', 'off', false);
 reset role;
 delete from public.organizations where id in ('dc000000-0000-0000-0000-000000000001', 'dc000000-0000-0000-0000-000000000002');
 
+-- ---------------------------------------------------------------------------
+-- The organization page and "More ways to help" (20270210000000_org_page.sql).
+-- Who can turn it on and choose events (the Account Host and Co-hosts of every event; not a Co-host of one event,
+-- a Volunteer Lead, or a Coordinator, through the functions or by direct update); the turn-on refusals (empty or a
+-- person's name, no contact, teacher accounts); the address set once; new events starting on or waiting for
+-- review (duplicate_event too); what the public read lists and leaves out (drafts, other kinds, page off,
+-- teacher and suspended accounts, switched off, full, closed, past, fair day, other accounts) and that no names,
+-- emails, or phones come back; Help anytime's access and end dates; the closed note's contact; carrying details
+-- over; and the names-free count.
+-- ---------------------------------------------------------------------------
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('000000ab-0000-0000-0000-000000000001', 'abowner@example.com',   '{"full_name":"Paula Page"}'),
+  ('000000ab-0000-0000-0000-000000000002', 'abevery@example.com',   '{"full_name":"Cora Every"}'),
+  ('000000ab-0000-0000-0000-000000000003', 'abone@example.com',     '{"full_name":"Oren One"}'),
+  ('000000ab-0000-0000-0000-000000000004', 'ablead@example.com',    '{"full_name":"Vera Lead"}'),
+  ('000000ab-0000-0000-0000-000000000005', 'abcoord@example.com',   '{"full_name":"Cody Coord"}'),
+  ('000000ab-0000-0000-0000-000000000006', 'abother@example.com',   '{"full_name":"Otis Outside"}'),
+  ('000000ab-0000-0000-0000-000000000007', 'abteacher@example.com', '{"full_name":"Tess Teacher"}');
+insert into public.organizations (id, name, slug, package, subscription_status, account_kind) values
+  ('ab000000-0000-0000-0000-000000000001', 'Paula Page', 'paula-page-x1y2', 'event', 'comped', 'standard'),
+  ('ab000000-0000-0000-0000-000000000002', 'Riverside Band Boosters', 'ab-riverside', 'event', 'comped', 'standard'),
+  ('ab000000-0000-0000-0000-000000000003', 'Ms. Teacher''s class', 'ab-teacher', 'event', 'comped', 'teacher');
+insert into public.organization_members (organization_id, user_id, role) values
+  ('ab000000-0000-0000-0000-000000000001', '000000ab-0000-0000-0000-000000000001', 'owner'),
+  ('ab000000-0000-0000-0000-000000000001', '000000ab-0000-0000-0000-000000000002', 'admin'),
+  ('ab000000-0000-0000-0000-000000000002', '000000ab-0000-0000-0000-000000000006', 'owner'),
+  ('ab000000-0000-0000-0000-000000000003', '000000ab-0000-0000-0000-000000000007', 'owner');
+
+-- The account's events (made before the page is on, so they all start off):
+--   a1 volunteer, open, room           a2 fair, items still needed only      a3 draft volunteer
+--   a4 meeting                         a5 volunteer, never switched on       a6 volunteer, every shift full
+--   a7 volunteer, over                 a8 volunteer, sign-up opens later     a9 fair, today is fair day
+--   b1 volunteer, sign-up closed       b2 volunteer, today, its only shift ended
+--   b3 volunteer, one shift overlapping a1's first   b4 volunteer, ended 15 days ago (past the 10-day keep)
+--   b5 volunteer more than a year out
+-- And another account's open volunteer event (c1).
+insert into public.events (id, organization_id, name, slug, status, event_type, timezone, starts_on, ends_on, window_start, window_end,
+                           venue_name, venue_address, volunteer_signup_open, volunteer_signup_opens_on)
+values
+  ('ab000000-0000-0000-0000-0000000000a1', 'ab000000-0000-0000-0000-000000000001', 'Fall Carnival', 'ab-carnival', 'published', 'volunteer',
+   'America/Chicago', current_date + 20, current_date + 20, now() + interval '20 days', now() + interval '20 days 8 hours', 'Maple Grove Elementary', '1 School Rd', true, null),
+  ('ab000000-0000-0000-0000-0000000000a2', 'ab000000-0000-0000-0000-000000000001', 'Book Fair', 'ab-book-fair', 'published', 'fair',
+   'America/Chicago', current_date + 30, current_date + 31, now() + interval '30 days', now() + interval '31 days 6 hours', null, '1 School Rd', true, null),
+  ('ab000000-0000-0000-0000-0000000000a3', 'ab000000-0000-0000-0000-000000000001', 'Secret Planning', 'ab-draft', 'draft', 'volunteer',
+   'America/Chicago', current_date + 25, current_date + 25, now() + interval '25 days', now() + interval '25 days 4 hours', null, '1 School Rd', false, null),
+  ('ab000000-0000-0000-0000-0000000000a4', 'ab000000-0000-0000-0000-000000000001', 'Board Meeting', 'ab-meeting', 'published', 'meeting',
+   'America/Chicago', current_date + 22, current_date + 22, now() + interval '22 days', now() + interval '22 days 2 hours', null, '1 School Rd', false, null),
+  ('ab000000-0000-0000-0000-0000000000a5', 'ab000000-0000-0000-0000-000000000001', 'Quiet Cleanup', 'ab-quiet', 'published', 'volunteer',
+   'America/Chicago', current_date + 21, current_date + 21, now() + interval '21 days', now() + interval '21 days 4 hours', null, '1 School Rd', true, null),
+  ('ab000000-0000-0000-0000-0000000000a6', 'ab000000-0000-0000-0000-000000000001', 'Full Bake Sale', 'ab-full', 'published', 'volunteer',
+   'America/Chicago', current_date + 23, current_date + 23, now() + interval '23 days', now() + interval '23 days 4 hours', null, '1 School Rd', true, null),
+  ('ab000000-0000-0000-0000-0000000000a7', 'ab000000-0000-0000-0000-000000000001', 'Last Week Picnic', 'ab-over', 'published', 'volunteer',
+   'America/Chicago', current_date - 3, current_date - 3, now() - interval '3 days', now() - interval '3 days' + interval '4 hours', null, '1 School Rd', true, null),
+  ('ab000000-0000-0000-0000-0000000000a8', 'ab000000-0000-0000-0000-000000000001', 'Spring Gala', 'ab-later', 'published', 'volunteer',
+   'America/Chicago', current_date + 40, current_date + 40, now() + interval '40 days', now() + interval '40 days 4 hours', null, '1 School Rd', true, current_date + 5),
+  ('ab000000-0000-0000-0000-0000000000a9', 'ab000000-0000-0000-0000-000000000001', 'Fair Today', 'ab-fair-day', 'published', 'fair',
+   'America/Chicago', (now() at time zone 'America/Chicago')::date, (now() at time zone 'America/Chicago')::date + 1,
+   now() - interval '1 hour', now() + interval '30 hours', null, '1 School Rd', true, null),
+  ('ab000000-0000-0000-0000-0000000000b1', 'ab000000-0000-0000-0000-000000000001', 'Closed Car Wash', 'ab-closed', 'published', 'volunteer',
+   'America/Chicago', current_date + 24, current_date + 24, now() + interval '24 days', now() + interval '24 days 4 hours', null, '1 School Rd', false, null),
+  ('ab000000-0000-0000-0000-0000000000b2', 'ab000000-0000-0000-0000-000000000001', 'Today Breakfast', 'ab-today', 'published', 'volunteer',
+   'America/Chicago', (now() at time zone 'America/Chicago')::date - 1, (now() at time zone 'America/Chicago')::date + 1,
+   now() - interval '1 day', now() + interval '1 day', null, '1 School Rd', true, null),
+  ('ab000000-0000-0000-0000-0000000000b3', 'ab000000-0000-0000-0000-000000000001', 'Same Time Popcorn', 'ab-overlap', 'published', 'volunteer',
+   'America/Chicago', current_date + 20, current_date + 20, now() + interval '20 days', now() + interval '20 days 8 hours', null, '1 School Rd', true, null),
+  ('ab000000-0000-0000-0000-0000000000b4', 'ab000000-0000-0000-0000-000000000001', 'Long Ago Fun Run', 'ab-long-ago', 'published', 'volunteer',
+   'America/Chicago', current_date - 15, current_date - 15, now() - interval '15 days', now() - interval '15 days' + interval '4 hours', null, '1 School Rd', true, null),
+  ('ab000000-0000-0000-0000-0000000000b5', 'ab000000-0000-0000-0000-000000000001', 'Next Year Gala', 'ab-next-year', 'published', 'volunteer',
+   'America/Chicago', current_date + 400, current_date + 400, now() + interval '400 days', now() + interval '400 days 4 hours', null, '1 School Rd', true, null),
+  ('ab000000-0000-0000-0000-0000000000c1', 'ab000000-0000-0000-0000-000000000002', 'Riverside Car Wash', 'ab-riverside-wash', 'published', 'volunteer',
+   'America/Chicago', current_date + 20, current_date + 20, now() + interval '20 days', now() + interval '20 days 4 hours', null, '9 River Rd', true, null);
+insert into public.stations (id, event_id, name, sort_order, signup_kind) values
+  ('ab000000-0000-0000-0000-0000000005a1', 'ab000000-0000-0000-0000-0000000000a1', 'Ticket booth', 1, 'shifts'),
+  ('ab000000-0000-0000-0000-0000000005a2', 'ab000000-0000-0000-0000-0000000000a2', 'Supplies', 1, 'items'),
+  ('ab000000-0000-0000-0000-0000000005a3', 'ab000000-0000-0000-0000-0000000000a3', 'Planning', 1, 'shifts'),
+  ('ab000000-0000-0000-0000-0000000005a5', 'ab000000-0000-0000-0000-0000000000a5', 'Rakes', 1, 'shifts'),
+  ('ab000000-0000-0000-0000-0000000005a6', 'ab000000-0000-0000-0000-0000000000a6', 'Bakers', 1, 'shifts'),
+  ('ab000000-0000-0000-0000-0000000005a7', 'ab000000-0000-0000-0000-0000000000a7', 'Grill', 1, 'shifts'),
+  ('ab000000-0000-0000-0000-0000000005a8', 'ab000000-0000-0000-0000-0000000000a8', 'Greeters', 1, 'shifts'),
+  ('ab000000-0000-0000-0000-0000000005a9', 'ab000000-0000-0000-0000-0000000000a9', 'Booth', 1, 'shifts'),
+  ('ab000000-0000-0000-0000-0000000005b1', 'ab000000-0000-0000-0000-0000000000b1', 'Soap', 1, 'shifts'),
+  ('ab000000-0000-0000-0000-0000000005b2', 'ab000000-0000-0000-0000-0000000000b2', 'Pancakes', 1, 'shifts'),
+  ('ab000000-0000-0000-0000-0000000005b3', 'ab000000-0000-0000-0000-0000000000b3', 'Popcorn', 1, 'shifts'),
+  ('ab000000-0000-0000-0000-0000000005b4', 'ab000000-0000-0000-0000-0000000000b4', 'Water', 1, 'shifts'),
+  ('ab000000-0000-0000-0000-0000000005b5', 'ab000000-0000-0000-0000-0000000000b5', 'Tables', 1, 'shifts'),
+  ('ab000000-0000-0000-0000-0000000005c1', 'ab000000-0000-0000-0000-0000000000c1', 'Hoses', 1, 'shifts');
+insert into public.shifts (id, station_id, event_id, title, starts_at, ends_at, max_capacity, registered_count) values
+  ('ab000000-0000-0000-0000-0000000006a1', 'ab000000-0000-0000-0000-0000000005a1', 'ab000000-0000-0000-0000-0000000000a1', 'Early',
+   now() + interval '20 days', now() + interval '20 days 2 hours', 4, 1),
+  ('ab000000-0000-0000-0000-0000000006a2', 'ab000000-0000-0000-0000-0000000005a1', 'ab000000-0000-0000-0000-0000000000a1', 'Late',
+   now() + interval '20 days 4 hours', now() + interval '20 days 6 hours', 3, 0),
+  ('ab000000-0000-0000-0000-0000000006a3', 'ab000000-0000-0000-0000-0000000005a3', 'ab000000-0000-0000-0000-0000000000a3', 'Plan',
+   now() + interval '25 days', now() + interval '25 days 2 hours', 3, 0),
+  ('ab000000-0000-0000-0000-0000000006a5', 'ab000000-0000-0000-0000-0000000005a5', 'ab000000-0000-0000-0000-0000000000a5', 'Rake',
+   now() + interval '21 days', now() + interval '21 days 2 hours', 3, 0),
+  ('ab000000-0000-0000-0000-0000000006a6', 'ab000000-0000-0000-0000-0000000005a6', 'ab000000-0000-0000-0000-0000000000a6', 'Bake',
+   now() + interval '23 days', now() + interval '23 days 2 hours', 2, 2),
+  ('ab000000-0000-0000-0000-0000000006a7', 'ab000000-0000-0000-0000-0000000005a7', 'ab000000-0000-0000-0000-0000000000a7', 'Grill',
+   now() - interval '3 days', now() - interval '3 days' + interval '2 hours', 3, 0),
+  ('ab000000-0000-0000-0000-0000000006a8', 'ab000000-0000-0000-0000-0000000005a8', 'ab000000-0000-0000-0000-0000000000a8', 'Greet',
+   now() + interval '40 days', now() + interval '40 days 2 hours', 5, 0),
+  ('ab000000-0000-0000-0000-0000000006a9', 'ab000000-0000-0000-0000-0000000005a9', 'ab000000-0000-0000-0000-0000000000a9', 'Booth',
+   now() + interval '2 hours', now() + interval '4 hours', 5, 0),
+  ('ab000000-0000-0000-0000-0000000006b1', 'ab000000-0000-0000-0000-0000000005b1', 'ab000000-0000-0000-0000-0000000000b1', 'Wash',
+   now() + interval '24 days', now() + interval '24 days 2 hours', 5, 0),
+  ('ab000000-0000-0000-0000-0000000006b2', 'ab000000-0000-0000-0000-0000000005b2', 'ab000000-0000-0000-0000-0000000000b2', 'Flip',
+   now() - interval '3 hours', now() - interval '1 hour', 5, 0),
+  ('ab000000-0000-0000-0000-0000000006b3', 'ab000000-0000-0000-0000-0000000005b3', 'ab000000-0000-0000-0000-0000000000b3', 'Pop',
+   now() + interval '20 days 1 hour', now() + interval '20 days 3 hours', 5, 0),
+  ('ab000000-0000-0000-0000-0000000006b4', 'ab000000-0000-0000-0000-0000000005b4', 'ab000000-0000-0000-0000-0000000000b4', 'Pour',
+   now() - interval '15 days', now() - interval '15 days' + interval '2 hours', 5, 1),
+  ('ab000000-0000-0000-0000-0000000006b5', 'ab000000-0000-0000-0000-0000000005b5', 'ab000000-0000-0000-0000-0000000000b5', 'Set up',
+   now() + interval '400 days', now() + interval '400 days 2 hours', 5, 0),
+  ('ab000000-0000-0000-0000-0000000006c1', 'ab000000-0000-0000-0000-0000000005c1', 'ab000000-0000-0000-0000-0000000000c1', 'Hose',
+   now() + interval '20 days', now() + interval '20 days 2 hours', 5, 0);
+insert into public.station_items (id, station_id, event_id, name, needed) values
+  ('ab000000-0000-0000-0000-0000000007a2', 'ab000000-0000-0000-0000-0000000005a2', 'ab000000-0000-0000-0000-0000000000a2', 'Paper bags', 6);
+-- The event team on Fall Carnival: a Co-host of that one event, a Volunteer Lead, and a Coordinator.
+insert into public.event_staff (event_id, user_id, role) values
+  ('ab000000-0000-0000-0000-0000000000a1', '000000ab-0000-0000-0000-000000000003', 'co_host'),
+  ('ab000000-0000-0000-0000-0000000000a1', '000000ab-0000-0000-0000-000000000004', 'volunteer_director'),
+  ('ab000000-0000-0000-0000-0000000000a1', '000000ab-0000-0000-0000-000000000005', 'section_lead');
+-- People who signed up (made-up): a booker with someone they added (a minor), a returning person whose shift
+-- was added later by someone typing their email, and someone on last month's event.
+insert into public.volunteers (id, event_id, full_name, email, phone, minor, contact_id, created_at) values
+  ('ab000000-0000-0000-0000-0000000008a1', 'ab000000-0000-0000-0000-0000000000a1', 'Priya Parent', 'priya@example.com', '+15125550142', false, null,
+   (current_date - 2) + time '10:00'),
+  ('ab000000-0000-0000-0000-0000000008a2', 'ab000000-0000-0000-0000-0000000000a1', 'Kai P.', 'kai@example.com', '+15125550142', true,
+   'ab000000-0000-0000-0000-0000000008a1', (current_date - 2) + time '10:00'),
+  ('ab000000-0000-0000-0000-0000000008a3', 'ab000000-0000-0000-0000-0000000000a1', 'Rosa Returning', 'rosa@example.com', '+15125550177', false, null,
+   (current_date - 5) + time '10:00'),
+  ('ab000000-0000-0000-0000-0000000008b4', 'ab000000-0000-0000-0000-0000000000b4', 'Lena Longago', 'lena@example.com', '+15125550199', false, null,
+   (current_date - 20) + time '10:00');
+insert into public.volunteer_assignments (id, shift_id, volunteer_id, created_at) values
+  ('ab000000-0000-0000-0000-0000000009a1', 'ab000000-0000-0000-0000-0000000006a1', 'ab000000-0000-0000-0000-0000000008a1', (current_date - 2) + time '10:00'),
+  ('ab000000-0000-0000-0000-0000000009a2', 'ab000000-0000-0000-0000-0000000006a1', 'ab000000-0000-0000-0000-0000000008a2', (current_date - 2) + time '10:00'),
+  ('ab000000-0000-0000-0000-0000000009a3', 'ab000000-0000-0000-0000-0000000006a2', 'ab000000-0000-0000-0000-0000000008a3', (current_date - 1) + time '10:00'),
+  ('ab000000-0000-0000-0000-0000000009b4', 'ab000000-0000-0000-0000-0000000006b4', 'ab000000-0000-0000-0000-0000000008b4', (current_date - 20) + time '10:00');
+
+-- Turning on: who may, and what it needs.
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000003","email":"abone@example.com"}';
+do $$
+begin
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', true, 'Maple Grove PTO', 'hello@maplegrove.example');
+    assert false, 'org page: a Co-host of one event turned the page on';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.org_page_summary('ab000000-0000-0000-0000-000000000001');
+    assert false, 'org page: a Co-host of one event read the account''s summary';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.organizations set org_page_on = true where id = 'ab000000-0000-0000-0000-000000000001';
+    assert not found, 'org page: a Co-host of one event switched the page on directly';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000004","email":"ablead@example.com"}';
+do $$
+begin
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', true, 'Maple Grove PTO', 'hello@maplegrove.example');
+    assert false, 'org page: a Volunteer Lead turned the page on';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000007","email":"abteacher@example.com"}';
+do $$
+begin
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000003', true, 'Room 12 Conferences', 'tess@example.com');
+    assert false, 'org page: a teacher account turned a page on';
+  exception when sqlstate 'P0001' then
+    assert sqlerrm = 'Teacher accounts don''t have an organization page.', 'org page: the teacher refusal says why: ' || sqlerrm;
+  end;
+end $$;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$
+declare
+  r jsonb;
+begin
+  -- The account's name is the owner's own name (the old sign-up fallback): turning on asks for the group's name.
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', true, null, 'hello@maplegrove.example');
+    assert false, 'org page: turned on with a person''s name as the heading';
+  exception when sqlstate 'P0001' then
+    assert sqlerrm = 'This looks like a person''s name. Enter your group''s name, like Cedar Ridge Boosters.', 'org page: the person-name refusal: ' || sqlerrm;
+  end;
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', true, '  oren one. ', 'hello@maplegrove.example');
+    assert false, 'org page: turned on with an event team member''s name';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', true, '   ', 'hello@maplegrove.example');
+    assert false, 'org page: turned on with an empty name';
+  exception when sqlstate 'P0001' then
+    assert sqlerrm = 'Add your group''s name.', 'org page: the empty-name refusal: ' || sqlerrm;
+  end;
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', true, 'Maple Grove PTO', null);
+    assert false, 'org page: turned on with no contact email';
+  exception when sqlstate 'P0001' then
+    assert sqlerrm = 'Add a contact email to turn on your page.', 'org page: the contact refusal: ' || sqlerrm;
+  end;
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', true, 'Maple Grove PTO', 'not an email');
+    assert false, 'org page: turned on with a broken contact email';
+  exception when sqlstate 'P0001' then null;
+  end;
+  -- Only this account's volunteer events and fairs can be chosen.
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', true, 'Maple Grove PTO', 'hello@maplegrove.example',
+                                array['ab000000-0000-0000-0000-0000000000a4']::uuid[]);
+    assert false, 'org page: a meeting was put on the page';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', true, 'Maple Grove PTO', 'hello@maplegrove.example',
+                                array['ab000000-0000-0000-0000-0000000000c1']::uuid[]);
+    assert false, 'org page: another account''s event was put on the page';
+  exception when sqlstate 'P0001' then null;
+  end;
+  assert (select not org_page_on and slug = 'paula-page-x1y2' and name = 'Paula Page'
+            from public.organizations where id = 'ab000000-0000-0000-0000-000000000001'),
+         'org page: nothing changed after the refusals';
+end $$;
+reset role;
+
+-- A Co-host of every event turns it on: name, contact, and the chosen events in one step. The address comes from the
+-- group's name (with a random ending), and stays through off and on.
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000002","email":"abevery@example.com"}';
+do $$
+declare
+  r    jsonb;
+  addr text;
+begin
+  r := public.set_org_page('ab000000-0000-0000-0000-000000000001', true, '  Maple Grove PTO ', 'Hello@MapleGrove.example',
+         array['ab000000-0000-0000-0000-0000000000a1', 'ab000000-0000-0000-0000-0000000000a2', 'ab000000-0000-0000-0000-0000000000a3',
+               'ab000000-0000-0000-0000-0000000000a6', 'ab000000-0000-0000-0000-0000000000a7', 'ab000000-0000-0000-0000-0000000000a8',
+               'ab000000-0000-0000-0000-0000000000a9', 'ab000000-0000-0000-0000-0000000000b1', 'ab000000-0000-0000-0000-0000000000b2',
+               'ab000000-0000-0000-0000-0000000000b3', 'ab000000-0000-0000-0000-0000000000b4', 'ab000000-0000-0000-0000-0000000000b5']::uuid[]);
+  addr := r ->> 'slug';
+  assert (r ->> 'page_on')::boolean and r ->> 'name' = 'Maple Grove PTO' and r ->> 'contact_email' = 'hello@maplegrove.example',
+         'org page: turned on with the name and contact: ' || r::text;
+  assert addr ~ '^maple-grove-pto-[0-9a-f]{4}$', 'org page: the address comes from the group''s name: ' || coalesce(addr, 'null');
+  assert (r ->> 'events_shown')::int = 4, 'org page: four events are listed: ' || r::text;
+  assert (select count(*) from public.events where organization_id = 'ab000000-0000-0000-0000-000000000001' and on_org_page) = 12,
+         'org page: exactly the chosen events are switched on';
+  r := public.set_org_page('ab000000-0000-0000-0000-000000000001', false);
+  assert not (r ->> 'page_on')::boolean and r ->> 'slug' = addr, 'org page: off keeps the address';
+  r := public.set_org_page('ab000000-0000-0000-0000-000000000001', true, 'Maple Grove Parents', null);
+  assert r ->> 'slug' = addr and r ->> 'name' = 'Maple Grove Parents', 'org page: on again keeps the address, even with a new name';
+  r := public.set_org_page('ab000000-0000-0000-0000-000000000001', null, 'Maple Grove PTO');
+  perform set_config('orgpage.slug', addr, false);
+  -- While it's on, the name can't become a person's, even by a direct update.
+  begin
+    update public.organizations set name = 'Cora Every' where id = 'ab000000-0000-0000-0000-000000000001';
+    assert false, 'org page: renamed to a person while the page is on';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
+    update public.organizations set name = '' where id = 'ab000000-0000-0000-0000-000000000001';
+    assert false, 'org page: emptied the name while the page is on';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', null, null, '');
+    assert false, 'org page: cleared the contact email while the page is on';
+  exception when sqlstate 'P0001' then null;
+  end;
+end $$;
+reset role;
+
+-- The public read: only published volunteer events and fairs that are switched on, not over, with room or items
+-- (or a day sign-up opens), shifts still to come, no fairs on fair day, within 12 months, and this account's only.
+set role anon;
+set request.jwt.claims = '';
+do $$
+declare
+  r     jsonb;
+  slugs text[];
+  ev    jsonb;
+begin
+  r := public.org_page_listing(current_setting('orgpage.slug'));
+  assert r is not null and (r ->> 'page_on')::boolean, 'org page: anyone can read the page by its address';
+  select array_agg(x ->> 'slug' order by x ->> 'slug') into slugs from jsonb_array_elements(r -> 'events') x;
+  assert slugs = array['ab-book-fair', 'ab-carnival', 'ab-later', 'ab-overlap'],
+         'org page: lists open, items-only, and opens-later events, and nothing else: ' || coalesce(slugs::text, 'none');
+  assert r -> 'org' ->> 'name' = 'Maple Grove PTO' and r -> 'org' ->> 'contact_email' = 'hello@maplegrove.example',
+         'org page: the group''s name and contact email';
+  assert array(select jsonb_object_keys(r -> 'org') order by 1) = array['brand_color', 'contact_email', 'logo_path', 'name', 'slug'],
+         'org page: only the page''s own account details';
+  assert array(select jsonb_object_keys(r) order by 1) = array['events', 'help', 'org', 'page_on'], 'org page: nothing else at the top';
+  select x into ev from jsonb_array_elements(r -> 'events') x where x ->> 'slug' = 'ab-carnival';
+  assert (ev ->> 'open_spots')::int = 6 and (ev ->> 'items_needed')::int = 0 and ev ->> 'opens_on' is null
+         and ev -> 'soonest_shift' ->> 'id' = 'ab000000-0000-0000-0000-0000000006a1' and ev -> 'soonest_shift' ->> 'job' = 'Ticket booth',
+         'org page: an event''s open spots and soonest shift: ' || ev::text;
+  assert array(select jsonb_object_keys(ev) order by 1)
+         = array['ends_on', 'happening_now', 'items_needed', 'kind', 'name', 'open_spots', 'opens_on', 'slug', 'soonest_shift', 'starts_on', 'timezone', 'venue_name'],
+         'org page: only these facts about each event';
+  select x into ev from jsonb_array_elements(r -> 'events') x where x ->> 'slug' = 'ab-book-fair';
+  assert (ev ->> 'items_needed')::int = 6 and (ev ->> 'open_spots')::int = 0 and ev -> 'soonest_shift' = 'null'::jsonb,
+         'org page: a fair with only items still needed';
+  select x into ev from jsonb_array_elements(r -> 'events') x where x ->> 'slug' = 'ab-later';
+  assert (ev ->> 'opens_on')::date = current_date + 5, 'org page: the day sign-up opens';
+  -- No names, emails, or phones beyond the page's contact.
+  assert r::text not ilike '%priya%' and r::text not ilike '%kai%' and r::text not ilike '%rosa%' and r::text not ilike '%5550142%'
+         and r::text not ilike '%abowner%' and r::text not ilike '%Paula%' and r::text not ilike '%Oren%' and r::text not ilike '%@example.com%',
+         'org page: no names, emails, or phones come back';
+
+  -- The block on Book Fair's sign-up page, from a device that holds Fall Carnival's early shift: Book Fair itself
+  -- is left out, Fall Carnival shows its other shift, and Same Time Popcorn (overlapping it) drops off.
+  r := public.org_page_listing(null, 'ab000000-0000-0000-0000-0000000000a2', array['ab000000-0000-0000-0000-0000000006a1']::uuid[]);
+  select array_agg(x ->> 'slug' order by x ->> 'slug') into slugs from jsonb_array_elements(r -> 'events') x;
+  assert slugs = array['ab-carnival', 'ab-later'], 'org page: the block leaves out its own event and held or overlapping shifts: ' || coalesce(slugs::text, 'none');
+  select x into ev from jsonb_array_elements(r -> 'events') x where x ->> 'slug' = 'ab-carnival';
+  assert (ev ->> 'open_spots')::int = 3 and ev -> 'soonest_shift' ->> 'id' = 'ab000000-0000-0000-0000-0000000006a2',
+         'org page: the block counts only shifts the device doesn''t hold';
+  r := public.org_page_listing(current_setting('orgpage.slug'), null, '{}', 2);
+  assert jsonb_array_length(r -> 'events') = 2, 'org page: a limit caps the rows';
+
+  -- Another account's address, a teacher account, an address never turned on, and nonsense give nothing.
+  assert public.org_page_listing('ab-riverside') is null, 'org page: another account with its page off gives nothing';
+  assert public.org_page_listing('ab-teacher') is null, 'org page: a teacher account gives nothing';
+  assert public.org_page_listing('no-such-page') is null, 'org page: an unknown address gives nothing';
+  assert public.org_page_listing(null, 'ab000000-0000-0000-0000-0000000000c1') is null, 'org page: the block on another account''s off page gives nothing';
+  -- The table of help items isn't public, nor is the count.
+  begin
+    perform 1 from public.org_help_items;
+    assert false, 'org page: anon read Help anytime directly';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- A teacher account, even with its page forced on, and a suspended account, give nothing.
+update public.organizations set org_page_on = true, org_page_contact_email = 'tess@example.com', org_page_slug_set_at = now(), name = 'Room 12'
+ where id = 'ab000000-0000-0000-0000-000000000003';
+set role anon;
+do $$ begin
+  assert public.org_page_listing('ab-teacher') is null, 'org page: a teacher account with its page forced on gives nothing';
+end $$;
+reset role;
+update public.organizations set org_page_on = false, org_page_contact_email = null, org_page_slug_set_at = null
+ where id = 'ab000000-0000-0000-0000-000000000003';
+update public.organizations set suspended_at = now() where id = 'ab000000-0000-0000-0000-000000000001';
+set role anon;
+do $$ begin
+  assert public.org_page_listing(current_setting('orgpage.slug')) is null, 'org page: a suspended account gives nothing';
+end $$;
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$ begin
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', true);
+    assert false, 'org page: a suspended account changed its page';
+  exception when sqlstate 'P0001' then null;
+  end;
+end $$;
+reset role;
+update public.organizations set suspended_at = null where id = 'ab000000-0000-0000-0000-000000000001';
+
+-- A closed account: the page gives nothing, can't be changed, and the summary says why.
+update public.organizations set closed_at = now() where id = 'ab000000-0000-0000-0000-000000000001';
+set role anon;
+do $$ begin
+  assert public.org_page_listing(current_setting('orgpage.slug')) is null, 'org page: a closed account gives nothing';
+  assert public.org_page_listing(null, 'ab000000-0000-0000-0000-0000000000a2') is null, 'org page: a closed account''s block gives nothing';
+end $$;
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$ begin
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', true);
+    assert false, 'org page: a closed account changed its page';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
+    perform public.set_event_on_org_page('ab000000-0000-0000-0000-0000000000a5', true);
+    assert false, 'org page: a closed account switched an event on';
+  exception when sqlstate 'P0001' then null;
+  end;
+  assert public.org_page_summary('ab000000-0000-0000-0000-000000000001') ->> 'blocked' = 'account_closed', 'org page: the summary says it''s closed';
+  assert public.event_org_page_status('ab000000-0000-0000-0000-0000000000a1') ->> 'reason' = 'account_closed', 'org page: so does an event''s status';
+end $$;
+reset role;
+update public.organizations set closed_at = null where id = 'ab000000-0000-0000-0000-000000000001';
+
+-- Signed out: none of the organizer functions answer.
+set role anon;
+set request.jwt.claims = '';
+do $$ begin
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', false);
+    assert false, 'org page: anon called set_org_page';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.set_event_on_org_page('ab000000-0000-0000-0000-0000000000a1', false);
+    assert false, 'org page: anon called set_event_on_org_page';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.event_org_page_status('ab000000-0000-0000-0000-0000000000a1');
+    assert false, 'org page: anon called event_org_page_status';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.org_page_summary('ab000000-0000-0000-0000-000000000001');
+    assert false, 'org page: anon called org_page_summary';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.org_page_logo(current_setting('orgpage.slug'));
+    assert false, 'org page: anon called org_page_logo';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- Two accounts don't mix: Riverside's host can't read or change Maple Grove's page, its events' status, or its
+-- Help anytime, and each account's listing holds only its own events.
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000006","email":"abother@example.com"}';
+do $$ begin
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', false);
+    assert false, 'org page: another account''s host turned the page off';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.org_page_summary('ab000000-0000-0000-0000-000000000001');
+    assert false, 'org page: another account''s host read the summary';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.event_org_page_status('ab000000-0000-0000-0000-0000000000a1');
+    assert false, 'org page: another account''s host read an event''s status';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000002', true, 'Riverside Band Boosters', 'band@riverside.example',
+                                array['ab000000-0000-0000-0000-0000000000a1']::uuid[]);
+    assert false, 'org page: another account''s event put on Riverside''s page';
+  exception when sqlstate 'P0001' then null;
+  end;
+  update public.organizations set name = 'Hijacked' where id = 'ab000000-0000-0000-0000-000000000001';
+  assert not found, 'org page: another account''s host renamed the page';
+end $$;
+reset role;
+do $$
+declare
+  slugs text[];
+begin
+  select array_agg(x ->> 'slug') into slugs from jsonb_array_elements(public.org_page_listing(current_setting('orgpage.slug')) -> 'events') x;
+  assert not ('ab-riverside-wash' = any (slugs)), 'org page: another account''s event never shows on this page';
+  assert (select name from public.organizations where id = 'ab000000-0000-0000-0000-000000000001') = 'Maple Grove PTO', 'org page: the name didn''t change';
+end $$;
+
+-- The Account Host can't rename the page to a person's name by a direct update either (their own, or a team member's).
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$ begin
+  begin
+    update public.organizations set name = 'Paula Page' where id = 'ab000000-0000-0000-0000-000000000001';
+    assert false, 'org page: the Account Host renamed the page to their own name';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
+    update public.organizations set name = 'oren ONE' where id = 'ab000000-0000-0000-0000-000000000001';
+    assert false, 'org page: the Account Host renamed the page to a team member''s name';
+  exception when sqlstate 'P0001' then null;
+  end;
+  update public.organizations set name = 'Maple Grove PTO Families' where id = 'ab000000-0000-0000-0000-000000000001';
+  assert found, 'org page: the Account Host renames it to another group name';
+  update public.organizations set name = 'Maple Grove PTO' where id = 'ab000000-0000-0000-0000-000000000001';
+end $$;
+reset role;
+
+-- A shift already under way is never offered: the soonest shift and the open spots count only shifts still to start,
+-- and an event with one under way says so (happening_now).
+insert into public.shifts (id, station_id, event_id, title, starts_at, ends_at, max_capacity, registered_count) values
+  ('ab000000-0000-0000-0000-0000000006b6', 'ab000000-0000-0000-0000-0000000005b2', 'ab000000-0000-0000-0000-0000000000b2', 'Serve',
+   now() - interval '30 minutes', now() + interval '90 minutes', 5, 0),
+  ('ab000000-0000-0000-0000-0000000006a0', 'ab000000-0000-0000-0000-0000000005a1', 'ab000000-0000-0000-0000-0000000000a1', 'Setup',
+   now() - interval '30 minutes', now() + interval '90 minutes', 5, 0);
+set role anon;
+do $$
+declare
+  r  jsonb;
+  ev jsonb;
+begin
+  r := public.org_page_listing(current_setting('orgpage.slug'));
+  select x into ev from jsonb_array_elements(r -> 'events') x where x ->> 'slug' = 'ab-today';
+  assert ev is not null and (ev ->> 'happening_now')::boolean and ev -> 'soonest_shift' = 'null'::jsonb and (ev ->> 'open_spots')::int = 0,
+         'org page: an event with only a shift under way is listed as happening now, with nothing to sign up for: ' || coalesce(ev::text, 'none');
+  select x into ev from jsonb_array_elements(r -> 'events') x where x ->> 'slug' = 'ab-carnival';
+  assert (ev ->> 'happening_now')::boolean and ev -> 'soonest_shift' ->> 'id' = 'ab000000-0000-0000-0000-0000000006a1'
+         and (ev ->> 'open_spots')::int = 6,
+         'org page: a shift under way is never the soonest shift or counted as open: ' || ev::text;
+  r := public.org_page_listing(null, 'ab000000-0000-0000-0000-0000000000a2');
+  assert not exists (select 1 from jsonb_array_elements(r -> 'events') x where x -> 'soonest_shift' ->> 'id' in
+                       ('ab000000-0000-0000-0000-0000000006b6', 'ab000000-0000-0000-0000-0000000006a0')),
+         'org page: the block never offers a shift under way';
+end $$;
+reset role;
+delete from public.shifts where id in ('ab000000-0000-0000-0000-0000000006b6', 'ab000000-0000-0000-0000-0000000006a0');
+
+-- The logo's address reads one value, only while the page is on.
+update public.organizations set logo_path = 'ab000000-0000-0000-0000-000000000001/logo-1.png' where id = 'ab000000-0000-0000-0000-000000000001';
+set role service_role;
+do $$ begin
+  assert public.org_page_logo(current_setting('orgpage.slug')) = 'ab000000-0000-0000-0000-000000000001/logo-1.png', 'org page: the logo while the page is on';
+  assert public.org_page_logo('ab-riverside') is null, 'org page: no logo for a page that''s off';
+  assert public.org_page_logo('no-such-page') is null, 'org page: no logo for an unknown address';
+end $$;
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$ begin
+  begin
+    perform public.org_page_logo(current_setting('orgpage.slug'));
+    assert false, 'org page: a signed-in person called org_page_logo';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+update public.organizations set logo_path = null where id = 'ab000000-0000-0000-0000-000000000001';
+
+-- Each event's switch. A Co-host of one event, a Volunteer Lead, and a Coordinator can't change it, through the
+-- function or directly; a Co-host of every event can, through the function only. Other kinds never go on.
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000003","email":"abone@example.com"}';
+do $$
+declare
+  r jsonb;
+begin
+  begin
+    perform public.set_event_on_org_page('ab000000-0000-0000-0000-0000000000a1', false);
+    assert false, 'org page: a Co-host of one event flipped the switch through the function';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.events set on_org_page = false where id = 'ab000000-0000-0000-0000-0000000000a1';
+    assert false, 'org page: a Co-host of one event flipped the switch directly';
+  exception when insufficient_privilege then null;
+  end;
+  -- ...but can still change their event's other details.
+  update public.events set venue_name = 'Maple Grove Gym' where id = 'ab000000-0000-0000-0000-0000000000a1';
+  assert found, 'org page: a Co-host of one event still edits the event';
+  -- Their event's status: read-only, with the Account Host to ask.
+  r := public.event_org_page_status('ab000000-0000-0000-0000-0000000000a1');
+  assert (r ->> 'on_org_page')::boolean and (r ->> 'listed')::boolean and not (r ->> 'can_change')::boolean
+         and (r ->> 'page_on')::boolean and r ->> 'reason' is null
+         and r -> 'account_host' ->> 'name' = 'Paula Page' and r -> 'account_host' ->> 'email' = 'abowner@example.com'
+         and r ->> 'page_slug' = current_setting('orgpage.slug'),
+         'org page: a Co-host of one event sees the switch read-only, and who to ask: ' || r::text;
+  begin
+    perform public.event_org_page_status('ab000000-0000-0000-0000-0000000000a5');
+    assert false, 'org page: a Co-host of one event read another event''s status';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000004","email":"ablead@example.com"}';
+do $$
+begin
+  begin
+    perform public.set_event_on_org_page('ab000000-0000-0000-0000-0000000000a1', false);
+    assert false, 'org page: a Volunteer Lead flipped the switch';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.events set on_org_page = false where id = 'ab000000-0000-0000-0000-0000000000a1';
+    assert not found, 'org page: a Volunteer Lead flipped the switch directly';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.event_org_page_status('ab000000-0000-0000-0000-0000000000a1');
+    assert false, 'org page: a Volunteer Lead read the event''s page status';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000005","email":"abcoord@example.com"}';
+do $$
+begin
+  begin
+    perform public.set_event_on_org_page('ab000000-0000-0000-0000-0000000000a1', false);
+    assert false, 'org page: a Coordinator flipped the switch';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.events set on_org_page = false where id = 'ab000000-0000-0000-0000-0000000000a1';
+    assert not found, 'org page: a Coordinator flipped the switch directly';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000006","email":"abother@example.com"}';
+do $$
+begin
+  begin
+    perform public.set_event_on_org_page('ab000000-0000-0000-0000-0000000000a1', false);
+    assert false, 'org page: another account''s host flipped the switch';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000002","email":"abevery@example.com"}';
+do $$
+declare
+  r jsonb;
+begin
+  r := public.set_event_on_org_page('ab000000-0000-0000-0000-0000000000a5', true);
+  assert (r ->> 'on_org_page')::boolean and (r ->> 'listed')::boolean and (r ->> 'can_change')::boolean,
+         'org page: a Co-host of every event switches an event on: ' || r::text;
+  r := public.set_event_on_org_page('ab000000-0000-0000-0000-0000000000a5', false);
+  assert not (r ->> 'on_org_page')::boolean and r ->> 'reason' = 'switched_off', 'org page: and off again, with why';
+  begin
+    update public.events set on_org_page = true where id = 'ab000000-0000-0000-0000-0000000000a5';
+    assert false, 'org page: the switch changed by a direct update, not the function';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.set_event_on_org_page('ab000000-0000-0000-0000-0000000000a4', true);
+    assert false, 'org page: a meeting was switched on';
+  exception when sqlstate 'P0001' then null;
+  end;
+  -- Why each one isn't listed.
+  assert public.event_org_page_status('ab000000-0000-0000-0000-0000000000a3') ->> 'reason' = 'draft', 'org page: reason draft';
+  assert public.event_org_page_status('ab000000-0000-0000-0000-0000000000a4') ->> 'reason' = 'kind', 'org page: reason kind';
+  assert public.event_org_page_status('ab000000-0000-0000-0000-0000000000a6') ->> 'reason' = 'full', 'org page: reason full';
+  assert public.event_org_page_status('ab000000-0000-0000-0000-0000000000a7') ->> 'reason' = 'over', 'org page: reason over';
+  assert public.event_org_page_status('ab000000-0000-0000-0000-0000000000a9') ->> 'reason' = 'fair_day', 'org page: reason fair day';
+  assert public.event_org_page_status('ab000000-0000-0000-0000-0000000000b1') ->> 'reason' = 'signup_closed', 'org page: reason closed';
+  assert public.event_org_page_status('ab000000-0000-0000-0000-0000000000b2') ->> 'reason' = 'full', 'org page: ended shifts don''t count';
+  assert public.event_org_page_status('ab000000-0000-0000-0000-0000000000b5') ->> 'reason' = 'later', 'org page: reason more than a year out';
+end $$;
+reset role;
+-- The database refuses other kinds outright, and changing an event's kind takes it off.
+do $$
+begin
+  begin
+    update public.events set on_org_page = true where id = 'ab000000-0000-0000-0000-0000000000a4';
+    assert false, 'org page: a meeting was put on the page by the server';
+  exception when check_violation then null;
+  end;
+  update public.events set event_type = 'band_contest' where id = 'ab000000-0000-0000-0000-0000000000b3';
+  assert (select not on_org_page from public.events where id = 'ab000000-0000-0000-0000-0000000000b3'),
+         'org page: changing an event''s kind takes it off the page';
+  update public.events set event_type = 'volunteer' where id = 'ab000000-0000-0000-0000-0000000000b3';
+end $$;
+
+-- New events: the Account Host's start on the page (duplicate_event too); other kinds don't; anyone else's start
+-- off, waiting for review, until the Account Host chooses.
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$
+declare
+  r   jsonb;
+  new_id uuid;
+begin
+  insert into public.events (organization_id, name, slug, event_type, starts_on, ends_on, window_start, window_end, venue_address, on_org_page)
+  values ('ab000000-0000-0000-0000-000000000001', 'Winter Coat Drive', 'ab-coats', 'volunteer', current_date + 50, current_date + 50,
+          now() + interval '50 days', now() + interval '50 days 3 hours', '1 School Rd', false)
+  returning id into new_id;
+  assert (select on_org_page and not org_page_needs_review from public.events where id = new_id),
+         'org page: the Account Host''s new volunteer event starts on the page';
+  insert into public.events (organization_id, name, slug, event_type, starts_on, ends_on, window_start, window_end, venue_address, on_org_page)
+  values ('ab000000-0000-0000-0000-000000000001', 'Budget Meeting', 'ab-budget', 'meeting', current_date + 50, current_date + 50,
+          now() + interval '50 days', now() + interval '50 days 1 hour', '1 School Rd', true)
+  returning id into new_id;
+  assert (select not on_org_page and not org_page_needs_review from public.events where id = new_id),
+         'org page: a new meeting never starts on the page';
+  r := public.duplicate_event('ab000000-0000-0000-0000-0000000000a1', current_date + 60, 'Fall Carnival Again', gen_random_uuid());
+  assert (select on_org_page from public.events where id = (r ->> 'event_id')::uuid), 'org page: a duplicated event starts on the page';
+end $$;
+reset role;
+-- Made by someone who isn't the Account Host or a Co-host of every event (a Co-host of one event, written past the
+-- insert policy here): off, waiting for review.
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000003","email":"abone@example.com"}';
+insert into public.events (id, organization_id, name, slug, event_type, starts_on, ends_on, window_start, window_end, venue_address, on_org_page)
+values ('ab000000-0000-0000-0000-0000000000d1', 'ab000000-0000-0000-0000-000000000001', 'Teacher Lunch', 'ab-lunch', 'volunteer',
+        current_date + 45, current_date + 45, now() + interval '45 days', now() + interval '45 days 2 hours', '1 School Rd', true);
+do $$ begin
+  assert (select not on_org_page and org_page_needs_review from public.events where id = 'ab000000-0000-0000-0000-0000000000d1'),
+         'org page: someone else''s new event starts off, waiting for review';
+end $$;
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$
+declare
+  r jsonb;
+begin
+  r := public.org_page_summary('ab000000-0000-0000-0000-000000000001');
+  assert (r ->> 'new_to_review')::int = 1, 'org page: one new event to review: ' || r::text;
+  r := public.set_event_on_org_page('ab000000-0000-0000-0000-0000000000d1', false);
+  assert not (r ->> 'needs_review')::boolean, 'org page: choosing marks it reviewed';
+  r := public.org_page_summary('ab000000-0000-0000-0000-000000000001');
+  assert (r ->> 'new_to_review')::int = 0 and r ->> 'blocked' is null, 'org page: nothing left to review';
+end $$;
+reset role;
+
+-- Help anytime: the Account Host and Co-hosts of every event only, with the checks; an item leaves the page after
+-- its end date.
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000002","email":"abevery@example.com"}';
+do $$
+declare
+  r jsonb;
+begin
+  insert into public.org_help_items (organization_id, title, note, link, ends_on)
+  values ('ab000000-0000-0000-0000-000000000001', '  Classroom wish list ', 'Tissues and markers', 'https://www.amazon.com/hz/wishlist/ls/X1',
+          current_date + 10);
+  begin
+    insert into public.org_help_items (organization_id, title, ends_on) values ('ab000000-0000-0000-0000-000000000001', 'Old', current_date - 2);
+    assert false, 'org page: a help item with a past end date';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
+    insert into public.org_help_items (organization_id, title, ends_on) values ('ab000000-0000-0000-0000-000000000001', 'No end', null);
+    assert false, 'org page: a help item with no end date';
+  exception when not_null_violation then null;
+  end;
+  begin
+    insert into public.org_help_items (organization_id, title, link, ends_on)
+    values ('ab000000-0000-0000-0000-000000000001', 'Plain link', 'http://example.com', current_date + 3);
+    assert false, 'org page: a help item with an http link';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.org_help_items (organization_id, title, link, ends_on)
+    values ('ab000000-0000-0000-0000-000000000001', 'Tricky link', 'https://amazon.com@evil.example/list', current_date + 3);
+    assert false, 'org page: a help item link with "@" before the first "/"';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.org_help_items (organization_id, title, link, ends_on)
+    values ('ab000000-0000-0000-0000-000000000001', 'Tricky link', 'https://a.b@evil.example', current_date + 3);
+    assert false, 'org page: a help item link with "@" in the host';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.org_help_items (organization_id, title, ends_on)
+    values ('ab000000-0000-0000-0000-000000000001', 'Yesterday', (now() at time zone 'America/Chicago')::date - 1);
+    assert false, 'org page: a new help item that already ended';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
+    insert into public.org_help_items (organization_id, title, ends_on) values ('ab000000-0000-0000-0000-000000000001', repeat('x', 81), current_date + 3);
+    assert false, 'org page: a help item title over 80 characters';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.org_help_items (organization_id, title, note, ends_on)
+    values ('ab000000-0000-0000-0000-000000000001', 'Long note', repeat('x', 201), current_date + 3);
+    assert false, 'org page: a help item note over 200 characters';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.org_help_items (organization_id, title, ends_on) values ('ab000000-0000-0000-0000-000000000002', 'Not mine', current_date + 3);
+    assert false, 'org page: a help item on another account';
+  exception when insufficient_privilege then null;
+  end;
+  r := public.org_page_summary('ab000000-0000-0000-0000-000000000001');
+  assert (r ->> 'help_active')::int = 1 and r -> 'help_ending_soonest' ->> 'title' = 'Classroom wish list',
+         'org page: the summary has the soonest help item ending: ' || r::text;
+end $$;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000003","email":"abone@example.com"}';
+do $$ begin
+  assert (select count(*) from public.org_help_items) = 0, 'org page: a Co-host of one event can''t see Help anytime';
+  update public.org_help_items set title = 'Hijacked';
+  assert not found, 'org page: a Co-host of one event can''t change Help anytime';
+  delete from public.org_help_items;
+  assert not found, 'org page: a Co-host of one event can''t remove Help anytime';
+end $$;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000004","email":"ablead@example.com"}';
+do $$ begin
+  assert (select count(*) from public.org_help_items) = 0, 'org page: a Volunteer Lead can''t see Help anytime';
+  begin
+    insert into public.org_help_items (organization_id, title, ends_on) values ('ab000000-0000-0000-0000-000000000001', 'Lead item', current_date + 3);
+    assert false, 'org page: a Volunteer Lead added a help item';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000006","email":"abother@example.com"}';
+do $$ begin
+  assert (select count(*) from public.org_help_items) = 0, 'org page: another account''s host can''t see Help anytime';
+end $$;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000007","email":"abteacher@example.com"}';
+do $$ begin
+  begin
+    insert into public.org_help_items (organization_id, title, ends_on) values ('ab000000-0000-0000-0000-000000000003', 'Supplies', current_date + 3);
+    assert false, 'org page: a teacher account added a help item';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+-- One that ended yesterday (written as it was then) doesn't show; the one through next week does. "End today" keeps
+-- it showing through today.
+set session_replication_role = replica;
+insert into public.org_help_items (organization_id, title, ends_on)
+values ('ab000000-0000-0000-0000-000000000001', 'Yesterday''s raffle', (now() at time zone 'America/Chicago')::date - 1);
+set session_replication_role = origin;
+set role anon;
+do $$
+declare
+  r jsonb;
+begin
+  r := public.org_page_listing(current_setting('orgpage.slug'));
+  assert jsonb_array_length(r -> 'help') = 1 and r -> 'help' -> 0 ->> 'title' = 'Classroom wish list'
+         and r -> 'help' -> 0 ->> 'link' = 'https://www.amazon.com/hz/wishlist/ls/X1',
+         'org page: only help items through their end date show: ' || (r -> 'help')::text;
+  assert array(select jsonb_object_keys(r -> 'help' -> 0) order by 1) = array['ends_on', 'id', 'link', 'note', 'title'],
+         'org page: only these facts about each help item';
+end $$;
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$ begin
+  update public.org_help_items set ends_on = (now() at time zone 'America/Chicago')::date where title = 'Classroom wish list';
+  assert found, 'org page: End today';
+end $$;
+reset role;
+set role anon;
+do $$ begin
+  assert jsonb_array_length(public.org_page_listing(current_setting('orgpage.slug')) -> 'help') = 1, 'org page: an item ending today shows today';
+end $$;
+reset role;
+-- "Take off the page now": an update may set yesterday (it leaves the page at once), but not earlier; Undo puts the
+-- end date back. A link with a path after the host is still fine.
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$
+declare
+  today date := (now() at time zone 'America/Chicago')::date;
+begin
+  update public.org_help_items set ends_on = today - 1 where title = 'Classroom wish list';
+  assert found, 'org page: Take off the page now';
+  assert jsonb_array_length(public.org_page_listing(current_setting('orgpage.slug')) -> 'help') = 0, 'org page: taken off at once';
+  assert (select count(*) from public.org_help_items where title = 'Classroom wish list') = 1, 'org page: still listed for the organizer';
+  begin
+    update public.org_help_items set ends_on = today - 2 where title = 'Classroom wish list';
+    assert false, 'org page: an end date two days ago';
+  exception when sqlstate 'P0001' then null;
+  end;
+  update public.org_help_items set ends_on = today where title = 'Classroom wish list';
+  assert jsonb_array_length(public.org_page_listing(current_setting('orgpage.slug')) -> 'help') = 1, 'org page: Undo shows it again';
+  update public.org_help_items set link = 'https://www.amazon.com/hz/wishlist/ls/X1?x=a@b' where title = 'Classroom wish list';
+  assert found, 'org page: an "@" after the first "/" is fine';
+  update public.org_help_items set link = 'https://www.amazon.com/hz/wishlist/ls/X1' where title = 'Classroom wish list';
+end $$;
+reset role;
+
+-- The "sign-up closed" note's contact: the page's contact while the page is on, else a typed reply-to, never the
+-- creator's sign-in email. Server only.
+update public.events set created_by = '000000ab-0000-0000-0000-000000000001' where id = 'ab000000-0000-0000-0000-0000000000b1';
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$ begin
+  begin
+    perform public.signup_closed_contact('ab000000-0000-0000-0000-0000000000b1');
+    assert false, 'org page: a signed-in person read the closed note''s contact';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set role anon;
+do $$ begin
+  begin
+    perform public.signup_closed_contact('ab000000-0000-0000-0000-0000000000b1');
+    assert false, 'org page: anon read the closed note''s contact directly';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set role service_role;
+do $$ begin
+  assert public.signup_closed_contact('ab000000-0000-0000-0000-0000000000b1') = 'hello@maplegrove.example',
+         'org page: the closed note shows the page''s contact while the page is on';
+end $$;
+reset role;
+update public.organizations set org_page_on = false, org_page_on_since = null where id = 'ab000000-0000-0000-0000-000000000001';
+set role service_role;
+do $$ begin
+  assert public.signup_closed_contact('ab000000-0000-0000-0000-0000000000b1') is null,
+         'org page: with the page off and no reply-to, no contact (never the creator''s email)';
+end $$;
+reset role;
+insert into public.event_email_settings (event_id, replies, reply_to) values ('ab000000-0000-0000-0000-0000000000b1', true, null);
+set role service_role;
+do $$ begin
+  assert public.signup_closed_contact('ab000000-0000-0000-0000-0000000000b1') is null,
+         'org page: replies on but nothing typed: still not the creator''s email';
+end $$;
+reset role;
+update public.event_email_settings set reply_to = 'carwash@maplegrove.example' where event_id = 'ab000000-0000-0000-0000-0000000000b1';
+set role service_role;
+do $$ begin
+  assert public.signup_closed_contact('ab000000-0000-0000-0000-0000000000b1') = 'carwash@maplegrove.example',
+         'org page: a typed reply-to when the page is off';
+end $$;
+reset role;
+update public.organizations set org_page_on = true, org_page_on_since = now() where id = 'ab000000-0000-0000-0000-000000000001';
+
+-- Carrying details over: server only; nothing for unrelated tokens; never someone the booker added; a manage
+-- token only from the sign-up that made the person (typing someone else's email gives nothing back); no phone
+-- once the event is past its 10-day keep.
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$ begin
+  begin
+    perform * from public.pass_contact(array[gen_random_uuid()], '{}', 'ab000000-0000-0000-0000-0000000000a1');
+    assert false, 'org page: a signed-in person called pass_contact';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set role anon;
+do $$ begin
+  begin
+    perform * from public.pass_contact(array[gen_random_uuid()], '{}', 'ab000000-0000-0000-0000-0000000000a1');
+    assert false, 'org page: anon called pass_contact';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set role service_role;
+do $$
+declare
+  r record;
+  booker_token uuid := (select access_token from public.volunteers where id = 'ab000000-0000-0000-0000-0000000008a1');
+  kid_token    uuid := (select access_token from public.volunteers where id = 'ab000000-0000-0000-0000-0000000008a2');
+  lena_token   uuid := (select access_token from public.volunteers where id = 'ab000000-0000-0000-0000-0000000008b4');
+  booker_shift uuid := (select manage_token from public.volunteer_assignments where id = 'ab000000-0000-0000-0000-0000000009a1');
+  kid_shift    uuid := (select manage_token from public.volunteer_assignments where id = 'ab000000-0000-0000-0000-0000000009a2');
+  rosa_shift   uuid := (select manage_token from public.volunteer_assignments where id = 'ab000000-0000-0000-0000-0000000009a3');
+begin
+  assert not exists (select 1 from public.pass_contact(array[gen_random_uuid()], array[gen_random_uuid()], 'ab000000-0000-0000-0000-0000000000a2')),
+         'org page: pass_contact gives nothing for unrelated tokens';
+  assert not exists (select 1 from public.pass_contact(array[kid_token], array[kid_shift], 'ab000000-0000-0000-0000-0000000000a2')),
+         'org page: pass_contact never gives someone the booker added';
+  assert not exists (select 1 from public.pass_contact('{}', array[rosa_shift], 'ab000000-0000-0000-0000-0000000000a2')),
+         'org page: a shift added to someone else''s email doesn''t hand back their details';
+  select * into r from public.pass_contact('{}', array[booker_shift, kid_shift], 'ab000000-0000-0000-0000-0000000000a2');
+  assert r.full_name = 'Priya Parent' and r.email = 'priya@example.com' and r.phone = '+15125550142' and not r.minor
+         and r.event_id = 'ab000000-0000-0000-0000-0000000000a1' and r.event_slug = 'ab-carnival',
+         'org page: pass_contact gives the booker''s own details';
+  select * into r from public.pass_contact(array[booker_token, lena_token], '{}', 'ab000000-0000-0000-0000-0000000000a2');
+  assert r.full_name = 'Priya Parent', 'org page: the most recent booker comes first';
+  select * into r from public.pass_contact(array[lena_token], '{}', 'ab000000-0000-0000-0000-0000000000a2');
+  assert r.full_name = 'Lena Longago' and r.phone is null, 'org page: no phone once the event is past its 10-day keep';
+end $$;
+reset role;
+-- Only the same account's sign-ups carry over: on a shared device, Riverside's sign-up never fills in Maple Grove's
+-- form (or the other way round).
+insert into public.volunteers (id, event_id, full_name, email, phone, minor, contact_id, created_at) values
+  ('ab000000-0000-0000-0000-0000000008c1', 'ab000000-0000-0000-0000-0000000000c1', 'Rita Riverside', 'rita@example.com', '+15125550111', false, null,
+   now() - interval '1 hour');
+set role service_role;
+do $$
+declare
+  r record;
+  rita_token   uuid := (select access_token from public.volunteers where id = 'ab000000-0000-0000-0000-0000000008c1');
+  booker_token uuid := (select access_token from public.volunteers where id = 'ab000000-0000-0000-0000-0000000008a1');
+begin
+  assert not exists (select 1 from public.pass_contact(array[rita_token], '{}', 'ab000000-0000-0000-0000-0000000000a2')),
+         'org page: another account''s sign-up doesn''t carry over';
+  select * into r from public.pass_contact(array[rita_token, booker_token], '{}', 'ab000000-0000-0000-0000-0000000000a2');
+  assert r.full_name = 'Priya Parent', 'org page: the same account''s sign-up carries over, even when another''s is newer';
+  select * into r from public.pass_contact(array[rita_token, booker_token], '{}', 'ab000000-0000-0000-0000-0000000000c1');
+  assert r.full_name = 'Rita Riverside', 'org page: and on the other account''s form, only its own sign-up';
+  assert not exists (select 1 from public.pass_contact(array[booker_token], '{}', gen_random_uuid())),
+         'org page: an unknown event carries nothing over';
+end $$;
+reset role;
+delete from public.volunteers where id = 'ab000000-0000-0000-0000-0000000008c1';
+
+-- The names-free count: users can't read it or add to it; the server adds one per sign-up.
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$ begin
+  begin
+    perform 1 from public.help_link_signups;
+    assert false, 'org page: a host read the sign-up count';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.bump_help_link_signup('ab000000-0000-0000-0000-0000000000a1', 'org_page');
+    assert false, 'org page: a host added to the sign-up count';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set role anon;
+do $$ begin
+  begin
+    perform 1 from public.help_link_signups;
+    assert false, 'org page: anon read the sign-up count';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.bump_help_link_signup('ab000000-0000-0000-0000-0000000000a1', 'org_page');
+    assert false, 'org page: anon added to the sign-up count';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set role service_role;
+do $$ begin
+  perform public.bump_help_link_signup('ab000000-0000-0000-0000-0000000000a1', 'more_ways');
+  perform public.bump_help_link_signup('ab000000-0000-0000-0000-0000000000a2', 'more_ways');
+  perform public.bump_help_link_signup('ab000000-0000-0000-0000-0000000000a1', 'direct');
+  assert (select signups from public.help_link_signups where organization_id = 'ab000000-0000-0000-0000-000000000001' and source = 'more_ways') = 2,
+         'org page: the server counts sign-ups by source';
+  assert (select count(*) from public.help_link_signups where organization_id = 'ab000000-0000-0000-0000-000000000001') = 2,
+         'org page: one row per day and source';
+  -- The confirm step counts on its own.
+  perform public.bump_help_link_signup('ab000000-0000-0000-0000-0000000000a1', 'more_ways_confirm');
+  perform public.bump_help_link_signup('ab000000-0000-0000-0000-0000000000a1', 'org_page_confirm');
+  assert (select count(*) from public.help_link_signups where organization_id = 'ab000000-0000-0000-0000-000000000001') = 4,
+         'org page: the confirm step''s sign-ups are counted apart';
+  begin
+    perform public.bump_help_link_signup('ab000000-0000-0000-0000-0000000000a1', 'email');
+    assert false, 'org page: an unknown source was counted';
+  exception when sqlstate 'P0001' then null;
+  end;
+end $$;
+reset role;
+
+-- Clean up.
+set role service_role;
+select set_config('app.cleaning_up', 'on', false);
+delete from public.events where organization_id in ('ab000000-0000-0000-0000-000000000001', 'ab000000-0000-0000-0000-000000000002',
+                                                    'ab000000-0000-0000-0000-000000000003');
+select set_config('app.cleaning_up', 'off', false);
+reset role;
+delete from public.organizations where id in ('ab000000-0000-0000-0000-000000000001', 'ab000000-0000-0000-0000-000000000002',
+                                              'ab000000-0000-0000-0000-000000000003');
+
 \echo 'All database security tests passed.'

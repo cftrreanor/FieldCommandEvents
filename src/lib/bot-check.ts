@@ -8,6 +8,9 @@ import { headers } from "next/headers";
 
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
+/** Both keys are set, so the check runs (the confirm step's first-time path needs it on the live site). */
+export const botCheckConfigured = () => Boolean(process.env.TURNSTILE_SECRET_KEY && process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
+
 /** What a person sees if the check didn't pass (or hadn't finished yet). */
 export const BOT_CHECK_FAILED = "Please wait a moment for the security check to finish, then try again. If it keeps happening, reload the page.";
 

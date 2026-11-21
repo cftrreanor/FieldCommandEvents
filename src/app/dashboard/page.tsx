@@ -31,6 +31,8 @@ import { SuccessToast } from "@/components/toaster";
 import { IconTile, LineIcon } from "@/components/line-icon";
 import type { IconName } from "@/lib/icons";
 import { signupDay, signupDayShort, signupOpensLaterOn } from "@/lib/volunteer-signup";
+import { loadOrgPageAccounts } from "@/lib/org-page-summary";
+import { OrgPageCards } from "@/components/org-page-cards";
 
 export const metadata: Metadata = { title: "My events" };
 
@@ -360,6 +362,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Who can get or renew the plan: the Account Host, or ask them. Only when there's something to say.
   const accountHost =
     org && (ended || freeStatus(org)?.soon || [...drafts.values()].some((d) => d.planBlock)) ? await loadAccountHost(supabase, org.id, user.id) : null;
+  // The organization page at a glance, one card per account (the Account Host and Co-hosts of every event; not
+  // teacher accounts).
+  const orgPages = org && !teacher ? await loadOrgPageAccounts(supabase) : [];
   return (
     <div className="space-y-10">
       <div className="space-y-4">
@@ -391,13 +396,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           action={newEvent}
           notice={
             org && (
-              <PlanNotice
-                org={org}
-                ended={ended}
-                spot={plan ? spotTaken(plan, ownEvents) : null}
-                accountHost={accountHost}
-                urgent={[...drafts.values()].some((d) => d.planBlock && d.daysAway >= 0 && d.daysAway <= 30)}
-              />
+              <div className="space-y-4">
+                <PlanNotice
+                  org={org}
+                  ended={ended}
+                  spot={plan ? spotTaken(plan, ownEvents) : null}
+                  accountHost={accountHost}
+                  urgent={[...drafts.values()].some((d) => d.planBlock && d.daysAway >= 0 && d.daysAway <= 30)}
+                />
+                <OrgPageCards accounts={orgPages} />
+              </div>
             )
           }
           items={hosted.map((e) => ({

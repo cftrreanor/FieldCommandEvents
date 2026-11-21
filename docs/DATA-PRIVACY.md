@@ -87,6 +87,26 @@ automated test.
   only by the event's hosts (not Volunteer Leads).
   A copied Coordinator's name is shown only once they accept or when they're already on the account's team
   (otherwise their email address); a Co-host of only the copy sees names only for that event's team.
+- **Organization page and "More ways to help" (20270210000000_org_page.sql):** off until the Account Host or a Co-host
+  of every event turns it on, and never for teacher accounts or suspended or closed accounts. It lists only the
+  account's published volunteer events and fairs that an organizer chose, while they still have open shifts or items
+  (or say the day sign-up opens): each event's name, dates, place name, open spots, items still needed, and soonest
+  open shift, plus the group's own "Help anytime" notes and links. It shows no volunteer, family, organizer, or team
+  member's name, email address, or phone number, except the contact email the organizer typed for the page (the
+  group's name can't be a team member's name). The page is read through one database function, and we ask search
+  engines not to list it (a "noindex" header and tag; volunteer sign-up pages that show "More ways to help" ask the
+  same). When a sign-up is closed, the page points people to that contact email, or to a reply-to
+  address the organizer typed, never to the organizer's own sign-in email. Starting a new sign-up from that page or
+  another sign-up page can fill in the person's name, email, and phone from a sign-up they made on the same device
+  for the same group (their own, never people they added, and never another group's sign-up on a shared device);
+  only the server reads it, the page shows the email masked and only the phone's last four digits, and the phone
+  isn't offered once that event's 10 days are up. "Forget this device" removes it from the device. The quick confirm
+  step books one adult only: without remembered details it asks "I'm 18 or older", and anyone under 18 uses the full
+  form.
+- **Sign-up counts:** each day we count how many volunteer sign-ups came from "More ways to help", the organization
+  page (each with the quick confirm step counted on its own), or directly, per account. Only the day, account, source,
+  and number are kept: no names, cookies, IP addresses, or anything stored on the person. The counts are an estimate
+  (the source comes from the link, which anyone can edit). Only platform administrators see it.
 - **Visiting directors:** see their own registration, never other schools' contact details.
 - **The public:** sees only what the organizer publishes, such as the schedule. Families never
   see who else booked or registered.

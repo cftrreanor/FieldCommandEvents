@@ -36,7 +36,12 @@ const nextConfig: NextConfig = {
     ];
   },
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // Organization pages (and their logos): search engines may read them (robots.txt allows /o/) but are asked not
+      // to list them or follow their links (owner, 2026-11-21).
+      { source: "/o/:path*", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] },
+    ];
   },
 };
 
