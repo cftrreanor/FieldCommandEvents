@@ -126,6 +126,9 @@ export function SetupSteps({
                               ? `Now · ${optionalNote}`
                               : "Now"
                         : (optionalNote ?? copiedNote ?? "Not yet");
+              // Publish, when sign-up is set to open on a later day: that day, beside "Not yet" (lesson L19). The step
+              // you're on keeps its usual words ("Now"): the page itself says the day.
+              const shown = i === last && facts.publishNote && note === "Not yet" ? `${note} · ${facts.publishNote}` : note;
               return (
                 <li key={s.key} className="min-w-0">
                   <span aria-hidden className={`block rounded-full ${strip(s, i)}`} />
@@ -141,7 +144,7 @@ export function SetupSteps({
                   <span className={`block text-xs leading-5 [text-wrap:balance] ${done[i] && !now ? "text-success" : needs ? "font-medium text-warning" : copied === "copied" ? "font-medium text-foreground" : "text-muted"}`}>
                     {done[i] && !now && <span aria-hidden>✓ </span>}
                     {needs && <span aria-hidden>◆ </span>}
-                    {note}
+                    {shown}
                   </span>
                 </li>
               );

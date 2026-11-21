@@ -3,7 +3,7 @@ import { newDateSpotHref } from "@/lib/duplicate-words";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Card } from "@/components/ui";
+import { Badge, Card } from "@/components/ui";
 import { SettingsNav, type SettingsSection } from "./settings-nav";
 import { TeamRoles } from "../team/team-roles";
 import { EVENT_TYPES, bookingWords, eventTypeLabel, groupWords, leadWords, hasBands, hasBooths, hasConferences, hasEnsembles, hasParents, hasRooms, isMeeting, usesJobs, volunteerAreaName } from "@/lib/event-types";
@@ -23,10 +23,13 @@ import { NotifyForm, type TeamMember } from "./notify-form";
 import { MAX_EXTRA_EMAILS, notifyKinds, type DigestPrefs, type NotifyKind } from "@/lib/notify-kinds";
 import { AUDIENCES, fileHref, fileMeta, isShowing, uploadedLines, type EventFile } from "@/lib/event-files";
 import { formatDate, formatDateRange, utcToZonedDate, utcToZonedTime, zoneName } from "@/lib/time";
-import { deleteEvent, publishAndOpen, setEventPublished, setEventShowBrand, setEventType, updateEvent } from "../../../actions";
+import { deleteEvent, publishAndOpen, setEventPublished, setEventShowBrand, setEventType, setVolunteerSignupOpen, updateEvent } from "../../../actions";
 import { DeleteEventButton } from "../delete-event";
 import { DuplicatePanel } from "./duplicate-panel";
 import { PublishCopyLink } from "../copy-publish";
+import { SignupOpensField } from "../signup-opens-field";
+import { SuccessToast } from "@/components/toaster";
+import { eventToday, signupBadge, signupDayToast, signupDay, signupDayHint, signupLastDay, signupRangeMessage, signupState } from "@/lib/volunteer-signup";
 import { isUnpublishedCopy } from "@/lib/duplicate-event";
 import { reopenBandRegistration, setBandRegistrationOpen } from "../../../band-actions";
 import { ReopenRegistration } from "../bands/reopen-registration";
@@ -79,7 +82,7 @@ const SWITCH_NOTE = {
  */
 export default async function EditEventPage({ params, searchParams }: PageProps<"/dashboard/events/[eventId]/edit">) {
   const { eventId } = await params;
-  const { step, section: sectionParam, tab, setup: setupParam } = await searchParams;
+  const { step, section: sectionParam, tab, setup: setupParam, signupday } = await searchParams;
   const access = await getEventAccess(eventId);
   if (!access.isHost) redirect(`/dashboard/events/${eventId}`);
 
@@ -87,7 +90,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const { data: event } = await supabase
     .from("events")
     .select(
-      "id, organization_id, name, status, event_type, created_by, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng, band_registration_open, band_registration_deadline, band_registration_opens_on, public_notes",
+      "id, organization_id, name, status, event_type, created_by, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng, band_registration_open, band_registration_deadline, band_registration_opens_on, public_notes, volunteer_signup_open, volunteer_signup_opens_on",
     )
     .eq("id", eventId)
     .maybeSingle();
@@ -293,6 +296,10 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
     { id: "more", label: "Publishing and more", done: event.status === "published", status: event.status === "published" ? "Live" : "Draft" },
   ];
   const published = event.status === "published";
+  // Volunteer sign-up's state and opening day, for Publishing (volunteer events and fairs).
+  const signupDayHere = event.event_type === "volunteer" || event.event_type === "fair";
+  const signupNow = signupState(event);
+  const signupNowBadge = signupBadge(event);
   // Could it be published again after unpublishing? Not after a plan ends, or once another event takes a one-at-a-time spot.
   const republishBlocked = published && section === "more" ? await republishReason(supabase, eventId) : null;
   // A live event: how many people are in it (booked, signed up, or registered), so unpublishing and deleting
@@ -347,7 +354,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   };
   const afterUnpublish = republishBlocked
     ? `${republishBlocked} If you unpublish it, you can't publish it again until that changes.`
-    : "You can publish again anytime.";
+    : "You can publish again at any time.";
   // Demo mode, for FieldCommand admins (src/lib/demo.ts).
   const demo =
     section === "more" && (await supabase.rpc("is_platform_admin")).data
@@ -359,10 +366,13 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
       : null;
   const conferenceHere = conference;
   const booking = bookingWords(event.event_type);
+  const signupDayNote = signupDayToast(signupday, event);
 
   return (
     // data-required-marks: a small asterisk on each box that has to be filled in (globals.css).
     <div className="mx-auto max-w-5xl" data-required-marks>
+      {/* New dates moved or cleared volunteer sign-up's opening day: said once, after Save. */}
+      {signupDayNote && <SuccessToast message={signupDayNote} />}
       {guided ? (
         <SetupHeader current={section} back={{ href: `/dashboard/events/${eventId}`, label: "Save and finish later", guard: true }} />
       ) : (
@@ -611,6 +621,41 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                     Go to Publish
                   </Link>
                 )}
+                {/* Volunteer events and fairs: the day sign-up opens by itself, whenever it isn't open now (owner decision 2, 2026-11-20).
+                    Live, the label comes first, then its badge, with "Open sign-up now" beside the day while it waits. */}
+                {signupDayHere && signupNow !== "open" && (
+                  <div className="mt-5 border-t border-border pt-4">
+                    {signupNow !== "draft" && (
+                      <p className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+                        <span className="font-semibold">Volunteer sign-up</span>
+                        <Badge tone={signupNowBadge.tone}>{signupNowBadge.text}</Badge>
+                      </p>
+                    )}
+                    <SignupOpensField
+                      eventId={eventId}
+                      initial={event.volunteer_signup_opens_on ?? ""}
+                      today={eventToday(event.timezone)}
+                      lastDay={signupLastDay(event)}
+                      rangeMessage={signupRangeMessage(event, signupLastDay(event))}
+                      firstDay={event.event_type === "volunteer" ? event.starts_on : null}
+                      live={published}
+                      hint={signupDayHint(signupNow, event.event_type === "volunteer")}
+                      aside={
+                        signupNow === "later" && (
+                          <ActionButton
+                            action={setVolunteerSignupOpen.bind(null, eventId, true)}
+                            variant="secondary"
+                            pendingText="Opening…"
+                            confirmMessage={`Open volunteer sign-up now? Volunteers can sign up from today instead of ${signupDay(event.volunteer_signup_opens_on!)}. Nobody is emailed.`}
+                            confirmLabel="Open sign-up now"
+                          >
+                            Open sign-up now
+                          </ActionButton>
+                        )
+                      }
+                    />
+                  </div>
+                )}
               </Panel>
 
               {/* A live festival closes (and reopens) registration here, away from its event page (owner, 2026-11-11). */}
@@ -648,7 +693,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
               <Panel id="kind" title="Kind of event" intro="What the event is for decides which pages and tools it has.">
                 <div className="space-y-3">
                   <p>
-                    This is {isMeeting(event.event_type) ? "for " : "a "}<strong>{event.event_type === "conference" ? "parent-teacher conference" : eventTypeLabel(event.event_type).toLowerCase()}</strong>.{" "}
+                    This is {isMeeting(event.event_type) ? "for " : "a "}<strong>{event.event_type === "conference" ? "parent-teacher conference" : event.event_type === "volunteer" ? "volunteer event" : eventTypeLabel(event.event_type).toLowerCase()}</strong>.{" "}
                     <span className="text-muted">{TYPE_SUMMARY[event.event_type as keyof typeof TYPE_SUMMARY] ?? TYPE_SUMMARY.band_contest}</span>
                   </p>
                   {hasConferences(event.event_type) ? (

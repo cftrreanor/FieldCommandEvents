@@ -63,6 +63,7 @@ export function SignupForm({
   spots,
   stations,
   disabled,
+  opensOn,
   lead = "Coordinator",
   keepsHistory = false,
 }: {
@@ -71,6 +72,11 @@ export function SignupForm({
   spots: () => Promise<Record<string, number>>;
   stations: PublicStation[];
   disabled?: boolean;
+  /**
+   * Sign-up opens later ("Mon, Jan 4"): the shifts and things to bring are shown read-only with what's left, with no
+   * details form or buttons, and a closing line saying when to come back.
+   */
+  opensOn?: string;
   /** Who sees volunteers' phone numbers on the day. */
   lead?: string;
   /** The account keeps a 2-year volunteer history (packages with volunteer tracking). */
@@ -494,6 +500,7 @@ export function SignupForm({
       onSubmit={onPicked(BOOKER)}
       buttons={nextButtons(BOOKER)}
       disabled={disabled}
+      waiting={opensOn}
       grouped={people.length > 0}
     />
   );
@@ -516,6 +523,7 @@ function BookerStep({
   onSubmit,
   buttons,
   disabled,
+  waiting,
   grouped,
 }: {
   stations: PublicStation[];
@@ -534,6 +542,8 @@ function BookerStep({
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   buttons: React.ReactNode;
   disabled?: boolean;
+  /** Sign-up opens that day ("Mon, Jan 4"): read-only until then. */
+  waiting?: string;
   grouped: boolean;
 }) {
   const [activeId, setActiveId] = useState(stations[0]?.id);
@@ -553,18 +563,36 @@ function BookerStep({
     <form onSubmit={onSubmit} className="space-y-8">
       {hasShifts && (
         <div className="space-y-2">
-          <p className="text-sm">You can sign up yourself and up to {MAX_OTHERS} other people.</p>
+          <p className="text-sm">
+            {waiting ? "When sign-up opens, you" : "You"} can sign up yourself and up to {MAX_OTHERS} other people.
+          </p>
           {progress}
         </div>
       )}
       <section aria-labelledby="pick">
         <h2 id="pick" className="text-xl font-semibold">
-          {hasItems ? (hasShifts ? "1. Pick what you'll do" : "1. Pick what you'll bring") : "1. Pick your shifts"}
+          {waiting
+            ? hasItems
+              ? hasShifts
+                ? "Shifts and things to bring"
+                : "Things to bring"
+              : "Shifts"
+            : hasItems
+              ? hasShifts
+                ? "1. Pick what you'll do"
+                : "1. Pick what you'll bring"
+              : "1. Pick your shifts"}
         </h2>
         <p className="mt-1 text-sm text-muted">
-          {hasShifts && "Choose as many shifts as you like, as long as the times don't overlap."}
-          {hasShifts && hasItems && " "}
-          {hasItems && "Pick something to bring. Everyone can see what's still needed."}
+          {waiting
+            ? "What's still needed right now."
+            : (
+              <>
+                {hasShifts && "Choose as many shifts as you like, as long as the times don't overlap."}
+                {hasShifts && hasItems && " "}
+                {hasItems && "Pick something to bring. Everyone can see what's still needed."}
+              </>
+            )}
         </p>
 
         {tabbed && (
@@ -620,6 +648,12 @@ function BookerStep({
                   const adultsOnly = st.adults_only && me.minor && !isPicked;
                   return (
                     <li key={it.id} className={`rounded-lg border px-3 py-2.5 ${isPicked ? "border-brand bg-brand-soft" : "border-border"}`}>
+                      {waiting ? (
+                        <p className="flex min-h-11 items-center gap-3">
+                          <span className="min-w-0 flex-1 font-medium">{it.name}</span>
+                          <span className="shrink-0 text-sm font-medium">{it.left <= 0 ? "Covered" : `${it.left} of ${it.needed} still needed`}</span>
+                        </p>
+                      ) : (
                       <label className={`flex min-h-11 items-center gap-3 ${covered || adultsOnly ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
                         <input
                           type="checkbox"
@@ -631,6 +665,7 @@ function BookerStep({
                         <span className="min-w-0 flex-1 font-medium">{it.name}</span>
                         <span className="shrink-0 text-sm font-medium">{it.left <= 0 ? "Covered" : `${it.left} of ${it.needed} still needed`}</span>
                       </label>
+                      )}
                       {isPicked && (
                         <Input
                           value={pickedItems.get(it.id) ?? ""}
@@ -648,10 +683,20 @@ function BookerStep({
                 })}
               </ul>
             )}
-            {st.shifts.length > 0 && <ShiftChoices shifts={st.shifts} chosen={mine} onToggle={toggle} spotsFor={spotsFor} whyNot={whyNot} disabled={disabled} />}
+            {st.shifts.length > 0 && (
+              <ShiftChoices shifts={st.shifts} chosen={mine} onToggle={toggle} spotsFor={spotsFor} whyNot={whyNot} disabled={disabled} readOnly={Boolean(waiting)} />
+            )}
           </Card>
         ))}
       </section>
+
+      {waiting ? (
+        // Before the day: no details to fill in and no buttons that can't send, just when to come back.
+        <div className="rounded-lg border border-brand/25 bg-brand-soft px-4 py-4">
+          <p className="font-semibold">Sign-up opens {waiting}. Come back then to pick a shift</p>
+        </div>
+      ) : (
+      <>
 
       <section aria-labelledby="you">
         <h2 id="you" className="text-xl font-semibold">
@@ -692,6 +737,8 @@ function BookerStep({
         <FormMessage error={problem} />
         {buttons}
       </div>
+      </>
+      )}
     </form>
   );
 }
@@ -704,6 +751,7 @@ function ShiftChoices({
   spotsFor,
   whyNot,
   disabled,
+  readOnly = false,
 }: {
   shifts: PublicShift[];
   chosen: string[];
@@ -711,7 +759,26 @@ function ShiftChoices({
   spotsFor: (id: string) => number;
   whyNot: (id: string) => string | null;
   disabled?: boolean;
+  /** Before sign-up opens: each shift with what's left, and nothing to tick. */
+  readOnly?: boolean;
 }) {
+  if (readOnly)
+    return (
+      <ul className="mt-3 space-y-2">
+        {shifts.map((s) => (
+          <li key={s.id} className="flex min-h-14 items-center gap-3 rounded-lg border border-border px-3 py-2.5">
+            <span className="min-w-0 flex-1">
+              <span className="block font-medium">{s.when}</span>
+              <span className="block text-sm text-muted">
+                {s.title}
+                {s.description ? ` · ${s.description}` : ""}
+              </span>
+            </span>
+            <span className="shrink-0 text-sm font-medium">{s.spotsLeft <= 0 ? "Full" : `${s.spotsLeft} left`}</span>
+          </li>
+        ))}
+      </ul>
+    );
   return (
     <ul className="mt-3 space-y-2">
       {shifts.map((s) => {

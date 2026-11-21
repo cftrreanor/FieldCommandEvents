@@ -28,7 +28,7 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
   const supabase = await createClient();
   const { data: ev } = await supabase
     .from("events")
-    .select("id, name, event_type, status, organization_id, timezone, starts_on, ends_on, venue_name, band_registration_deadline, band_registration_opens_on, classifications")
+    .select("id, name, event_type, status, organization_id, timezone, starts_on, ends_on, venue_name, band_registration_deadline, band_registration_opens_on, volunteer_signup_opens_on, classifications")
     .eq("id", eventId)
     .maybeSingle();
   if (!ev) missing();
@@ -135,6 +135,7 @@ export default async function DuplicatePage({ params, searchParams }: PageProps<
     })),
     deadline: ev.band_registration_deadline,
     opensOn: ev.band_registration_opens_on,
+    signupOpensOn: ev.volunteer_signup_opens_on ?? null,
     counts,
     copying: comesOverParts(ev.event_type, counts, false),
   };

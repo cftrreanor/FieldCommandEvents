@@ -1,3 +1,4 @@
+import { signupDayShort } from "@/lib/volunteer-signup";
 import { DayBar } from "@/components/event-day-nav";
 import { SetupStrip } from "@/components/setup-guide";
 import { loadDayActions } from "@/lib/event-day-actions";
@@ -80,6 +81,8 @@ function volunteerSteps(f: SetupFacts): SetupStepFacts {
     middleDone,
     middleNote: middleDone ? null : f.stations === 0 ? "Add a job" : emptyJobsNote(empty),
     count: f.stations ? `${f.stations} ${f.stations === 1 ? "job" : "jobs"}` : null,
+    // Sign-up set to open on a later day: the Publish step says when, as the Publish page does.
+    publishNote: f.volunteerSignupOpen && f.volunteerSignupOpensOn ? `Sign-up opens ${signupDayShort(f.volunteerSignupOpensOn)}` : null,
   };
 }
 

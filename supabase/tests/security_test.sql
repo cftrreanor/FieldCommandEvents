@@ -12044,6 +12044,9 @@ values (current_setting('dup.cp')::uuid, '000000dc-0000-0000-0000-000000000001',
         jsonb_build_object('email', 'dcold@example.com', 'token', gen_random_uuid(), 'email_token', gen_random_uuid()));
 \ir ../migrations/20270207000000_duplicate_event.sql
 \ir ../migrations/20270207000000_duplicate_event.sql
+-- Later updates that redefine its functions, run again too, so what follows tests today's versions.
+\ir ../migrations/20270209000000_volunteer_signup_opens_on.sql
+\ir ../migrations/20270209000000_volunteer_signup_opens_on.sql
 do $$
 declare sm jsonb := (select summary from public.event_copies where event_id = current_setting('dup.cp')::uuid);
 begin
@@ -12061,6 +12064,269 @@ begin
 end $$;
 delete from public.copy_invitation_removals where invitation ->> 'email' = 'dcold@example.com';
 delete from public.invitations where email = 'dcbackfill@example.com';
+
+-- ---------------------------------------------------------------------------
+-- Volunteer sign-up that opens on a set day (20270209000000): refused the day before and allowed on the day, in
+-- the event's own time zone; things to bring and switching shifts wait for it too; duplicating moves the day (or
+-- leaves it blank if that's past); and nobody signed out, or from another account, can change it.
+-- ---------------------------------------------------------------------------
+reset role;
+-- Pago Pago (UTC-11) is always a day behind Kiritimati (UTC+14): Kiritimati's today is the day before there.
+insert into public.events (id, organization_id, name, slug, status, event_type, timezone, starts_on, ends_on, window_start, window_end,
+                           venue_address, volunteer_signup_open, volunteer_signup_opens_on)
+values ('50000000-0000-0000-0000-0000000000f1', 'dc000000-0000-0000-0000-000000000001', 'Opens Later Cleanup', 'so-opens-later',
+        'published', 'volunteer', 'Pacific/Pago_Pago', current_date + 30, current_date + 30,
+        now() + interval '30 days', now() + interval '30 days 6 hours', '1 Shore Rd', true,
+        (now() at time zone 'Pacific/Kiritimati')::date);
+insert into public.stations (id, event_id, name, sort_order, signup_kind) values
+  ('50000000-0000-0000-0000-0000000000f2', '50000000-0000-0000-0000-0000000000f1', 'Beach crew', 1, 'shifts'),
+  ('50000000-0000-0000-0000-0000000000f3', '50000000-0000-0000-0000-0000000000f1', 'Supplies', 2, 'items');
+insert into public.shifts (id, station_id, event_id, title, starts_at, ends_at, max_capacity) values
+  ('50000000-0000-0000-0000-0000000000f4', '50000000-0000-0000-0000-0000000000f2', '50000000-0000-0000-0000-0000000000f1', 'Morning',
+   now() + interval '30 days', now() + interval '30 days 2 hours', 5),
+  ('50000000-0000-0000-0000-0000000000f5', '50000000-0000-0000-0000-0000000000f2', '50000000-0000-0000-0000-0000000000f1', 'Afternoon',
+   now() + interval '30 days 3 hours', now() + interval '30 days 5 hours', 5);
+insert into public.station_items (id, station_id, event_id, name, needed) values
+  ('50000000-0000-0000-0000-0000000000f6', '50000000-0000-0000-0000-0000000000f3', '50000000-0000-0000-0000-0000000000f1', 'Trash bags', 3);
+-- Someone the organizer signed up earlier, with their own link.
+insert into public.volunteers (id, event_id, full_name, email, phone) values
+  ('50000000-0000-0000-0000-0000000000f7', '50000000-0000-0000-0000-0000000000f1', 'Early Ezra', 'so.ezra@example.com', '+15125550190');
+insert into public.volunteer_assignments (id, shift_id, volunteer_id) values
+  ('50000000-0000-0000-0000-0000000000f8', '50000000-0000-0000-0000-0000000000f4', '50000000-0000-0000-0000-0000000000f7');
+update public.shifts set registered_count = 1 where id = '50000000-0000-0000-0000-0000000000f4';
+
+do $$
+declare
+  ok  boolean;
+  msg text;
+  ev  public.events;
+  tok uuid := (select access_token from public.volunteers where id = '50000000-0000-0000-0000-0000000000f7');
+begin
+  select * into ev from public.events where id = '50000000-0000-0000-0000-0000000000f1';
+  assert not public.volunteer_signup_is_open(ev) and public.volunteer_signup_opens_later(ev),
+         'opens later: the day before, in the event''s time zone, sign-up isn''t open yet';
+
+  -- A shift, the day before: refused, saying when it opens.
+  ok := false;
+  begin
+    perform public.sign_up_volunteer('50000000-0000-0000-0000-0000000000f1', 'Pat Early', 'so.pat@example.com', '+15125550191',
+                                     array['50000000-0000-0000-0000-0000000000f4']::uuid[]);
+  exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg = 'Volunteer sign-up opens ' || public.volunteer_signup_day(ev.volunteer_signup_opens_on) || '. Please come back then.',
+         'opens later: a sign-up the day before is refused, saying when it opens';
+  -- A group sign-up books through the same rule.
+  ok := false;
+  begin
+    perform public.sign_up_group('50000000-0000-0000-0000-0000000000f1', 'Pat Early', 'so.pat@example.com', '+15125550191',
+                                 array['50000000-0000-0000-0000-0000000000f4']::uuid[]);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'opens later: a group sign-up the day before is refused';
+  -- A thing to bring, the day before: refused.
+  ok := false;
+  begin
+    perform public.sign_up_volunteer('50000000-0000-0000-0000-0000000000f1', 'Ida Early', 'so.ida@example.com', '+15125550192',
+                                     '{}'::uuid[], false, '[]', '[{"item": "50000000-0000-0000-0000-0000000000f6"}]');
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'opens later: an item sign-up the day before is refused';
+  -- The older call, too.
+  ok := false;
+  begin
+    perform public.register_volunteer('50000000-0000-0000-0000-0000000000f1', 'Pat Early', 'so.pat@example.com', '+15125550191',
+                                      array['50000000-0000-0000-0000-0000000000f4']::uuid[]);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'opens later: the older sign-up call is refused the day before';
+  -- Switching shifts with your own link, the day before: refused.
+  ok := false;
+  begin
+    perform public.swap_shift_with_pass('50000000-0000-0000-0000-0000000000f8', '50000000-0000-0000-0000-0000000000f5', array[tok], null);
+  exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg like 'Volunteer sign-up opens %, so shifts can''t be switched until then.', 'opens later: a swap the day before is refused';
+  assert not exists (select 1 from public.volunteers where event_id = '50000000-0000-0000-0000-0000000000f1' and email <> 'so.ezra@example.com')
+     and (select shift_id from public.volunteer_assignments where id = '50000000-0000-0000-0000-0000000000f8') = '50000000-0000-0000-0000-0000000000f4',
+         'opens later: nothing was saved the day before';
+
+  -- The same day in the event's time zone: open.
+  update public.events set timezone = 'Pacific/Kiritimati' where id = '50000000-0000-0000-0000-0000000000f1';
+  select * into ev from public.events where id = '50000000-0000-0000-0000-0000000000f1';
+  assert public.volunteer_signup_is_open(ev) and not public.volunteer_signup_opens_later(ev), 'opens later: open on the day';
+  perform public.sign_up_volunteer('50000000-0000-0000-0000-0000000000f1', 'Pat Early', 'so.pat@example.com', '+15125550191',
+                                   array['50000000-0000-0000-0000-0000000000f4']::uuid[], false, '[]', '[{"item": "50000000-0000-0000-0000-0000000000f6"}]');
+  assert exists (select 1 from public.item_signups where item_id = '50000000-0000-0000-0000-0000000000f6'), 'opens later: a sign-up on the day goes through';
+  assert public.swap_shift_with_pass('50000000-0000-0000-0000-0000000000f8', '50000000-0000-0000-0000-0000000000f5', array[tok], null),
+         'opens later: a swap on the day goes through';
+
+  -- Switched off, the day doesn't open it; no day, it's open as soon as it's switched on.
+  update public.events set volunteer_signup_open = false where id = '50000000-0000-0000-0000-0000000000f1';
+  select * into ev from public.events where id = '50000000-0000-0000-0000-0000000000f1';
+  assert not public.volunteer_signup_is_open(ev) and not public.volunteer_signup_opens_later(ev), 'opens later: switched off stays closed';
+  update public.events set volunteer_signup_open = true, volunteer_signup_opens_on = null where id = '50000000-0000-0000-0000-0000000000f1';
+  select * into ev from public.events where id = '50000000-0000-0000-0000-0000000000f1';
+  assert public.volunteer_signup_is_open(ev), 'opens later: with no day, open once switched on';
+end $$;
+
+-- Nobody signed out, and no one from another account, can change the day.
+set role anon;
+do $$
+declare ok boolean := false;
+begin
+  begin
+    update public.events set volunteer_signup_opens_on = current_date + 1 where id = '50000000-0000-0000-0000-0000000000f1';
+  exception when insufficient_privilege then ok := true;
+  end;
+  ok := ok or not found;
+  assert ok, 'opens later: anon can''t change the day';
+end $$;
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000008","email":"dcother@example.com"}';
+do $$
+begin
+  update public.events set volunteer_signup_opens_on = current_date + 1 where id = '50000000-0000-0000-0000-0000000000f1';
+  assert not found, 'opens later: another account''s host can''t change the day';
+end $$;
+reset role;
+do $$
+begin
+  assert (select volunteer_signup_opens_on is null from public.events where id = '50000000-0000-0000-0000-0000000000f1'),
+         'opens later: the day is unchanged';
+end $$;
+
+-- Who can change the day: a Co-host of the event can, a Coordinator (event staff) can't. Walk-ups added at the
+-- desk still work before the day. Switching sign-up off clears the day (a day is set only while it's on).
+update public.events set timezone = 'Pacific/Pago_Pago', volunteer_signup_opens_on = current_date + 5
+ where id = '50000000-0000-0000-0000-0000000000f1';
+insert into public.event_staff (event_id, user_id, role) values
+  ('50000000-0000-0000-0000-0000000000f1', '000000dc-0000-0000-0000-000000000003', 'co_host'),
+  ('50000000-0000-0000-0000-0000000000f1', '000000dc-0000-0000-0000-000000000005', 'section_lead');
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000003","email":"dcone@example.com"}';
+do $$
+begin
+  update public.events set volunteer_signup_opens_on = current_date + 6 where id = '50000000-0000-0000-0000-0000000000f1';
+  assert found, 'opens later: a Co-host of the event can change the day';
+end $$;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000005","email":"dccoord@example.com"}';
+do $$
+begin
+  update public.events set volunteer_signup_opens_on = current_date + 7 where id = '50000000-0000-0000-0000-0000000000f1';
+  assert not found, 'opens later: a Coordinator can''t change the day';
+end $$;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000001","email":"dcowner@example.com"}';
+do $$
+declare
+  ev public.events;
+  w  uuid;
+begin
+  select * into ev from public.events where id = '50000000-0000-0000-0000-0000000000f1';
+  assert ev.volunteer_signup_opens_on = current_date + 6 and public.volunteer_signup_opens_later(ev),
+         'opens later: the Co-host''s day stands, and sign-up is waiting for it';
+  w := public.add_walk_up('50000000-0000-0000-0000-0000000000f5', 'Wanda Walkup', null);
+  assert exists (select 1 from public.volunteer_assignments where volunteer_id = w and shift_id = '50000000-0000-0000-0000-0000000000f5'),
+         'opens later: a walk-up added at the desk before the day still goes through';
+
+  -- Moving the event's dates moves the day by the same number of days.
+  perform public.reschedule_event(ev.id, ev.starts_on + 2, ev.ends_on + 2, ev.window_start + interval '2 days',
+                                  ev.window_end + interval '2 days', ev.timezone);
+  assert (select volunteer_signup_opens_on = current_date + 8 and volunteer_signup_open from public.events where id = ev.id),
+         'opens later: moving the dates moves the day';
+  -- A day that would be past is cleared, and sign-up stays closed (never opens sooner than planned).
+  select * into ev from public.events where id = '50000000-0000-0000-0000-0000000000f1';
+  perform public.reschedule_event(ev.id, ev.starts_on - 10, ev.ends_on - 10, ev.window_start - interval '10 days',
+                                  ev.window_end - interval '10 days', ev.timezone);
+  select * into ev from public.events where id = '50000000-0000-0000-0000-0000000000f1';
+  assert ev.volunteer_signup_opens_on is null and not ev.volunteer_signup_open and not public.volunteer_signup_is_open(ev),
+         'opens later: a day that no longer fits is cleared, and sign-up stays closed';
+
+  -- Switching sign-up off clears any day.
+  update public.events set volunteer_signup_open = true, volunteer_signup_opens_on = current_date + 6 where id = ev.id;
+  update public.events set volunteer_signup_open = false where id = ev.id;
+  assert (select volunteer_signup_opens_on is null from public.events where id = ev.id),
+         'opens later: switching sign-up off clears the day';
+  update public.events set volunteer_signup_opens_on = current_date + 6 where id = ev.id;
+  assert (select volunteer_signup_opens_on is null from public.events where id = ev.id),
+         'opens later: a day can''t be set while sign-up is switched off';
+
+  -- The date box's limits, in the database too: not past, not after the last day.
+  select * into ev from public.events where id = '50000000-0000-0000-0000-0000000000f1';
+  begin
+    update public.events set volunteer_signup_open = true, volunteer_signup_opens_on = ev.ends_on + 1 where id = ev.id;
+    assert false, 'opens later: a day after the last day is refused';
+  exception when sqlstate 'P0001' then
+    assert sqlerrm like 'Pick a day from today to the event''s last day (%).', 'opens later: saying the range: ' || sqlerrm;
+  end;
+  begin
+    update public.events set volunteer_signup_open = true, volunteer_signup_opens_on = current_date - 3 where id = ev.id;
+    assert false, 'opens later: a past day is refused';
+  exception when sqlstate 'P0001' then null;
+  end;
+end $$;
+reset role;
+-- A fair's day comes before fair day (online sign-up closes on the day itself).
+insert into public.events (id, organization_id, name, slug, status, event_type, timezone, starts_on, ends_on, window_start, window_end,
+                           venue_address, volunteer_signup_open)
+values ('50000000-0000-0000-0000-0000000000fa', 'dc000000-0000-0000-0000-000000000001', 'Opens Later Fair', 'so-opens-later-fair',
+        'draft', 'fair', 'America/Chicago', current_date + 20, current_date + 21,
+        now() + interval '20 days', now() + interval '20 days 6 hours', '1 Midway', true);
+do $$
+begin
+  begin
+    update public.events set volunteer_signup_opens_on = starts_on where id = '50000000-0000-0000-0000-0000000000fa';
+    assert false, 'opens later: a fair''s day on fair day is refused';
+  exception when sqlstate 'P0001' then
+    assert sqlerrm like 'Pick a day from today to the day before the fair (%).', 'opens later: saying the fair''s range: ' || sqlerrm;
+  end;
+  update public.events set volunteer_signup_opens_on = starts_on - 1 where id = '50000000-0000-0000-0000-0000000000fa';
+  assert (select volunteer_signup_opens_on = starts_on - 1 from public.events where id = '50000000-0000-0000-0000-0000000000fa'),
+         'opens later: the day before the fair is fine';
+  -- Moving a fair's dates earlier leaves no room before it: cleared, and sign-up stays closed.
+  perform public.reschedule_event('50000000-0000-0000-0000-0000000000fa', current_date + 1, current_date + 2,
+                                  now() + interval '1 day', now() + interval '1 day 6 hours', 'America/Chicago');
+  assert (select volunteer_signup_opens_on is null and not volunteer_signup_open from public.events where id = '50000000-0000-0000-0000-0000000000fa'),
+         'opens later: a fair moved so close that its day would be today or past: cleared, and sign-up stays closed';
+end $$;
+reset role;
+
+-- Duplicating moves the day by the same number of days, or leaves it blank once that's in the past.
+-- (Last year's event had a day, set back then: written past the date box's limits, as the past allowed.)
+set session_replication_role = replica;
+update public.events set volunteer_signup_opens_on = starts_on - 10 where id = 'dc000000-0000-0000-0000-0000000000e1';
+set session_replication_role = origin;
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000dc-0000-0000-0000-000000000001","email":"dcowner@example.com"}';
+do $$
+declare
+  r     jsonb;
+  later date := current_date + 200;
+  today date := (now() at time zone 'America/Chicago')::date;
+begin
+  r := public.duplicate_event('dc000000-0000-0000-0000-0000000000e1', later, 'Opens Later Copy', gen_random_uuid());
+  assert (select volunteer_signup_opens_on = later - 10 from public.events where id = (r ->> 'event_id')::uuid),
+         'opens later: duplicating moves the day by the same number of days';
+  assert (r -> 'summary' -> 'signup' ->> 'opens_on')::date = later - 10
+     and not (r -> 'summary' -> 'signup' ->> 'opens_on_left_blank')::boolean, 'opens later: and the summary says so';
+  -- A copy that keeps a day has sign-up switched on, so publishing it with sign-up open waits for that day.
+  assert (select status = 'draft' and volunteer_signup_open from public.events where id = (r ->> 'event_id')::uuid),
+         'opens later: a copy that keeps the day has sign-up switched on';
+  update public.events set public_notes = null where id = (r ->> 'event_id')::uuid;
+  update public.events set status = 'published', volunteer_signup_open = true where id = (r ->> 'event_id')::uuid;
+  assert (select public.volunteer_signup_opens_later(e) and not public.volunteer_signup_is_open(e)
+            from public.events e where e.id = (r ->> 'event_id')::uuid),
+         'opens later: published with sign-up open, the copy waits for its day';
+  -- Unpublishing clears the day, so it can't open by itself later.
+  update public.events set status = 'draft', volunteer_signup_open = false where id = (r ->> 'event_id')::uuid;
+  assert (select volunteer_signup_opens_on is null from public.events where id = (r ->> 'event_id')::uuid),
+         'opens later: unpublishing clears the day';
+  r := public.duplicate_event('dc000000-0000-0000-0000-0000000000e1', today, 'Opens Past Copy', gen_random_uuid());
+  assert (select volunteer_signup_opens_on is null from public.events where id = (r ->> 'event_id')::uuid),
+         'opens later: a day that would be past is left blank';
+  assert (r -> 'summary' -> 'signup' ->> 'opens_on_left_blank')::boolean, 'opens later: and the summary says it was left blank';
+end $$;
+reset role;
+update public.events set volunteer_signup_opens_on = null where id = 'dc000000-0000-0000-0000-0000000000e1';
 
 -- Clean up.
 set role service_role;

@@ -24,6 +24,9 @@ import { createStation, moveCheckpoint, publishAndOpenSignups, setVolunteerSignu
 import { ActionButton, CopyLinkButton, NewStationForm, type LeadOption } from "../forms";
 import { StationTabs, UnsavedChangesProvider } from "./station-steps";
 import { NewDatesElsewhere } from "@/components/new-date-note";
+import { eventToday, signupBadge, signupDay, signupDayHint, signupDayShort, signupLastDay, signupOpensAt, signupOpensLaterOn, signupRangeMessage, signupState } from "@/lib/volunteer-signup";
+import { RefreshAt } from "@/components/auto-refresh";
+import { SignupOpensField } from "../signup-opens-field";
 import { FAIR_ZONES, hasBands, hasBooths, hasRooms, leadWords, usesJobs, volunteerAreaName } from "@/lib/event-types";
 import { kindLabel, sortStations } from "@/lib/contest-day";
 import { CheckInOrderList } from "./check-in-order";
@@ -57,7 +60,7 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
 
   const { data: event } = await supabase
     .from("events")
-    .select("id, organization_id, slug, name, status, event_type, volunteer_signup_open, timezone, starts_on, ends_on, window_start, window_end")
+    .select("id, organization_id, slug, name, status, event_type, volunteer_signup_open, volunteer_signup_opens_on, timezone, starts_on, ends_on, window_start, window_end")
     .eq("id", eventId)
     .maybeSingle();
   if (!event) missing();
@@ -224,6 +227,12 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
   const hasSome = (st: Station) => ownShifts(st.id).length + ownItems(st.id).length > 0;
   // Totals count only what volunteers can see, the same way as the event page.
   const { sentence } = volunteerTotals(stations, shifts, items);
+  // Volunteer sign-up's state, with its opening day (volunteer events and fairs can set one).
+  const state = signupState(event);
+  const badge = signupBadge(event);
+  const today = eventToday(event.timezone);
+  const dayHere = access.isHost && (event.event_type === "volunteer" || event.event_type === "fair");
+  const draftOpensOn = !published && event.volunteer_signup_open ? signupOpensLaterOn(event) : null;
   const previewHref = `/e/${event.slug}/volunteer`;
 
   const nameOf = (userId: string | null) => {
@@ -350,9 +359,7 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
       <Card className="mt-6">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge tone={event.status === "published" && event.volunteer_signup_open ? "live" : "neutral"}>
-                {event.status !== "published" ? "Event not published" : event.volunteer_signup_open ? "Sign-up open" : "Sign-up closed"}
-              </Badge>
+              <Badge tone={badge.tone}>{badge.text}</Badge>
               <span className="text-sm text-muted">
                 {sentence}
               </span>
@@ -384,7 +391,7 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                 {event.status !== "published" && access.isHost && unpublishedCopy ? (
                   // A copy never published: its publish window, where who gets emailed is chosen.
                   <PublishCopyLink eventId={eventId} version="now" className="px-3!">
-                    Publish and open sign-ups
+                    {draftOpensOn ? `Publish, sign-up opens ${signupDayShort(draftOpensOn)}` : "Publish and open sign-ups"}
                   </PublishCopyLink>
                 ) : event.status !== "published" && access.isHost && (
                   <ActionButton
@@ -392,14 +399,18 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                     variant="go"
                     className="min-h-11 px-3! text-sm!"
                     pendingText="Publishing…"
-                    confirmMessage="Publish the event and open volunteer sign-ups? Your event page goes live and people can start signing up."
+                    confirmMessage={
+                      draftOpensOn
+                        ? `Publish the event? Your event page goes live, and volunteer sign-up opens ${signupDay(draftOpensOn)}. Before then, the sign-up page says when it opens.`
+                        : "Publish the event and open volunteer sign-ups? Your event page goes live and people can start signing up."
+                    }
                   >
-                    Publish and open sign-ups
+                    {draftOpensOn ? `Publish, sign-up opens ${signupDayShort(draftOpensOn)}` : "Publish and open sign-ups"}
                   </ActionButton>
                 )}
               </div>
               {/* On its own line, and quiet while sign-up is open, so it isn't tapped by mistake. */}
-              {event.status === "published" && access.isHost && (
+              {event.status === "published" && access.isHost && state !== "later" && (
                 <div className="mt-2">
                   <ActionButton
                     action={setVolunteerSignupOpen.bind(null, eventId, !event.volunteer_signup_open)}
@@ -432,6 +443,38 @@ export default async function VolunteeringPage({ params, searchParams }: PagePro
                 </div>
               </details>
             </div>
+            {/* Volunteer events and fairs: the day it opens by itself, whenever it isn't open now. While it waits,
+                "Open sign-up now" sits beside the day (no "Close" before it opens). */}
+            {dayHere && state !== "open" && (
+              <SignupOpensField
+                id="signup-opens"
+                eventId={eventId}
+                initial={event.volunteer_signup_opens_on ?? ""}
+                today={today}
+                lastDay={signupLastDay(event)}
+                rangeMessage={signupRangeMessage(event, signupLastDay(event))}
+                firstDay={event.event_type === "volunteer" ? event.starts_on : null}
+                live={published}
+                hint={signupDayHint(state, true)}
+                aside={
+                  state === "later" && (
+                    <>
+                      <ActionButton
+                        action={setVolunteerSignupOpen.bind(null, eventId, true)}
+                        variant="secondary"
+                        className="min-h-11 px-3! text-sm!"
+                        pendingText="Opening…"
+                        confirmMessage={`Open volunteer sign-up now? Volunteers can sign up from today instead of ${signupDay(event.volunteer_signup_opens_on!)}. Nobody is emailed.`}
+                        confirmLabel="Open sign-up now"
+                      >
+                        Open sign-up now
+                      </ActionButton>
+                      <RefreshAt at={signupOpensAt(event.volunteer_signup_opens_on!, event.timezone).toISOString()} />
+                    </>
+                  )
+                }
+              />
+            )}
             {event.status !== "published" && !access.isHost && (
               <p className="text-sm text-muted">Sign-ups open once the event&apos;s host publishes it.</p>
             )}

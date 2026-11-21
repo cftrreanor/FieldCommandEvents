@@ -14,10 +14,11 @@ import { getOrigin } from "@/lib/data";
 import { emailLayout, sendEmail } from "@/lib/email";
 import { normalizePhone } from "@/lib/phone";
 import { slugify } from "@/lib/slug";
+import { signupDayClearedLine, signupDayMovedLine, signupLastDay, signupRangeMessage } from "@/lib/volunteer-signup";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { asksChildName } from "@/lib/conference-settings";
 import { FILES_BUCKET } from "@/lib/event-files";
-import { formatDate, eachDate, isValidTimezone, utcToZonedTime, zonedToUtc } from "@/lib/time";
+import { formatDate, eachDate, isValidTimezone, utcToZonedDate, utcToZonedTime, zonedToUtc } from "@/lib/time";
 import { planShifts, toMinutes } from "@/lib/shift-plan";
 import { loadCalendarEntries, sendShiftUpdates } from "@/lib/volunteer-emails";
 
@@ -222,7 +223,7 @@ export async function updateEvent(eventId: string, _prev: ActionState, formData:
   const supabase = await createClient();
   const { data: before } = await supabase
     .from("events")
-    .select("timezone, starts_on, ends_on, organization_id, window_start, venue_name, venue_address, name, event_type, status, band_registration_deadline")
+    .select("timezone, starts_on, ends_on, organization_id, window_start, venue_name, venue_address, name, event_type, status, band_registration_deadline, volunteer_signup_open, volunteer_signup_opens_on")
     .eq("id", eventId)
     .maybeSingle();
   // Saving by itself is for drafts: a live event's changes can email volunteers, so they wait for Save.
@@ -275,6 +276,8 @@ export async function updateEvent(eventId: string, _prev: ActionState, formData:
     p_timezone: v.timezone,
   });
   if (error) return { error: friendlyDbError(error) };
+  // Volunteer sign-up's opening day moved with the dates, or was cleared because it no longer fits: say which.
+  const signupDayNote = before ? await signupDayMoved(supabase, eventId, before) : null;
 
   // A co-host of one event keeps access until 10 days after its last day, so moving that day later keeps them
   // on longer: the Account Host hears about it (owner, 2026-11-11).
@@ -297,10 +300,28 @@ export async function updateEvent(eventId: string, _prev: ActionState, formData:
 
   revalidatePath(`/dashboard/events/${eventId}`, "layout");
   // Saved by itself as the host types (a draft's Details): stay on the page.
-  if (formData.get("autosave") === "1") return { ok: true };
+  if (formData.get("autosave") === "1") return signupDayNote ? { ok: true, message: signupDayNote.message } : { ok: true };
   // In the guided setup, on to the next step.
   const next = String(formData.get("next") ?? "");
-  redirect(next.startsWith(`/dashboard/events/${eventId}/edit?`) ? next : `/dashboard/events/${eventId}`);
+  const note = signupDayNote ? `${next.includes("?") ? "&" : "?"}signupday=${signupDayNote.kind}` : "";
+  redirect(next.startsWith(`/dashboard/events/${eventId}/edit?`) ? `${next}${note}` : `/dashboard/events/${eventId}${note.replace("&", "?")}`);
+}
+
+/**
+ * After new dates: what happened to volunteer sign-up's opening day (reschedule_event moves a day still to come by
+ * the same number of days, or clears it, keeping sign-up closed, when it no longer fits). Null when nothing changed.
+ */
+async function signupDayMoved(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  eventId: string,
+  before: { volunteer_signup_open?: boolean | null; volunteer_signup_opens_on?: string | null },
+): Promise<{ kind: "moved" | "cleared"; message: string } | null> {
+  if (!before.volunteer_signup_open || !before.volunteer_signup_opens_on) return null;
+  const { data: after } = await supabase.from("events").select("status, volunteer_signup_opens_on").eq("id", eventId).maybeSingle();
+  if (!after || after.volunteer_signup_opens_on === before.volunteer_signup_opens_on) return null;
+  return after.volunteer_signup_opens_on
+    ? { kind: "moved", message: signupDayMovedLine(after.volunteer_signup_opens_on) }
+    : { kind: "cleared", message: signupDayClearedLine(after.status === "published") };
 }
 
 /**
@@ -349,12 +370,16 @@ export async function publishSignupLater(eventId: string): Promise<ActionState> 
   redirect(`/dashboard/events/${eventId}?published=1`);
 }
 
+/**
+ * Open volunteer sign-up now, or close it. Either way any opening day is cleared: opening now starts today, and
+ * closing never leaves a day behind that would open it again by itself.
+ */
 export async function setVolunteerSignupOpen(eventId: string, open: boolean): Promise<ActionState> {
   await requireUser();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("events")
-    .update({ volunteer_signup_open: open })
+    .update({ volunteer_signup_open: open, volunteer_signup_opens_on: null })
     .eq("id", eventId)
     .select("id");
   if (error) return { error: friendlyDbError(error) };
@@ -370,6 +395,55 @@ export async function setVolunteerSignupOpen(eventId: string, open: boolean): Pr
       "Send this link to your volunteers, or put the QR code on a flyer. They pick a shift and sign up.",
     ),
   };
+}
+
+export type SignupDaySave = { ok?: true; error?: string; retry?: boolean; changed?: true };
+
+/**
+ * The day volunteer sign-up opens by itself (volunteer events and fairs; owner decision 2, 2026-11-20). A day
+ * switches sign-up on, waiting for that day in the event's time zone (no background job: the database works it
+ * out when anyone signs up). Clearing it leaves sign-up off: on a draft, it opens when you publish with sign-up
+ * open; once published, it stays closed until it's opened. A fair's day comes before fair day (online sign-up
+ * closes then).
+ */
+export async function saveVolunteerSignupOpensOn(eventId: string, day: string): Promise<SignupDaySave> {
+  await requireUser();
+  const value = day.trim();
+  if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) return { error: "Pick a valid date." };
+  const supabase = await createClient();
+  const { data: ev } = await supabase
+    .from("events")
+    .select("status, event_type, timezone, starts_on, ends_on, volunteer_signup_open, volunteer_signup_opens_on")
+    .eq("id", eventId)
+    .maybeSingle();
+  if (!ev) return { error: "Only the event's host can change when sign-up opens." };
+  const today = utcToZonedDate(new Date().toISOString(), ev.timezone);
+  const live = ev.status === "published";
+  const openNow = live && ev.volunteer_signup_open && (!ev.volunteer_signup_opens_on || ev.volunteer_signup_opens_on <= today);
+  if (value && openNow) return { error: "Sign-up is already open. To open it on a later day, close it first." };
+  const lastDay = signupLastDay(ev);
+  if (value && ((value !== ev.volunteer_signup_opens_on && value < today) || value > lastDay)) return { error: signupRangeMessage(ev, lastDay) };
+  // Only over the state that was read: if someone else opened, closed, or published in between, nothing is
+  // written (two organizers saving at once can't close a sign-up the other just opened).
+  let update = supabase
+    .from("events")
+    .update(value ? { volunteer_signup_opens_on: value, volunteer_signup_open: true } : { volunteer_signup_opens_on: null, volunteer_signup_open: false })
+    .eq("id", eventId)
+    .eq("status", ev.status)
+    .eq("volunteer_signup_open", ev.volunteer_signup_open);
+  update = ev.volunteer_signup_opens_on ? update.eq("volunteer_signup_opens_on", ev.volunteer_signup_opens_on) : update.is("volunteer_signup_opens_on", null);
+  const { data, error } = await update.select("id");
+  if (error) return { error: friendlyDbError(error), retry: !error.code };
+  if (!data?.length) {
+    const { data: still } = await supabase.from("events").select("id").eq("id", eventId).maybeSingle();
+    revalidatePath(`/dashboard/events/${eventId}`, "layout");
+    return still
+      ? { error: "Someone else just changed volunteer sign-up. Check it below, then pick the day again.", changed: true }
+      : { error: "Only the event's host can change when sign-up opens." };
+  }
+  revalidatePath(`/dashboard/events/${eventId}`, "layout");
+  revalidatePath("/dashboard");
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------

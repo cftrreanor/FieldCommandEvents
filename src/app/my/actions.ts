@@ -1,5 +1,6 @@
 "use server";
 
+import { signupIsOpen, type SignupWindow } from "@/lib/volunteer-signup";
 import { BOT_CHECK_FAILED, passesBotCheck } from "@/lib/bot-check";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
@@ -23,12 +24,12 @@ export async function cancelMyShift(assignmentId: string): Promise<ActionState> 
   const booker = await whoBookedThem(assignmentId);
   const { data: link } = await createAdminClient()
     .from("volunteer_assignments")
-    .select("volunteers(events(slug, status, volunteer_signup_open))")
+    .select("volunteers(events(slug, status, timezone, volunteer_signup_open, volunteer_signup_opens_on))")
     .eq("id", assignmentId)
     .maybeSingle();
-  const ev = (link?.volunteers as unknown as { events: { slug: string; status: string; volunteer_signup_open: boolean } } | null)
-    ?.events;
-  const signupPath = ev && ev.status === "published" && ev.volunteer_signup_open ? `/e/${ev.slug}/volunteer` : null;
+  const ev = (link?.volunteers as unknown as { events: SignupWindow & { slug: string } } | null)?.events;
+  // Only while sign-up is open now (not waiting for its opening day).
+  const signupPath = ev && signupIsOpen(ev) ? `/e/${ev.slug}/volunteer` : null;
   const pass = await readPass();
   let cancelled = false;
 

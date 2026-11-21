@@ -6,6 +6,9 @@ import { Card } from "@/components/ui";
 import { missing } from "@/lib/schema-check";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { formatDate, formatDateRange, formatTimeRange, utcToZonedDate, zoneName } from "@/lib/time";
+import { signupDay, signupIsOpen, signupOpensAt, signupOpensClock, signupState } from "@/lib/volunteer-signup";
+import { RefreshAt } from "@/components/auto-refresh";
+import { LineIcon } from "@/components/line-icon";
 import { currentSpots, signUpVolunteer } from "./actions";
 import { eventPhase, sortStations } from "@/lib/contest-day";
 import { hasBooths, leadWords } from "@/lib/event-types";
@@ -17,7 +20,7 @@ async function loadEvent(slug: string) {
   const supabase = await createClient();
   const { data } = await supabase
     .from("events")
-    .select("id, name, status, event_type, timezone, starts_on, ends_on, venue_name, venue_address, venue_place_id, volunteer_signup_open, public_notes")
+    .select("id, name, status, event_type, timezone, starts_on, ends_on, venue_name, venue_address, venue_place_id, volunteer_signup_open, volunteer_signup_opens_on, public_notes")
     .eq("slug", slug)
     .maybeSingle();
   return data;
@@ -116,7 +119,9 @@ export default async function VolunteerSignupPage({ params }: Params) {
 
   // On fair day, volunteers who show up are added at the volunteer desk instead.
   const fairDay = hasBooths(event.event_type) && eventPhase(event, new Date()) === "day";
-  const isOpen = event.status === "published" && event.volunteer_signup_open && !fairDay;
+  const isOpen = signupIsOpen(event) && !fairDay;
+  // Switched on and waiting for its day (in the event's time zone): the page says when.
+  const opensOn = !fairDay && signupState(event) === "later" ? event.volunteer_signup_opens_on! : null;
   const mapUrl = `https://www.google.com/maps/search/?${new URLSearchParams({
     api: "1",
     query: event.venue_address,
@@ -147,7 +152,26 @@ export default async function VolunteerSignupPage({ params }: Params) {
     <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:py-12">
       {!band && heading}
 
-      {!isOpen && (
+      {opensOn && (
+        <Card className="mt-8 border-2 border-brand">
+          <p className="text-lg font-semibold">
+            <LineIcon name="calendar" inline />
+            Volunteer sign-up opens {signupDay(opensOn)}
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            Opens at {signupOpensClock(tz)}, the start of {signupDay(opensOn)}. You can look over the shifts now.
+          </p>
+          {/* A calendar file for the opening day, linking back here (nothing is emailed). */}
+          <a
+            href={`/e/${slug}/volunteer/opens`}
+            className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4"
+          >
+            Add a reminder to my calendar
+          </a>
+          <RefreshAt at={signupOpensAt(opensOn, tz).toISOString()} />
+        </Card>
+      )}
+      {!isOpen && !opensOn && (
         <Card className="mt-8 bg-brand-soft">
           <p className="font-medium">
             {fairDay
@@ -177,6 +201,7 @@ export default async function VolunteerSignupPage({ params }: Params) {
             spots={currentSpots.bind(null, event.id)}
             stations={publicStations}
             disabled={!isOpen}
+            opensOn={opensOn ? signupDay(opensOn) : undefined}
             lead={leadWords(event.event_type).one}
             keepsHistory={await keepsVolunteerHistory(event.id)}
           />

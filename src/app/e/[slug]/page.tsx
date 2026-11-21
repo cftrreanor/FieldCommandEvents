@@ -18,7 +18,8 @@ import { FestivalPublic } from "./festival-public";
 import { closesAtLabel, parentRegistrationClosed } from "@/lib/parents";
 import { ScheduleUpdateBanner } from "@/components/schedule-update-banner";
 import { EventBannerSlot } from "@/components/event-banner-slot";
-import { AutoRefresh } from "@/components/auto-refresh";
+import { AutoRefresh, RefreshAt } from "@/components/auto-refresh";
+import { signupDay, signupIsOpen, signupOpensAt, signupState } from "@/lib/volunteer-signup";
 import { FairBooths, boothHosts, type PublicBooth } from "./fair-booths";
 import { PresentedBy, SponsorLiveLine, SponsorThanks, partnersNotSponsors } from "./public-sponsors";
 import { isSponsorKind, type PublicSponsor } from "@/lib/sponsors";
@@ -58,7 +59,7 @@ async function loadEvent(slug: string) {
   const supabase = await createClient();
   const { data } = await supabase
     .from("events")
-    .select("id, name, status, event_type, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, public_notes, volunteer_signup_open, band_registration_open, band_registration_deadline, band_registration_opens_on, performance_order_published, finals_published, schedule_updated_at, parent_registration_open, parent_registration_closes_at, parent_walk_ins_allowed")
+    .select("id, name, status, event_type, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, public_notes, volunteer_signup_open, volunteer_signup_opens_on, band_registration_open, band_registration_deadline, band_registration_opens_on, performance_order_published, finals_published, schedule_updated_at, parent_registration_open, parent_registration_closes_at, parent_walk_ins_allowed")
     .eq("slug", slug)
     .maybeSingle();
   return data;
@@ -152,7 +153,9 @@ export default async function EventPublicPage({ params }: Params) {
   // On fair day, volunteers who show up are added at the desk, not online.
   const fairDay = hasBooths(event.event_type) && isEventDay;
   // A volunteer event's page is mostly about signing up.
-  const signUp = !bandsHere && event.volunteer_signup_open && !isVolunteer && !fairDay;
+  const signUp = !bandsHere && signupIsOpen(event) && !isVolunteer && !fairDay;
+  // Sign-up switched on and waiting for its day (in the event's time zone): the page says when.
+  const signupLater = !bandsHere && !isVolunteer && !fairDay && signupState(event) === "later" ? event.volunteer_signup_opens_on! : null;
   const parentsClosed = hasParents(event.event_type) ? parentRegistrationClosed(event) : "draft";
   const parentsOpen = hasParents(event.event_type) && !parentsClosed;
   // Registration has closed, but parents who didn't register can still come with an ID.
@@ -225,7 +228,7 @@ export default async function EventPublicPage({ params }: Params) {
   );
   const cards = (
     <>
-      {(isVolunteer || bandsOpen || bandsLater || signUp || parentsOpen || parentWalkIns) && event.status === "published" && (
+      {(isVolunteer || bandsOpen || bandsLater || signUp || signupLater || parentsOpen || parentWalkIns) && event.status === "published" && (
         <div className="mt-8 grid gap-3 sm:grid-cols-2">
           {parentWalkIns && (
             <Link href={`/e/${slug}/parents`} className="block">
@@ -257,12 +260,25 @@ export default async function EventPublicPage({ params }: Params) {
               </Card>
             </Link>
           )}
+          {signupLater && (
+            <Link href={`/e/${slug}/volunteer`} className="block">
+              {/* Looks tappable: the brand border and title, and a "See the shifts" link line, like a button. */}
+              <Card className="h-full border-brand transition hover:bg-brand-soft">
+                <p className="font-semibold text-brand">Volunteer sign-up opens {signupDay(signupLater)}</p>
+                <p className="mt-1 text-sm text-muted">See the shifts now, and come back {signupDay(signupLater)} to sign up.</p>
+                <p className="mt-2 text-sm font-semibold text-brand underline underline-offset-4">
+                  See the shifts <span aria-hidden>→</span>
+                </p>
+                <RefreshAt at={signupOpensAt(signupLater, tz).toISOString()} />
+              </Card>
+            </Link>
+          )}
           {isVolunteer && (
             <Link href="/my" className="block">
               <Card className="h-full transition hover:border-brand">
                 <p className="font-semibold">Your volunteer shifts</p>
                 <p className="mt-1 text-sm text-muted">
-                  {event.volunteer_signup_open && !fairDay ? "See your shifts, or sign up for more." : "See your shifts and who to report to."}
+                  {signupIsOpen(event) && !fairDay ? "See your shifts, or sign up for more." : "See your shifts and who to report to."}
                 </p>
               </Card>
             </Link>
@@ -305,11 +321,11 @@ export default async function EventPublicPage({ params }: Params) {
       <EventBannerSlot eventId={event.id} audience="public" tz={tz} className="mt-6" />
 
       {/* A fair's attraction list is long: point volunteers to the sign-up first. */}
-      {hasBooths(event.event_type) && signUp && event.status === "published" && (
+      {hasBooths(event.event_type) && (signUp || signupLater) && event.status === "published" && (
         <p className="mt-6 rounded-lg border border-brand bg-brand-soft px-4 py-3 text-sm">
           <span className="font-semibold">Volunteers needed</span> ·{" "}
           <Link href={`/e/${slug}/volunteer`} className="font-semibold text-brand underline">
-            Sign up for a shift
+            {signupLater ? `Sign-up opens ${signupDay(signupLater)}` : "Sign up for a shift"}
           </Link>
         </p>
       )}

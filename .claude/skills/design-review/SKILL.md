@@ -22,6 +22,21 @@ Reference files in this folder:
 
 Decisions are logged in `docs/design-decisions/` (see its README).
 
+## 0. Kickoff, before anything is drawn (new features)
+
+The owner decided (2026-11-20) that new features start with a kickoff, to shorten the review loops: most mock-up
+findings were things the panel could have warned about up front.
+
+- Give the whole panel (all seven roles plus the consultant) the idea as the owner heard it (a paraphrase, no private
+  names or details), `docs/PROJECT-CONTEXT.md`, and the code to read. Unlike a review, a kickoff **may** read
+  `docs/design-lessons.md`: the point is to bring what we've learned forward.
+- Each role answers in its own area: **risks**, **guiding principles**, **must-haves** (v1 or later), **what already
+  exists to reuse**, and **questions only the owner can answer** (with a recommendation).
+- Combine the answers into one short brief in `docs/design-briefs/YYYY-MM-DD-<slug>.md`. Bring the owner's questions
+  in one round, and log the answers in `docs/design-decisions/`.
+- Mock-ups are then built to the brief, covering every must-have and state from the start, and the first review checks
+  the screens against the brief. Keep raw transcripts and private notes out of the repo.
+
 ## 1. Pick the size
 
 Read `routing.md` and match the change to a row. State the size and the reviewers in one line

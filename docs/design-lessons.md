@@ -239,6 +239,11 @@ moves everything waiting on it.
   still said "Undo is at the top of the page" until a reload). **Sharper rule:** anything that ends
   on a timer refreshes the page when it ends, so every line about it changes together, and focus
   moves somewhere sensible if it was on the part that went away.
+- **Again in:** "Sign-up opens" built, 2026-11-20 (before the day the public form looked fillable with dead buttons,
+  4 of 5; a copied or unpublished event kept a hidden day; moving the dates left the day behind; a fair could get a
+  day after online sign-up closes). **Sharper rule:** before the day, show what's coming read-only with when to come
+  back (no form); the database keeps the date's rules (a day only while switched on, inside the event's limits) and
+  moves it with the dates.
 
 ## L17. When a step is ready, its one action comes first
 Once everything a step needs is in place, the button that finishes it moves to the top of the
@@ -277,6 +282,9 @@ screen's edge.
 - **Seen in:** band contest mock-ups (sticky bar covers content; sidebar clipped with no cue), band PR 1
   built (phone setup bar covers buttons), layout fixes 2026-11-09 (footer under the bar; panel heading
   scrolled away; fade covered the focused step).
+- **Again in:** "Sign-up opens" built, 2026-11-20 (a job's pinned bar wraps to about 12rem on a phone, taller than the
+  7rem scroll padding, so a focused box stopped under it). **Sharper rule:** measure each pinned bar at 390 px; the
+  scroll padding is at least its height (focus a box just under it with Tab and check).
 
 ## L26. Mock-up numbers are worked out, not typed
 Every count, time, and "N directors" in a mock-up comes from the same sample data, worked out the way the app would
