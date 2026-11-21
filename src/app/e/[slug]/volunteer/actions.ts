@@ -7,6 +7,7 @@ import { BOT_CHECK_FAILED, passesBotCheck } from "@/lib/bot-check";
 import { eventPhase } from "@/lib/contest-day";
 import { getOrigin } from "@/lib/data";
 import { hasBooths } from "@/lib/event-types";
+import { helpLinkSource } from "@/lib/help-link-source";
 import { GUARDIAN_CONSENT, MAX_OTHERS } from "@/lib/group-signup";
 import { googleCalendarUrl } from "@/lib/ics";
 import { normalizePhone } from "@/lib/phone";
@@ -252,6 +253,16 @@ export async function signUpVolunteer(eventId: string, _prev: SignupState, formD
         : undefined,
       groupLines,
     ));
+
+  // The names-free count of sign-ups by where they came from (a "More ways to help" link, the organization page,
+  // or direct): one per sign-up that booked something new. Only the source and the day are kept.
+  if (fresh.length + freshItems.length + added.length > 0) {
+    const source = helpLinkSource(formData.get("via"));
+    after(async () => {
+      const { error: countError } = await admin.rpc("bump_help_link_signup", { p_event: eventId, p_source: source });
+      if (countError && !isSchemaError(countError)) console.error("Counting the sign-up failed", countError.message);
+    });
+  }
 
   // Each added person with an email hears from us, with their own private link.
   const bookerFirst = booker.name.split(/\s+/)[0];

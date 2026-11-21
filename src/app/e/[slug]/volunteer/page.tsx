@@ -13,6 +13,7 @@ import { currentSpots, signUpVolunteer } from "./actions";
 import { eventPhase, sortStations } from "@/lib/contest-day";
 import { hasBooths, leadWords } from "@/lib/event-types";
 import { SignupForm, type PublicStation } from "./signup-form";
+import { helpLinkSource } from "@/lib/help-link-source";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -42,8 +43,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return { title: event ? `Volunteer: ${event.name}` : "Volunteer sign-up" };
 }
 
-export default async function VolunteerSignupPage({ params }: Params) {
+export default async function VolunteerSignupPage({ params, searchParams }: Params & { searchParams: Promise<{ via?: string | string[] }> }) {
   const { slug } = await params;
+  // Where the visitor came from ("More ways to help" or the organization page), for the names-free count.
+  const via = helpLinkSource((await searchParams).via);
   const event = await loadEvent(slug);
   if (!event) missing();
 
@@ -204,6 +207,7 @@ export default async function VolunteerSignupPage({ params }: Params) {
             opensOn={opensOn ? signupDay(opensOn) : undefined}
             lead={leadWords(event.event_type).one}
             keepsHistory={await keepsVolunteerHistory(event.id)}
+            via={via === "direct" ? undefined : via}
           />
         )}
       </div>

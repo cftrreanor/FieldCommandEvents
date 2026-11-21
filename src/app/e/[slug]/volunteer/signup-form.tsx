@@ -66,6 +66,7 @@ export function SignupForm({
   opensOn,
   lead = "Coordinator",
   keepsHistory = false,
+  via,
 }: {
   action: (prev: SignupState, formData: FormData) => Promise<SignupState>;
   /** Spots left on each shift right now (checked again on the review screen). */
@@ -81,6 +82,8 @@ export function SignupForm({
   lead?: string;
   /** The account keeps a 2-year volunteer history (packages with volunteer tracking). */
   keepsHistory?: boolean;
+  /** Where the visitor came from (the link's ?via=), sent on for the names-free count of sign-ups by source. */
+  via?: string;
 }) {
   const [state, formAction, pending] = useActionState(action, {});
   const pathname = usePathname();
@@ -424,6 +427,7 @@ export function SignupForm({
         <ActionPendingContext value={pending}>
           <input type="hidden" name="startedAt" value={startedAt} />
           <input type="hidden" name="payload" value={JSON.stringify(payload)} />
+          {via ? <input type="hidden" name="via" value={via} /> : null}
           {/* Bot trap: hidden from people, tempting to scripts. */}
           <div aria-hidden className="absolute left-[-9999px] h-0 w-0 overflow-hidden">
             <label>
