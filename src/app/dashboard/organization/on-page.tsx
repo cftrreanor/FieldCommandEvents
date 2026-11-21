@@ -11,7 +11,7 @@ import { saveOrgPageDetail, turnOffOrgPage } from "../org-page-actions";
 const BTN = "inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover";
 const BTN_OUTLINE = "inline-flex min-h-11 items-center justify-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand";
 
-/** The page is on: its link, Copy link and Preview, and the group name and contact email, saving as you go. */
+/** The page is on: its link, Copy link and Preview, and the group name and contact email, each saved when you leave its box. */
 export function StatusCard({ orgId, url, name, contact }: { orgId: string; url: string; name: string; contact: string }) {
   useLeaveGuard("The organization page's details");
   return (
@@ -20,7 +20,7 @@ export function StatusCard({ orgId, url, name, contact }: { orgId: string; url: 
         <Badge tone="live">On</Badge>
         <span>Anyone with the link can open it</span>
       </h2>
-      <p className="mt-1 text-sm text-muted">We ask search engines not to list it. Nobody is emailed about it.</p>
+      <p className="mt-1 text-sm text-muted">We ask search engines not to list your page. Nobody is emailed about it.</p>
       <p className="mt-3 rounded-md border border-border bg-background px-3 py-2 font-mono text-sm [overflow-wrap:anywhere]">{url}</p>
       <div className="mt-3 flex flex-wrap gap-3">
         <CopyLink url={url} className={BTN} ariaLabel="Copy your organization page's link" />
@@ -53,7 +53,11 @@ export function StatusCard({ orgId, url, name, contact }: { orgId: string; url: 
 
 type Status = { kind: "idle" | "waiting" | "saving" | "saved" } | { kind: "failed"; error: string; retry: boolean };
 
-/** One box that saves itself a moment after typing stops, with its status on the line under it. */
+/**
+ * One box that saves when you leave it (or press Enter), never mid-typing: the group name is a live public heading,
+ * so a half-typed name never shows (built-page review). Its status is on the line under it; leaving the page with a
+ * change not yet saved saves it first.
+ */
 function AutoField({
   orgId,
   field,
@@ -74,20 +78,11 @@ function AutoField({
   const key = useId();
   const [value, setValue] = useState(initial);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useRef(initial);
   const saved = useRef(initial);
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-      setPending(key, null);
-    },
-    [key],
-  );
+  useEffect(() => () => setPending(key, null), [key]);
 
   const save = async () => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
     const v = latest.current;
     if (v.trim() === saved.current.trim()) {
       setStatus((s) => (s.kind === "waiting" ? { kind: "idle" } : s));
@@ -127,21 +122,26 @@ function AutoField({
             setValue(e.target.value);
             latest.current = e.target.value;
             setStatus({ kind: "waiting" });
-            // Waiting to save: leaving the page saves it first.
+            // Not saved yet: leaving the page saves it first.
             setPending(key, { kind: "saving", flush: () => void save() });
-            if (timer.current) clearTimeout(timer.current);
-            // Checked when they stop typing, not while they type (lesson L3).
-            timer.current = setTimeout(() => void save(), 1500);
           }}
-          onBlur={() => status.kind === "waiting" && void save()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+          }}
+          onBlur={() => (status.kind === "waiting" || status.kind === "failed") && void save()}
           aria-invalid={failed || undefined}
           aria-describedby={`${id}-status`}
           className={failed ? "!border-danger" : ""}
         />
       </Field>
       <div id={`${id}-status`} role="status" className="mt-1.5 min-h-6 text-sm">
-        {status.kind === "saving" || status.kind === "waiting" ? (
+        {status.kind === "saving" ? (
           <p className="text-muted">Saving…</p>
+        ) : status.kind === "waiting" ? (
+          <p className="text-muted">Saves when you leave the box</p>
         ) : status.kind === "saved" ? (
           <p className="font-medium">
             <span aria-hidden className="text-success">
@@ -188,7 +188,8 @@ export function TurnOff({ orgId }: { orgId: string }) {
             bullets: [
               "Anyone who opens the link sees “This page isn’t available”",
               "Sign-up pages stop showing your other events",
-              "Your events, their links, and everyone’s sign-ups don’t change. Nobody is emailed",
+              "Your events, their links, and everyone’s sign-ups don’t change",
+              "Nobody is emailed",
               "Your choices and ways to help are kept, so you can turn it on again with the same link",
             ],
             confirmLabel: "Turn off page",

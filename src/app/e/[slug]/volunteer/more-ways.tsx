@@ -7,11 +7,12 @@ import { heldShiftIds, loadRemembered } from "./remembered";
 /**
  * "More ways to help from [Org]" on an event's volunteer sign-up page, only while the account's organization page
  * is on (org_page_listing returns null otherwise). Rendered inside <Suspense> so it never holds up the page. The
- * listing leaves out this event, the shifts this device holds, and anything at the same time as those.
+ * listing leaves out this event, the shifts this device holds, anything at the same time as those, and shifts already
+ * under way.
  */
 export async function MoreWays({ eventId, mode }: { eventId: string; mode: MoreMode }) {
   const admin = createAdminClient();
-  const [held, remembered] = await Promise.all([heldShiftIds(), loadRemembered()]);
+  const [held, remembered] = await Promise.all([heldShiftIds(), loadRemembered(eventId)]);
   const { data, error } = await admin.rpc("org_page_listing", { p_event: eventId, p_skip_shifts: held, p_limit: 12 });
   if (error) {
     if (!isSchemaError(error)) console.error("org_page_listing (more ways) failed", error.message);

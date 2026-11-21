@@ -78,3 +78,13 @@ test("links", () => {
   assert.equal(signupHref("winter-carnival", "more", "abc"), "/e/winter-carnival/volunteer?via=more&shift=abc");
   assert.equal(signupHref("winter-carnival", "org"), "/e/winter-carnival/volunteer?via=org");
 });
+
+test("More ways to help never offers a shift already under way", () => {
+  const started = ev({ slug: "now", soonest_shift: { id: "x", starts_at: "2026-11-21T14:30:00Z", ends_at: "2026-11-21T16:30:00Z", job: "Serve" } });
+  const ways = pickMoreWays([started, ev({ slug: "later" })], [], { now: NOW });
+  assert.deepEqual(ways.map((w) => (w.type === "event" ? w.event.slug : w.help.id)), ["later"]);
+});
+
+test("Things to bring has its own icon", () => {
+  assert.equal(kindWords(ev({ soonest_shift: null, open_spots: 0, items_needed: 4 })).icon, "bag");
+});

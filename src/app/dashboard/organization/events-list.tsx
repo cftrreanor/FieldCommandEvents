@@ -40,6 +40,7 @@ export function EventsList({
         orgName={orgName}
         status={r.status}
         need={r.need}
+        draft={r.draft}
         head={
           <>
             <p className="font-semibold [overflow-wrap:anywhere]">
@@ -70,7 +71,7 @@ export function EventsList({
         <p className="text-sm text-muted">Saves as you go</p>
       </div>
       <p className="mt-1 text-sm leading-6 text-muted">
-        Your volunteer events and fairs. Full, closed, and past ones leave the page on their own, and come back if spots open up.
+        Your volunteer events and fairs. Full and closed events leave your page on their own and come back when spots open. Past events drop off.
       </p>
       <p className="mt-3 rounded-md bg-brand-soft px-3 py-2 text-sm leading-6">{NEW_EVENTS_RULE}</p>
       {reviewCount > 0 && review.length > 0 && (

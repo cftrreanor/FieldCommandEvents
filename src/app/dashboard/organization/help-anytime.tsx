@@ -5,16 +5,24 @@ import { DateField } from "@/components/date-field";
 import { setPending, useUnadded } from "@/components/pending-edits";
 import { Badge, Button, Card, Field, Input, Textarea } from "@/components/ui";
 import { addDays, cleanHelpLink, HELP_LAST_DAY_AFTER, HELP_NOTE_MAX, HELP_TITLE_MAX, shortDay, siteOf } from "@/lib/org-page-words";
-import { endHelpToday, removeHelpItem, saveHelpItem, type HelpItem } from "../org-page-actions";
+import { removeHelpItem, saveHelpItem, setHelpEndsOn, type HelpItem } from "../org-page-actions";
 
 // Help anytime (board 3c, with the review's fixes): ongoing ways to help with no shifts, each with an end date so
 // it leaves the page by itself. One save model for adding and editing (a Save button, then a Saved line on the
-// row); Remove waits a few seconds with Undo before it happens; "End today" keeps it on through today.
+// row); Remove waits a few seconds with Undo before it happens; "Take off the page now" ends it yesterday, so it
+// leaves at once, with Undo, and stays in the list as ended so it can be shown again.
 
 const UNDO_MS = 10_000;
 const BTN_OUTLINE = "inline-flex min-h-11 items-center justify-center rounded-md border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand";
 
-type RowNote = { kind: "saved"; linkChanged?: boolean } | { kind: "failed"; error: string } | { kind: "removing" };
+type RowNote =
+  | { kind: "saved"; linkChanged?: boolean }
+  | { kind: "failed"; error: string }
+  | { kind: "removing" }
+  | { kind: "taken-off"; was: string };
+
+/** Within a week of its last day: worth a badge, so it doesn't drop off unnoticed. */
+const ENDS_SOON_DAYS = 7;
 
 export function HelpAnytime({ orgId, items: fromPage, today }: { orgId: string; items: HelpItem[]; today: string }) {
   const [items, setItems] = useState(fromPage);
@@ -88,8 +96,36 @@ export function HelpAnytime({ orgId, items: fromPage, today }: { orgId: string; 
     note(item.id, null);
   };
 
-  const active = items.filter((h) => h.ends_on >= today);
-  const ended = items.filter((h) => h.ends_on < today).sort((a, b) => b.ends_on.localeCompare(a.ends_on));
+  // Just taken off: it stays where it was, with Undo, until the page is next loaded.
+  const justOff = (h: HelpItem) => notes[h.id]?.kind === "taken-off";
+  const active = items.filter((h) => h.ends_on >= today || justOff(h));
+  const ended = items.filter((h) => h.ends_on < today && !justOff(h)).sort((a, b) => b.ends_on.localeCompare(a.ends_on));
+
+  const takeOff = async (h: HelpItem) => {
+    try {
+      const res = await setHelpEndsOn(orgId, h.id, "yesterday");
+      if (res.error || !res.item) note(h.id, { kind: "failed", error: `Still on your page. ${res.error ?? ""}`.trim() });
+      else {
+        setItems((list) => list.map((x) => (x.id === h.id ? res.item! : x)));
+        note(h.id, { kind: "taken-off", was: res.was ?? h.ends_on });
+      }
+    } catch {
+      note(h.id, { kind: "failed", error: "Still on your page. Check your connection, then select Take off the page now again." });
+    }
+  };
+
+  const undoTakeOff = async (h: HelpItem, was: string) => {
+    try {
+      const res = await setHelpEndsOn(orgId, h.id, was);
+      if (res.error || !res.item) note(h.id, { kind: "failed", error: `Still off your page. ${res.error ?? ""}`.trim() });
+      else {
+        setItems((list) => list.map((x) => (x.id === h.id ? res.item! : x)));
+        note(h.id, { kind: "saved" });
+      }
+    } catch {
+      note(h.id, { kind: "failed", error: "Still off your page. Check your connection, then select Undo again." });
+    }
+  };
 
   const row = (h: HelpItem) => {
     const n = notes[h.id];
@@ -125,50 +161,54 @@ export function HelpAnytime({ orgId, items: fromPage, today }: { orgId: string; 
     }
     const isEnded = h.ends_on < today;
     const endsToday = h.ends_on === today;
+    const endsSoon = !isEnded && h.ends_on <= addDays(today, ENDS_SOON_DAYS);
     return (
       <li key={h.id} className="grid gap-x-4 gap-y-2 px-4 py-3 sm:grid-cols-[minmax(12rem,1fr)_auto] sm:items-start">
         <div className="min-w-0">
           <p className="font-semibold [overflow-wrap:anywhere]">
-            {h.title}{" "}
-            <span className="ml-1 align-middle">
-              {isEnded ? <Badge tone="neutral">Ended</Badge> : endsToday ? <Badge tone="neutral">Ends today</Badge> : <Badge tone="success">Active</Badge>}
-            </span>
+            {h.title}
+            {/* Only what needs noticing: ended, or ending within a week (built-page review). */}
+            {(isEnded || endsSoon) && (
+              <span className="ml-2 align-middle">
+                <Badge tone="neutral">{isEnded ? "Ended" : endsToday ? "Ends today" : "Ends soon"}</Badge>
+              </span>
+            )}
           </p>
           {h.note && <p className="text-sm leading-6 [overflow-wrap:anywhere]">{h.note}</p>}
           <p className="text-sm">
-            {isEnded ? `Ended ${shortDay(h.ends_on)}. Not on your page` : endsToday ? "On your page through today" : `On your page until ${shortDay(h.ends_on)}`}
+            {justOff(h) ? "Off your page" : isEnded ? `Ended ${shortDay(h.ends_on)}. Not on your page` : endsToday ? "On your page through today" : `On your page until ${shortDay(h.ends_on)}`}
           </p>
-          {h.link && <p className="text-sm text-muted [overflow-wrap:anywhere]">Link opens {siteOf(h.link)}</p>}
+          {h.link && <p className="text-sm text-muted [overflow-wrap:anywhere]">Opens {siteOf(h.link)}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className={BTN_OUTLINE} onClick={() => setEditing(h.id)}>
-            Edit<span className="sr-only"> {h.title}</span>
+            {/* An ended one is shown again by giving it a new end date. */}
+            {isEnded && !justOff(h) ? "Show again" : "Edit"}
+            <span className="sr-only"> {h.title}</span>
           </button>
-          {!isEnded && !endsToday && (
-            <button
-              type="button"
-              className={BTN_OUTLINE}
-              onClick={async () => {
-                try {
-                  const res = await endHelpToday(orgId, h.id);
-                  if (res.error || !res.item) note(h.id, { kind: "failed", error: `Not saved. ${res.error ?? ""}`.trim() });
-                  else {
-                    setItems((list) => list.map((x) => (x.id === h.id ? res.item! : x)));
-                    note(h.id, { kind: "saved" });
-                  }
-                } catch {
-                  note(h.id, { kind: "failed", error: "Not saved. Check your connection, then select End today again." });
-                }
-              }}
-            >
-              End today<span className="sr-only"> {h.title}</span>
+          {!isEnded && (
+            <button type="button" className={BTN_OUTLINE} onClick={() => void takeOff(h)}>
+              Take off the page now<span className="sr-only"> {h.title}</span>
             </button>
           )}
           <Button type="button" variant="quiet-danger" onClick={() => startRemove(h)}>
             Remove<span className="sr-only"> {h.title}</span>
           </Button>
         </div>
-        {n && n.kind !== "removing" && (
+        {n?.kind === "taken-off" && (
+          <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-medium sm:col-span-2">
+            <span>
+              <span aria-hidden className="text-success">
+                ✓{" "}
+              </span>
+              Taken off your page
+            </span>
+            <Button type="button" variant="secondary" onClick={() => void undoTakeOff(h, n.was)}>
+              Undo<span className="sr-only"> taking off {h.title}</span>
+            </Button>
+          </div>
+        )}
+        {n && n.kind !== "removing" && n.kind !== "taken-off" && (
           <p role="status" className={`text-sm sm:col-span-2 ${n.kind === "failed" ? "font-semibold text-danger" : "font-medium"}`}>
             {n.kind === "failed" ? (
               <>
@@ -180,7 +220,7 @@ export function HelpAnytime({ orgId, items: fromPage, today }: { orgId: string; 
                 <span aria-hidden className="text-success">
                   ✓{" "}
                 </span>
-                Saved{n.linkChanged ? ". We switched the link to https and took off its tracking parts" : ""}
+                Saved{n.linkChanged ? ". We made the link secure and removed the parts that track clicks" : ""}
               </>
             )}
           </p>
@@ -266,9 +306,9 @@ function HelpForm({
 
   const submit = async () => {
     const e: Errors = {};
-    if (!title.trim()) e.title = "Add a title";
+    if (!title.trim()) e.title = "Add a title.";
     if (cleaned.error) e.link = cleaned.error;
-    if (!endsOn) e.endsOn = "Pick an end date";
+    if (!endsOn) e.endsOn = "Pick an end date.";
     setErrors(e);
     setError(null);
     if (Object.keys(e).length) {
@@ -319,7 +359,7 @@ function HelpForm({
         label="Link (optional)"
         hint={
           cleaned.url
-            ? `Opens ${siteOf(cleaned.url)}, in a new tab.${cleaned.changed && cleaned.url !== `https://${link.trim()}` ? " We'll switch it to https and take off its tracking parts when you save." : ""}`
+            ? `Opens ${siteOf(cleaned.url)} in a new tab.${cleaned.changed && cleaned.url !== `https://${link.trim()}` ? " When you save, we make it a secure link and remove the parts that track clicks." : ""}`
             : "If there's a page to go to, like a wish list. It shows which site it opens."
         }
         error={errors.link}

@@ -1,19 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { OrgBody, OrgHeading, type ShiftFacts } from "@/app/o/[slug]/parts";
 import { LineIcon } from "@/components/line-icon";
 import { useLeaveGuard, useUnadded } from "@/components/pending-edits";
 import { toast } from "@/components/toaster";
 import { Badge, Button, Card, Field, Input } from "@/components/ui";
-import {
-  dayRange,
-  NEVER_LISTED,
-  NEW_EVENTS_RULE,
-  orgPageKindLabel,
-  siteOf,
-  WHAT_SHOWS,
-  WHY_LINE,
-} from "@/lib/org-page-words";
+import { brandThemeCss } from "@/lib/brand-color";
+import type { OrgListingEvent } from "@/lib/org-page";
+import { dayRange, NEVER_LISTED, NEW_EVENTS_RULE, orgPageKindLabel, WHAT_SHOWS, WHY_LINE } from "@/lib/org-page-words";
 import { turnOnOrgPage, type HelpItem } from "../org-page-actions";
 
 export type PickEvent = {
@@ -38,6 +33,8 @@ export function OffAndTurnOn({
   events,
   help,
   url,
+  look,
+  preview,
 }: {
   orgId: string;
   name: string;
@@ -47,6 +44,10 @@ export function OffAndTurnOn({
   help: HelpItem[];
   /** The page's link, once it's been on before (it keeps it). */
   url: string | null;
+  /** The group's color and logo, for the preview. */
+  look: { color: string | null; logo: string | null };
+  /** What each event would show today, for the preview. */
+  preview: PreviewEvent[];
 }) {
   const [open, setOpen] = useState(false);
   if (!open) {
@@ -62,7 +63,7 @@ export function OffAndTurnOn({
         </p>
         {url && (
           <p className="mt-2 text-sm leading-6">
-            Turned on again, it keeps its link: <span className="font-mono [overflow-wrap:anywhere]">{url}</span>
+            Your page&apos;s link: <span className="font-mono [overflow-wrap:anywhere]">{url}</span>
           </p>
         )}
         <Button type="button" className="mt-4" onClick={() => setOpen(true)}>
@@ -71,7 +72,18 @@ export function OffAndTurnOn({
       </Card>
     );
   }
-  return <TurnOnForm orgId={orgId} startName={startName} startContact={startContact} events={events} help={help} onCancel={() => setOpen(false)} />;
+  return (
+    <TurnOnForm
+      orgId={orgId}
+      startName={startName}
+      startContact={startContact}
+      events={events}
+      help={help}
+      look={look}
+      preview={preview}
+      onCancel={() => setOpen(false)}
+    />
+  );
 }
 
 function TurnOnForm({
@@ -80,6 +92,8 @@ function TurnOnForm({
   startContact,
   events,
   help,
+  look,
+  preview: previewFacts,
   onCancel,
 }: {
   orgId: string;
@@ -87,6 +101,8 @@ function TurnOnForm({
   startContact: string;
   events: PickEvent[];
   help: HelpItem[];
+  look: { color: string | null; logo: string | null };
+  preview: PreviewEvent[];
   onCancel: () => void;
 }) {
   const [name, setName] = useState(startName);
@@ -244,7 +260,7 @@ function TurnOnForm({
                         <span className="block text-sm">
                           {orgPageKindLabel(e.kind)} · {dayRange(e.startsOn, e.endsOn)}
                         </span>
-                        <span className="block text-sm text-muted">{e.draft ? "Draft. Shows when you publish" : e.signup}</span>
+                        <span className="block text-sm text-muted">{e.draft ? (ticked.has(e.id) ? "Draft. Shows once you publish it" : "Draft. Select it to show it once it's published") : e.signup}</span>
                       </span>
                     </label>
                   </li>
@@ -283,23 +299,54 @@ function TurnOnForm({
           )}
         </div>
       </form>
-      {preview && <PreviewDialog name={name} contact={contact} events={chosen} help={help} onClose={() => setPreview(false)} />}
+      {preview && (
+        <PreviewDialog
+          name={name}
+          contact={contact}
+          chosen={chosen}
+          preview={previewFacts}
+          help={help}
+          look={look}
+          busy={busy}
+          onTurnOn={() => {
+            // Back to the form first, so a problem shows next to its box.
+            setPreview(false);
+            void submit();
+          }}
+          onClose={() => setPreview(false)}
+        />
+      )}
     </Card>
   );
 }
 
-/** The page as it will look with exactly what's selected (only the organizer sees this). */
+/** What one event would show on the page today, for the preview (worked out on the server). */
+export type PreviewEvent = { id: string; why: string | null; listing: OrgListingEvent; facts: ShiftFacts };
+
+/**
+ * The page as it will look with exactly what's selected (only the organizer sees this): built from the public page's
+ * own parts (src/app/o/[slug]/parts.tsx), in the group's color with its logo, with only the selected events that
+ * would show today, and buttons that go nowhere. "Turn on page" is inside it too.
+ */
 export function PreviewDialog({
   name,
   contact,
-  events,
+  chosen,
+  preview,
   help,
+  look,
+  busy,
+  onTurnOn,
   onClose,
 }: {
   name: string;
   contact: string;
-  events: PickEvent[];
+  chosen: PickEvent[];
+  preview: PreviewEvent[];
   help: HelpItem[];
+  look: { color: string | null; logo: string | null };
+  busy: boolean;
+  onTurnOn: () => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -307,70 +354,74 @@ export function PreviewDialog({
     const d = ref.current;
     if (d && !d.open) d.showModal();
   }, []);
-  const sorted = [...events].sort((a, b) => a.startsOn.localeCompare(b.startsOn) || a.name.localeCompare(b.name));
+  const byId = new Map(preview.map((p) => [p.id, p]));
+  const picked = chosen.map((e) => byId.get(e.id)).filter((p): p is PreviewEvent => Boolean(p));
+  const shown = picked.filter((p) => !p.why);
+  const hidden = picked.filter((p) => p.why);
+  const events = shown.map((p) => p.listing);
+  const facts = new Map(shown.map((p) => [p.listing.slug, p.facts]));
+  const groupName = name.trim() || "Your group's name";
+  const heading = <OrgHeading name={groupName} logo={look.logo} band={Boolean(look.color)} />;
   return (
     <dialog
       ref={ref}
       aria-labelledby="org-preview-title"
       onClose={onClose}
       onClick={(e) => e.target === e.currentTarget && ref.current?.close()}
-      className="team-window m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-2xl overflow-y-auto rounded-xl border border-border p-0 text-foreground shadow-elevated"
+      className="team-window m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-3xl overflow-y-auto rounded-xl border border-border p-0 text-foreground shadow-elevated"
     >
       <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-border bg-surface px-4 py-3 sm:px-6">
         <div>
           <h2 id="org-preview-title" className="text-lg font-semibold">
             Preview of your page
           </h2>
-          <p className="text-sm text-muted">Only you can see this. Nothing is public until you turn it on.</p>
+          <p className="text-sm text-muted">Only you can see this. Its buttons don&apos;t open anything here.</p>
         </div>
         <Button type="button" variant="secondary" onClick={() => ref.current?.close()}>
           Close preview
         </Button>
       </div>
-      <div className="space-y-6 p-4 sm:p-6">
-        <div className="rounded-lg bg-brand px-4 py-5 text-brand-foreground">
-          <p className="text-2xl font-medium [overflow-wrap:anywhere]">{name.trim() || "Your group's name"}</p>
-          <p className="mt-1 text-sm">Events and ways to help from {name.trim() || "your group"}</p>
-        </div>
-        <section>
-          <h3 className="text-lg font-semibold">Coming up</h3>
-          {sorted.length ? (
-            <ul className="mt-2 divide-y divide-border rounded-lg border border-border">
-              {sorted.map((e) => (
-                <li key={e.id} className="px-4 py-3">
-                  <p className="font-semibold [overflow-wrap:anywhere]">{e.name}</p>
-                  <p className="text-sm">
-                    {orgPageKindLabel(e.kind)} · {dayRange(e.startsOn, e.endsOn)}
-                  </p>
-                  {e.draft ? (
-                    <p className="text-sm text-muted">A draft: listed once you publish it</p>
-                  ) : e.signup && e.signup !== "Sign-up open" ? (
-                    <p className="text-sm text-muted">{e.signup === "Sign-up closed" ? "Sign-up is closed: not listed until you open it" : e.signup}</p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2 text-sm leading-6">Nothing coming up right now.</p>
-          )}
-        </section>
-        {help.length > 0 && (
-          <section>
-            <h3 className="text-lg font-semibold">Help anytime</h3>
-            <ul className="mt-2 divide-y divide-border rounded-lg border border-border">
-              {help.map((h) => (
-                <li key={h.id} className="px-4 py-3">
-                  <p className="font-semibold [overflow-wrap:anywhere]">{h.title}</p>
-                  {h.note && <p className="text-sm leading-6">{h.note}</p>}
-                  {h.link && <p className="text-sm text-muted">Go to {siteOf(h.link)}</p>}
-                </li>
-              ))}
-            </ul>
-          </section>
+      {/* The page itself, as visitors will see it today. */}
+      <div className="org-preview flex flex-col bg-background">
+        {look.color && <style>{brandThemeCss(".org-preview", look.color)}</style>}
+        {look.color && (
+          <div className="bg-[var(--band)] text-white">
+            <div className="mx-auto w-full max-w-2xl px-4 py-8 sm:py-10">{heading}</div>
+          </div>
         )}
-        <p className="border-t border-border pt-4 text-sm leading-6">
-          Questions? Email <span className="font-medium [overflow-wrap:anywhere]">{contact.trim() || "your contact email"}</span>
-        </p>
+        <div className="mx-auto w-full max-w-2xl px-4 py-6 sm:py-8">
+          {!look.color && <div className="mt-2">{heading}</div>}
+          <OrgBody
+            name={groupName}
+            contact={contact.trim() || null}
+            events={events}
+            help={help}
+            facts={facts}
+            allFull={!events.length && hidden.some((p) => p.why === "full")}
+            inert
+          />
+        </div>
+      </div>
+      <div className="sticky bottom-0 space-y-2 border-t border-border bg-surface px-4 py-3 sm:px-6">
+        {hidden.length > 0 && (
+          <p className="text-sm leading-6 text-muted">
+            Selected but not on the page today:{" "}
+            {hidden.map((p, i) => (
+              <span key={p.id}>
+                {i > 0 && "; "}
+                <span className="font-medium text-foreground [overflow-wrap:anywhere]">{p.listing.name}</span> ({p.why})
+              </span>
+            ))}
+          </p>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" disabled={busy} onClick={onTurnOn}>
+            {busy ? "Turning on…" : "Turn on page"}
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => ref.current?.close()}>
+            Back to the form
+          </Button>
+        </div>
       </div>
     </dialog>
   );

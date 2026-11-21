@@ -36,6 +36,10 @@ const WHITE: RGB = [255, 255, 255];
 const BLACK: RGB = [0, 0, 0];
 // The dark-mode page background (globals.css --background).
 const DARK_BG: RGB = [6, 18, 31];
+// The dark-mode card surface (globals.css --surface): the lighter of the two dark backgrounds, so the one to check.
+const DARK_SURFACE: RGB = [12, 31, 51];
+// Text on a dark-mode brand button (globals.css --brand-foreground).
+const DARK_FOREGROUND = "#071a31";
 
 /** Darken until white text on it has at least 4.5:1 contrast (the accessibility standard). */
 export function darkForWhiteText(hex: string) {
@@ -44,12 +48,24 @@ export function darkForWhiteText(hex: string) {
   return rgbToHex(c);
 }
 
-/** Lighten until it reads at 4.5:1 on the dark-mode background (links and buttons in dark mode). */
-function lightForDarkBackground(hex: string) {
+/**
+ * Lighten until it reads at 4.5:1 on both dark-mode backgrounds (links and buttons in dark mode): checked against
+ * the card surface, the lighter of the two, so it holds on the page too. Dark button text on it then also reaches
+ * 4.5:1 (checked, and lightened further if not).
+ */
+export function lightForDarkBackground(hex: string) {
   let c = hexToRgb(hex);
-  for (let i = 0; i < 40 && contrast(c, DARK_BG) < 4.5; i++) c = mix(c, WHITE, 0.08);
+  const fg = hexToRgb(DARK_FOREGROUND);
+  // Small steps, so the color stays as close to the account's own as it can.
+  for (let i = 0; i < 80 && (contrast(c, DARK_SURFACE) < 4.5 || contrast(c, DARK_BG) < 4.5 || contrast(c, fg) < 4.5); i++) c = mix(c, WHITE, 0.04);
+  // Rounding to a hex color can land a hair under the line: one more step if it did.
+  const hexed = hexToRgb(rgbToHex(c));
+  if (contrast(hexed, DARK_SURFACE) < 4.5 || contrast(hexed, fg) < 4.5) c = mix(c, WHITE, 0.04);
   return rgbToHex(c);
 }
+
+/** The dark-mode colors a page's brand needs, exported for the unit tests. */
+export const DARK_MODE = { background: rgbToHex(DARK_BG), surface: rgbToHex(DARK_SURFACE), foreground: DARK_FOREGROUND };
 
 /**
  * CSS that re-colors a page section with the account's color: the site's
@@ -71,7 +87,7 @@ export function brandThemeCss(selector: string, hex: string) {
   const dark = {
     "--brand": darkBrand,
     "--brand-hover": rgbToHex(mix(hexToRgb(darkBrand), WHITE, 0.15)),
-    "--brand-foreground": "#071a31",
+    "--brand-foreground": DARK_FOREGROUND,
     "--brand-soft": rgbToHex(mix(bandRgb, DARK_BG, 0.75)),
     "--band": band,
   };

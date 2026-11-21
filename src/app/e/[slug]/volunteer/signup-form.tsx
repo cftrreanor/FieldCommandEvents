@@ -8,16 +8,32 @@ import { BotCheck } from "@/components/bot-check";
 import { NumberInput } from "@/components/number-input";
 import { SubmitButton } from "@/components/submit-button";
 import { Badge, Button, Card, Field, FormMessage, Input } from "@/components/ui";
-import { GUARDIAN_CONSENT, MAX_OTHERS, groupProgress, ineligibleReason, shiftsOverlap } from "@/lib/group-signup";
+import { GUARDIAN_CONSENT, MAX_OTHERS, PHONE_ON_FILE, groupProgress, ineligibleReason, shiftsOverlap } from "@/lib/group-signup";
 import type { SignupPayload, SignupState } from "./actions";
 import { folderTab, folderTabNote, folderTabRow } from "@/components/folder-tabs";
 import { SignedUpContext } from "./more-ways-block";
 
-/** How long details are kept, said the same way on the form and the confirm step. */
+// How long details are kept: the same facts on the form and the confirm step (docs/DATA-PRIVACY.md).
+const PHONE_DAYS = 10;
+const HISTORY_YEARS = 2;
+
+/** How long details are kept, on the full form (everyone in the group). */
 export function retentionLine(keepsHistory: boolean) {
   return keepsHistory
-    ? "Phone numbers are deleted 10 days after the event; the organizer keeps adults' names, emails, and how many shifts each person volunteered until 2 years after their last event, to thank and invite back returning volunteers."
-    : "Everyone's details are deleted 10 days after the event.";
+    ? `Phone numbers are deleted ${PHONE_DAYS} days after the event; the organizer keeps adults' names, emails, and how many shifts each person volunteered until ${HISTORY_YEARS} years after their last event, to thank and invite back returning volunteers.`
+    : `Everyone's details are deleted ${PHONE_DAYS} days after the event.`;
+}
+
+/**
+ * The confirm step's shorter fine print, for one adult. The phone sentence is left out when the phone box shows
+ * (its own hint already says it).
+ */
+export function confirmFinePrint(eventName: string, keepsHistory: boolean, phoneBoxShown: boolean) {
+  const who = phoneBoxShown ? `Only the people running ${eventName} see your details.` : `Only the people running ${eventName} see your details, and your phone only on event day.`;
+  const keep = keepsHistory
+    ? `We delete phone numbers ${PHONE_DAYS} days after the event. The organizer keeps your name, email, and shift count for ${HISTORY_YEARS} years to thank you and invite you back.`
+    : `We delete your details ${PHONE_DAYS} days after the event.`;
+  return `${who} ${keep}`;
 }
 
 export type PublicShift = {
@@ -79,6 +95,8 @@ export function SignupForm({
   moreBelow = false,
   initialShift,
   prefill,
+  startMinor = false,
+  footer,
 }: {
   action: (prev: SignupState, formData: FormData) => Promise<SignupState>;
   /** Spots left on each shift right now (checked again on the review screen). */
@@ -102,8 +120,15 @@ export function SignupForm({
   moreBelow?: boolean;
   /** A shift to start ticked (arriving from another event's "More ways to help" or the organization page). */
   initialShift?: string;
-  /** Details this device remembers (name and email only: the phone number stays on the server). */
-  prefill?: { name: string; email: string };
+  /**
+   * Details this device remembers for this account: name and email, and the phone's last four digits (the number
+   * itself stays on the server and is read again when the form is sent). `differentHref`: the form without them.
+   */
+  prefill?: { name: string; email: string; phoneEnding: string | null; differentHref: string };
+  /** Arriving from the confirm step's "Under 18? Use the full sign-up form": "I'm under 18" starts ticked. */
+  startMinor?: boolean;
+  /** A line under the form ("Already signed up?"), hidden once they've signed up (the confirmation has its own). */
+  footer?: ReactNode;
 }) {
   const [state, formAction, pending] = useActionState(action, {});
   const pathname = usePathname();
@@ -111,7 +136,12 @@ export function SignupForm({
   const [step, setStep] = useState<Step>({ kind: "pick", i: BOOKER });
   const [problem, setProblem] = useState<string | null>(null);
   // The booker.
-  const [me, setMe] = useState({ name: prefill?.name ?? "", email: prefill?.email ?? "", phone: "", minor: false, age: "" });
+  const [me, setMe] = useState({ name: prefill?.name ?? "", email: prefill?.email ?? "", phone: "", minor: startMinor, age: "" });
+  // The remembered phone ("Phone ending 0142") until they choose to type another, for an adult only.
+  const [phoneOnFile, setPhoneOnFile] = useState(Boolean(prefill?.phoneEnding));
+  // Only while the email is still the remembered one (the server checks the same).
+  const usesPhoneOnFile =
+    phoneOnFile && !me.minor && Boolean(prefill?.phoneEnding) && me.email.trim().toLowerCase() === (prefill?.email ?? "").trim().toLowerCase();
   const [mine, setMine] = useState<string[]>(() => (initialShift && stations.some((st) => st.shifts.some((sh) => sh.id === initialShift && sh.spotsLeft > 0)) ? [initialShift] : []));
   // Items to bring they've picked, with what they'll bring ("Brownies"). Just for the booker.
   const [pickedItems, setPickedItems] = useState<Map<string, string>>(new Map());
@@ -176,6 +206,7 @@ export function SignupForm({
   const below = (
     <SignedUpContext value={{ confirmed: Boolean(state.confirmed), booked: state.confirmed?.booked ?? [], carries: state.confirmed?.carriesOver ?? false }}>
       {more}
+      {!state.confirmed && footer}
     </SignedUpContext>
   );
   if (state.confirmed)
@@ -381,7 +412,7 @@ export function SignupForm({
     const blocked = flags.size > 0 || !latest;
     const everyone = 1 + people.length;
     const payload: SignupPayload = {
-      booker: { name: me.name, email: me.email, phone: me.phone, minor: me.minor, age: me.minor && me.age ? Number(me.age) : null },
+      booker: { name: me.name, email: me.email, phone: usesPhoneOnFile ? PHONE_ON_FILE : me.phone, minor: me.minor, age: me.minor && me.age ? Number(me.age) : null },
       shiftIds: mine,
       items: [...pickedItems.entries()].map(([item, note]) => ({ item, note })),
       people: people.map((p) => ({
@@ -546,6 +577,9 @@ export function SignupForm({
       waiting={opensOn}
       grouped={people.length > 0}
       moreBelow={moreBelow}
+      prefill={prefill}
+      usesPhoneOnFile={usesPhoneOnFile}
+      onTypePhone={() => setPhoneOnFile(false)}
     />
     {below}
     </>
@@ -572,6 +606,9 @@ function BookerStep({
   waiting,
   grouped,
   moreBelow,
+  prefill,
+  usesPhoneOnFile,
+  onTypePhone,
 }: {
   stations: PublicStation[];
   hasItems: boolean;
@@ -593,6 +630,9 @@ function BookerStep({
   waiting?: string;
   grouped: boolean;
   moreBelow?: boolean;
+  prefill?: { name: string; email: string; phoneEnding: string | null; differentHref: string };
+  usesPhoneOnFile: boolean;
+  onTypePhone: () => void;
 }) {
   const [activeId, setActiveId] = useState(stations[0]?.id);
   // Tabs only once there are six or more jobs; up to five sit one under the other, so none hides.
@@ -762,6 +802,15 @@ function BookerStep({
           2. Your details
         </h2>
         <Card className="mt-4 space-y-4 p-4 sm:p-5">
+          {prefill && (
+            <p className="text-sm leading-6">
+              <span className="font-semibold">Signing up as {prefill.name}.</span>{" "}
+              <span className="text-muted">Filled in from your sign-up on this device.</span>{" "}
+              <Link href={prefill.differentHref} className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
+                Not {prefill.name.trim().split(/\s+/)[0]}? Use different details
+              </Link>
+            </p>
+          )}
           <label className="flex items-center gap-3 text-sm">
             <input type="checkbox" checked={me.minor} onChange={(e) => set({ minor: e.target.checked })} className="h-5 w-5 accent-[var(--brand)]" />
             I&apos;m under 18
@@ -779,6 +828,19 @@ function BookerStep({
           <Field label={me.minor ? "Parent or guardian's email" : "Email"} hint="We'll send the confirmation here.">
             <Input type="email" inputMode="email" autoComplete="email" required value={me.email} onChange={(e) => set({ email: e.target.value })} />
           </Field>
+          {usesPhoneOnFile ? (
+            // Not a <label>: the button inside would take every tap on the words.
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-semibold">Cell phone</span>
+              <p className="flex flex-wrap items-center gap-x-3 leading-7">
+                <span>Phone ending {prefill?.phoneEnding}</span>
+                <button type="button" onClick={onTypePhone} className="inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4">
+                  Use a different number
+                </button>
+              </p>
+              <span className="text-sm text-muted">From your sign-up on this device. Only the people running this event see it, and only on event day.</span>
+            </div>
+          ) : (
           <Field
             label={me.minor ? "Parent or guardian's cell phone" : "Cell phone"}
             hint={
@@ -789,6 +851,7 @@ function BookerStep({
           >
             <Input type="tel" inputMode="tel" autoComplete="tel" required value={me.phone} onChange={(e) => set({ phone: e.target.value })} />
           </Field>
+          )}
         </Card>
       </section>
 

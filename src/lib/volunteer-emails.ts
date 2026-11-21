@@ -61,7 +61,7 @@ export function toIcsEvent(e: CalendarEntry, origin: string): IcsEvent {
     summary: `Volunteer: ${e.station_name} (${e.event_name})`,
     location: [e.venue_name, e.venue_address].filter(Boolean).join(", "),
     description: [
-      `${e.station_name}: ${e.shift_title}`,
+      jobAndShift(e.station_name, e.shift_title),
       `When: ${formatDate(utcToZonedDate(e.starts_at, e.timezone))}, ${formatTimeRange(e.starts_at, e.ends_at, e.timezone)} (${zoneName(e.timezone)})`,
       e.station_location ? `Report to: ${e.station_location}` : null,
       e.shift_description,
@@ -80,11 +80,15 @@ function invite(method: "REQUEST" | "CANCEL", e: CalendarEntry, origin: string):
   return { method, content: buildIcs(method, toIcsEvent(e, origin)) };
 }
 
+/** "Cashier", or "Ticket booth: Early shift": the job and the shift's own name, said once when they're the same. */
+export const jobAndShift = (station: string, title: string | null | undefined) =>
+  !title?.trim() || title.trim().toLowerCase() === station.trim().toLowerCase() ? station : `${station}: ${title}`;
+
 const CALENDAR_TIP = "The calendar invite in this email keeps your calendar up to date if anything changes.";
 
 function shiftRow(e: CalendarEntry, tz: string, origin: string, multiDay: boolean) {
   return {
-    title: `${e.station_name}: ${e.shift_title}`,
+    title: jobAndShift(e.station_name, e.shift_title),
     detail: [
       multiDay ? formatDate(utcToZonedDate(e.starts_at, tz), { year: undefined }) : formatDate(utcToZonedDate(e.starts_at, tz)),
       formatTimeRange(e.starts_at, e.ends_at, tz),

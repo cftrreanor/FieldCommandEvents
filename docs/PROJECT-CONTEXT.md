@@ -64,23 +64,31 @@ until published. Every event has a Description box on Details. Decisions: `docs/
 **Organization page (organizer side):** one public page per account for its volunteer events and fairs, plus "Help
 anytime" ways to help. Off until turned on from Account or My events (Organization page). Only the Account Host and
 Co-hosts of every event can open it: turning on asks for the group's name (a person's name is refused), a contact
-email, and which events show (nothing ticked to start; new events start on after that); a preview shows exactly
-what's selected. While on: Copy link and Preview, the name and contact saving as you go, a "Show on organization page"
-switch per event with why any event isn't listed, "1 new event to review" for events a Co-host of one event made,
-Help anytime (title, note, link cleaned to https without tracking parts, end date, End today, Remove with Undo), and
-Turn off. Each event's switch is also in Event settings, Publishing and more, and on the Publish step (read-only for
+email, and which events show (nothing ticked to start; new events created after that start on); the preview is the
+real page (its parts, the group's color and logo, only the ticked events that would show today) with "Turn on page"
+inside. While on: Copy link and Preview, the name and contact each saved when you leave the box, a "Show on
+organization page" switch per event with why any event isn't listed (locked ones look locked), "1 new event to review"
+for events a Co-host of one event made (first on the My events and Account cards, with a Review link), Help anytime
+(title, note, link made secure without tracking parts, end date, "Take off the page now" with Undo, ended ones kept to
+show again, Remove with Undo), and Turn off. Someone who runs more than one account gets one card per account, each
+naming its group, and the page picks the account (?org=). Each event's switch is also in Event settings, Publishing and more, and on the Publish step (read-only for
 a Co-host of one event, with who to ask). Decisions: `docs/design-decisions/2026-11-20-organization-page.md`
 
 **Organization page (public side):** `/o/[address]` shows the group's name and logo on its color, "Coming up" by month
 (only months with events; the first two open, later ones folded rows that open when tapped), each row with a date tile,
 the kind ("Volunteer event", "Fair or fundraiser", "Things to bring"), when and where, open spots, and one button; "Today"
-and "Volunteer sign-up opens Mon, Jan 4" where true; then Help anytime ("Open on amazon.com", new tab) and the contact.
-Not listed by search engines; when off, "This page isn't available" (404). On each volunteer sign-up page, while the page
+and "Volunteer sign-up opens Mon, Jan 4" where true, "Happening now" in place of the button when its shifts are under way,
+and "You're signed up · See your shift" on events this device holds; then Help anytime ("Open on amazon.com", new tab)
+and the contact. Not listed by search engines (a noindex header; sign-up pages showing "More ways to help" ask the same);
+when off, "This page isn't available" (404). On each volunteer sign-up page, while the page
 is on: "Can't make this one? More ways to help from [Org]" (up to 3, soonest first, Help anytime filling a spare slot)
 below the form, right under the note when every shift is full or sign-up is closed (shifts read-only behind "See the
-shifts"), and "More from [Org]" after signing up. Tapping a shift there opens a confirm step: details this device
-remembers (phone shown as "Phone ending 0142"), or only the missing fields, one Confirm button, and "just filled up.
-Nothing was saved." with the nearest open shift if it filled
+shifts"), and "More from [Org]" after signing up; shifts already under way are left out. Tapping a shift there opens a
+confirm step: details this device remembers for that group (email masked, phone shown as "Phone ending 0142"), or only
+the missing fields plus a required "I'm 18 or older" with "Under 18? Use the full sign-up form", one Confirm button,
+"Forget this device" under the privacy note (it asks first), and "just filled up. Nothing was saved." with the nearest
+open shift if it filled. The full form from these links says "Signing up as…" and uses the remembered phone. Every
+public event and organization page has one footer line: the product name and tagline
 
 ## Add-ons and packages
 
@@ -141,6 +149,7 @@ Sample people are never emailed, and "Back to me" or "Remove demo people" takes 
 Keep the last ten or so; older ones are in git history and `docs/design-decisions/`.
 
 - 2026-11-21 (PR pending): Organization page, public side: the page at /o/[address], "More ways to help" on volunteer sign-up pages (below the form, at the top when full or closed, "More from [Org]" after signing up), and a confirm step that carries remembered details over; "Sign up for more" is now "Add another shift here"
+- 2026-11-21 (PR pending): Organization page, fixes from the built-page check: the confirm step asks "I'm 18 or older"; the group's color reaches 4.5:1 in dark mode on every event page; the turn-on preview is the real page; search engines are asked not to list the page or sign-up pages showing "More ways to help"; details carry over only within one group; started shifts are left out; "Take off the page now" with Undo; one card per account; clearer wording throughout
 - 2026-11-21 (PR pending): Organization page, organizer screens: a new Organization page (from Account and My events) to turn the page on with a group name, contact email, and the events to show (with a preview), then manage each event's "Show on organization page" switch, new events to review, Help anytime, and turning it off; the same switch in Event settings and on the Publish step, where "When you publish" now says people find the event from your organization page when it's shown
 - 2026-11-20 (PR pending): Volunteer sign-up can open on a set day (volunteer events and fairs): an optional "Sign-up opens" date on the Jobs and shifts step, the Publish step, Volunteer Setup, and Event settings' Publishing. Sign-up opens by itself that day in the event's time zone (no background job); before then the sign-up page, the event page, My events, the step bar, and Links to share say "Sign-up opens Mon, Jan 4", sign-ups, things to bring, and shift switches are refused, and the organizer can open it now. Duplicating moves the day, or leaves it blank if it would be past. After the light check: before the day the public sign-up page lists the shifts and things to bring read-only (no details form or buttons) with "Add a reminder to my calendar"; the day is set on the Publish step (not the Jobs step) and in Event settings, which has "Open sign-up now"; Clear on a live event asks first; a fair's day comes before fair day; moving the event's dates moves the day (or clears it, keeping sign-up closed); unpublishing or closing sign-up clears it
 - 2026-11-20 (PR pending): Duplicate event: a new draft from any event with jobs, on new dates, from New event, My events (past and soon events), or Event settings; dates typed into copied text become "[new date]" and hold back publishing until filled in; Coordinators come over as invitations sent when you publish (or Send now); replaces "Start from a previous contest" and the festival copy. Also across the app: a Description box on every event's Details, confirm windows start on "Never mind" with one phone layout, capitals after "Now ·" and "Next:", and a Co-host of one event sees the real reason on Event settings' Publishing card

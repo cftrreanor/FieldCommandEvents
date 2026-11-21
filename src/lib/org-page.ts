@@ -18,6 +18,8 @@ export type OrgListingEvent = {
   items_needed: number;
   /** The day volunteer sign-up opens, while it's still to come. */
   opens_on: string | null;
+  /** A shift is under way right now (never offered: soonest_shift is always one still to start). */
+  happening_now?: boolean;
   soonest_shift: OrgListingShift | null;
 };
 export type OrgHelp = { id: string; title: string; note: string | null; link: string | null; ends_on: string };
@@ -55,7 +57,7 @@ export const isItemsOnly = (e: Pick<OrgListingEvent, "soonest_shift" | "items_ne
 /** The kind in its own words: the icon, the word under the name, and the one button. */
 export function kindWords(e: Pick<OrgListingEvent, "kind" | "soonest_shift" | "items_needed" | "open_spots">) {
   if (e.kind === "fair") return { icon: "party" as const, word: "Fair or fundraiser", button: "Sign up to help" };
-  if (isItemsOnly(e)) return { icon: "volunteer" as const, word: "Things to bring", button: "Pick something to bring" };
+  if (isItemsOnly(e)) return { icon: "bag" as const, word: "Things to bring", button: "Pick something to bring" };
   return { icon: "volunteer" as const, word: "Volunteer event", button: "Sign up" };
 }
 
@@ -153,14 +155,27 @@ const overlaps = (a: { starts_at: string; ends_at: string }, b: { startsAt: stri
  * already leaves out this event, shifts this device holds, and shifts at the same time as those). Only things
  * someone can do now (an event whose sign-up opens later waits for the page). A spare slot takes the Help anytime
  * item ending soonest, when there are fewer events than slots or when everything on this page is full or closed.
- * `booked`: shifts just booked here, so a suggestion at the same time drops out.
+ * `booked`: shifts just booked here, so a suggestion at the same time drops out. A shift already under way is never
+ * offered.
  */
 export function pickMoreWays(
   events: OrgListingEvent[],
   help: OrgHelp[],
-  { max = 3, hereIsFull = false, booked = [] }: { max?: number; hereIsFull?: boolean; booked?: { startsAt: string; endsAt: string }[] } = {},
+  {
+    max = 3,
+    hereIsFull = false,
+    booked = [],
+    now = new Date(),
+  }: { max?: number; hereIsFull?: boolean; booked?: { startsAt: string; endsAt: string }[]; now?: Date } = {},
 ): MoreWay[] {
-  const open = events.filter((e) => !e.opens_on && (e.soonest_shift || e.items_needed > 0) && !(e.soonest_shift && booked.some((b) => overlaps(e.soonest_shift!, b))));
+  // Never a shift already under way (the database leaves them out too; this holds if a page sat open a while).
+  const startedAlready = (e: OrgListingEvent) => Boolean(e.soonest_shift && new Date(e.soonest_shift.starts_at) <= now);
+  const open = events.filter(
+    (e) =>
+      !e.opens_on &&
+      ((e.soonest_shift && !startedAlready(e)) || (!e.soonest_shift && e.items_needed > 0)) &&
+      !(e.soonest_shift && booked.some((b) => overlaps(e.soonest_shift!, b))),
+  );
   const soonestHelp = [...help].sort((a, b) => a.ends_on.localeCompare(b.ends_on))[0];
   const room = soonestHelp && (open.length < max || hereIsFull) ? max - 1 : max;
   const ways: MoreWay[] = open.slice(0, room).map((event) => ({ type: "event", event }));

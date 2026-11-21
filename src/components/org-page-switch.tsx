@@ -5,18 +5,22 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 import { setEventOnOrgPage } from "@/app/dashboard/org-page-actions";
 import { LineIcon } from "@/components/line-icon";
 import { setPending } from "@/components/pending-edits";
-import { cohostLine, needWords, reasonWords, shortDay, SWITCH_LABEL, type EventOrgPageStatus } from "@/lib/org-page-words";
+import { cohostLine, needWords, reasonWords, shortDay, SWITCH_LABEL, WHO_CHOOSES, type EventOrgPageStatus } from "@/lib/org-page-words";
 
 // One event's "Show on organization page" switch, everywhere it appears (the Organization page's list, Event
 // settings, and the Publish step). It saves as you go; a failed save snaps the switch back to what's really saved
 // and says so ("Still on your page. Couldn't turn this off"), and the save status sits on its own line (review
 // fixes 6 and 7). A Co-host of one event sees it locked, with who can change it.
 
-export type OrgPageNeed = { spots: number; items: number; opensOn: string | null } | null;
+/** What a listed event shows: open spots, things still needed, the day sign-up opens, and whether a shift is under way. */
+export type OrgPageNeed = { spots: number; items: number; opensOn: string | null; now?: boolean } | null;
 
 type Save = { kind: "idle" } | { kind: "saving"; on: boolean } | { kind: "saved" } | { kind: "failed"; tried: boolean; error: string; retry: boolean };
 
-/** The switch itself: status in words beside it ("On" or "Off"), locked shown solid and muted with a lock. */
+/**
+ * The switch itself: status in words beside it ("On" or "Off"). Locked, it plainly can't be used: a dashed, grey
+ * track and knob, and the lock before the label (built-page review), on or off.
+ */
 export function SwitchButton({
   on,
   onToggle,
@@ -41,28 +45,35 @@ export function SwitchButton({
       <span
         aria-hidden
         className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 ${
-          locked ? (on ? "border-disabled bg-disabled" : "border-disabled bg-disabled/25") : on ? "border-brand bg-brand" : "border-field-border bg-background"
+          locked ? `border-dashed border-disabled ${on ? "bg-disabled/40" : "bg-transparent"}` : on ? "border-brand bg-brand" : "border-field-border bg-background"
         }`}
       >
         <span
-          className={`absolute size-4 rounded-full ${on ? "left-[22px]" : "left-[3px]"} ${locked ? (on ? "bg-surface" : "bg-disabled") : on ? "bg-brand-foreground" : "bg-field-border"}`}
+          className={`absolute size-4 rounded-full ${on ? "left-[22px]" : "left-[3px]"} ${locked ? "bg-disabled" : on ? "bg-brand-foreground" : "bg-field-border"}`}
         />
       </span>
-      <span className="text-sm font-medium">
+      <span className={`text-sm font-medium ${locked ? "text-muted" : ""}`}>
+        {locked && <LineIcon name="lock" inline className="mr-1.5 size-4 text-muted" />}
         {SWITCH_LABEL}
         {name && <span className="sr-only">: {name}</span>}
         <span className="font-normal"> · {on ? "On" : "Off"}</span>
-        {locked && <LineIcon name="lock" inline className="ml-1.5 size-4 text-muted" />}
+        {locked && <span className="sr-only"> (you can&apos;t change this)</span>}
       </span>
     </button>
   );
 }
 
 /** Where the event stands, in words: "✓ On your page · 2 spots open", or why it isn't listed. */
-export function StatusLine({ status, need, you = true }: { status: EventOrgPageStatus; need?: OrgPageNeed; you?: boolean }) {
-  const why = reasonWords(status.reason, { needsReview: status.needs_review, you });
+export function StatusLine({ status, need, you = true, draft = false }: { status: EventOrgPageStatus; need?: OrgPageNeed; you?: boolean; draft?: boolean }) {
+  const why = reasonWords(status.reason, { needsReview: status.needs_review, you, draft });
   if (why) return <span className={status.on_org_page && status.reason !== "page_off" ? "" : "font-medium"}>{why}</span>;
-  const detail = need?.opensOn ? `Sign-up opens ${shortDay(need.opensOn)}` : need ? needWords(need.spots, need.items) : null;
+  const detail = need?.opensOn
+    ? `Sign-up opens ${shortDay(need.opensOn)}`
+    : need && need.now && !need.spots && !need.items
+      ? "Happening now"
+      : need
+        ? needWords(need.spots, need.items)
+        : null;
   return (
     <span>
       <span aria-hidden className="text-success">
@@ -77,7 +88,6 @@ export function StatusLine({ status, need, you = true }: { status: EventOrgPageS
 export function OrgPageEventControl({
   eventId,
   eventName,
-  orgName,
   status: initial,
   need,
   head,
@@ -85,10 +95,12 @@ export function OrgPageEventControl({
   orgPageHref,
   onStatus,
   describe,
+  draft = false,
 }: {
   eventId: string;
   eventName: string;
-  orgName: string;
+  /** The account's name (kept for callers; the lock note no longer needs it). */
+  orgName?: string;
   status: EventOrgPageStatus;
   need?: OrgPageNeed;
   /** The row's name and kind (the Organization page's list): the switch sits beside it on wide screens. */
@@ -100,6 +112,8 @@ export function OrgPageEventControl({
   onStatus?: (s: EventOrgPageStatus) => void;
   /** Words in place of the status line (the Publish step says what publishing will do). */
   describe?: (s: EventOrgPageStatus) => ReactNode;
+  /** The event isn't published yet (nobody can open its link). */
+  draft?: boolean;
 }) {
   const key = useId();
   // The saved state: from the page, or the latest answer from a save (whichever is newer).
@@ -136,7 +150,7 @@ export function OrgPageEventControl({
   };
 
   const locked = !status.can_change;
-  const line = describe ? describe(status) : <StatusLine status={status} need={need} you={!locked} />;
+  const line = describe ? describe(status) : <StatusLine status={status} need={need} you={!locked} draft={draft} />;
   const shownOn = save.kind === "saving" ? save.on : status.on_org_page;
   const pageOff = !status.page_on;
 
@@ -171,7 +185,7 @@ export function OrgPageEventControl({
     <div className="mt-3 rounded-md border border-border bg-background p-3 text-sm leading-6">
       <p>
         <LineIcon name="lock" inline />
-        {cohostLine(orgName, eventName)}
+        {cohostLine(eventName)}
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
         <a
@@ -190,17 +204,15 @@ export function OrgPageEventControl({
     return (
       <div className={layout === "row" ? "px-4 py-3" : ""}>
         {head}
-        <p className="text-sm leading-6">
-          {line}
-          {orgPageHref && !locked && (
-            <>
-              {" "}
-              <Link href={orgPageHref} className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
-                Go to Organization page
-              </Link>
-            </>
-          )}
-        </p>
+        <p className="text-sm leading-6">{line}</p>
+        {orgPageHref && !locked && (
+          // Its own line, so it never wraps mid-sentence (built-page review).
+          <p>
+            <Link href={orgPageHref} className="inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4">
+              Go to Organization page
+            </Link>
+          </p>
+        )}
       </div>
     );
   }
@@ -246,17 +258,17 @@ export function OrgPageEventControl({
 }
 
 /** The Publish step's "When you publish" line about the organization page, with the event's switch. */
-export function PublishOrgLine(props: { eventId: string; eventName: string; orgName: string; status: EventOrgPageStatus }) {
+export function PublishOrgLine({ orgId, ...props }: { eventId: string; eventName: string; orgName: string; orgId: string; status: EventOrgPageStatus }) {
   return (
     <OrgPageEventControl
       {...props}
       layout="stack"
-      orgPageHref={props.status.can_change ? "/dashboard/organization" : undefined}
+      orgPageHref={props.status.can_change ? `/dashboard/organization?org=${orgId}` : undefined}
       describe={(s) => {
         const page = s.can_change ? "your organization page" : "the organization page";
         if (!s.page_on) return `It isn't listed anywhere: ${page} is off.`;
         if (s.on_org_page) return `It's shown on ${page}, with its open spots.`;
-        if (s.needs_review && !s.can_change) return "It won't be on the organization page until the Account Host reviews it. Anyone with the link can still open it.";
+        if (s.needs_review && !s.can_change) return `It won't be on the organization page until ${WHO_CHOOSES} turns it on. Anyone with the link can still open it.`;
         return `It won't be on ${page}. Anyone with the link can still open it.`;
       }}
     />

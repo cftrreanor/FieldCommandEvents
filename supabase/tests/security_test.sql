@@ -12526,7 +12526,7 @@ begin
     perform public.set_org_page('ab000000-0000-0000-0000-000000000001', true, null, 'hello@maplegrove.example');
     assert false, 'org page: turned on with a person''s name as the heading';
   exception when sqlstate 'P0001' then
-    assert sqlerrm like 'Use your group''s name, not a person''s name.%', 'org page: the person-name refusal: ' || sqlerrm;
+    assert sqlerrm = 'This looks like a person''s name. Enter your group''s name, like Cedar Ridge Boosters.', 'org page: the person-name refusal: ' || sqlerrm;
   end;
   begin
     perform public.set_org_page('ab000000-0000-0000-0000-000000000001', true, '  oren one. ', 'hello@maplegrove.example');
@@ -12640,7 +12640,7 @@ begin
          and ev -> 'soonest_shift' ->> 'id' = 'ab000000-0000-0000-0000-0000000006a1' and ev -> 'soonest_shift' ->> 'job' = 'Ticket booth',
          'org page: an event''s open spots and soonest shift: ' || ev::text;
   assert array(select jsonb_object_keys(ev) order by 1)
-         = array['ends_on', 'items_needed', 'kind', 'name', 'open_spots', 'opens_on', 'slug', 'soonest_shift', 'starts_on', 'timezone', 'venue_name'],
+         = array['ends_on', 'happening_now', 'items_needed', 'kind', 'name', 'open_spots', 'opens_on', 'slug', 'soonest_shift', 'starts_on', 'timezone', 'venue_name'],
          'org page: only these facts about each event';
   select x into ev from jsonb_array_elements(r -> 'events') x where x ->> 'slug' = 'ab-book-fair';
   assert (ev ->> 'items_needed')::int = 6 and (ev ->> 'open_spots')::int = 0 and ev -> 'soonest_shift' = 'null'::jsonb,
@@ -12704,6 +12704,174 @@ do $$ begin
 end $$;
 reset role;
 update public.organizations set suspended_at = null where id = 'ab000000-0000-0000-0000-000000000001';
+
+-- A closed account: the page gives nothing, can't be changed, and the summary says why.
+update public.organizations set closed_at = now() where id = 'ab000000-0000-0000-0000-000000000001';
+set role anon;
+do $$ begin
+  assert public.org_page_listing(current_setting('orgpage.slug')) is null, 'org page: a closed account gives nothing';
+  assert public.org_page_listing(null, 'ab000000-0000-0000-0000-0000000000a2') is null, 'org page: a closed account''s block gives nothing';
+end $$;
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$ begin
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', true);
+    assert false, 'org page: a closed account changed its page';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
+    perform public.set_event_on_org_page('ab000000-0000-0000-0000-0000000000a5', true);
+    assert false, 'org page: a closed account switched an event on';
+  exception when sqlstate 'P0001' then null;
+  end;
+  assert public.org_page_summary('ab000000-0000-0000-0000-000000000001') ->> 'blocked' = 'account_closed', 'org page: the summary says it''s closed';
+  assert public.event_org_page_status('ab000000-0000-0000-0000-0000000000a1') ->> 'reason' = 'account_closed', 'org page: so does an event''s status';
+end $$;
+reset role;
+update public.organizations set closed_at = null where id = 'ab000000-0000-0000-0000-000000000001';
+
+-- Signed out: none of the organizer functions answer.
+set role anon;
+set request.jwt.claims = '';
+do $$ begin
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', false);
+    assert false, 'org page: anon called set_org_page';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.set_event_on_org_page('ab000000-0000-0000-0000-0000000000a1', false);
+    assert false, 'org page: anon called set_event_on_org_page';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.event_org_page_status('ab000000-0000-0000-0000-0000000000a1');
+    assert false, 'org page: anon called event_org_page_status';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.org_page_summary('ab000000-0000-0000-0000-000000000001');
+    assert false, 'org page: anon called org_page_summary';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.org_page_logo(current_setting('orgpage.slug'));
+    assert false, 'org page: anon called org_page_logo';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- Two accounts don't mix: Riverside's host can't read or change Maple Grove's page, its events' status, or its
+-- Help anytime, and each account's listing holds only its own events.
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000006","email":"abother@example.com"}';
+do $$ begin
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000001', false);
+    assert false, 'org page: another account''s host turned the page off';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.org_page_summary('ab000000-0000-0000-0000-000000000001');
+    assert false, 'org page: another account''s host read the summary';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.event_org_page_status('ab000000-0000-0000-0000-0000000000a1');
+    assert false, 'org page: another account''s host read an event''s status';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.set_org_page('ab000000-0000-0000-0000-000000000002', true, 'Riverside Band Boosters', 'band@riverside.example',
+                                array['ab000000-0000-0000-0000-0000000000a1']::uuid[]);
+    assert false, 'org page: another account''s event put on Riverside''s page';
+  exception when sqlstate 'P0001' then null;
+  end;
+  update public.organizations set name = 'Hijacked' where id = 'ab000000-0000-0000-0000-000000000001';
+  assert not found, 'org page: another account''s host renamed the page';
+end $$;
+reset role;
+do $$
+declare
+  slugs text[];
+begin
+  select array_agg(x ->> 'slug') into slugs from jsonb_array_elements(public.org_page_listing(current_setting('orgpage.slug')) -> 'events') x;
+  assert not ('ab-riverside-wash' = any (slugs)), 'org page: another account''s event never shows on this page';
+  assert (select name from public.organizations where id = 'ab000000-0000-0000-0000-000000000001') = 'Maple Grove PTO', 'org page: the name didn''t change';
+end $$;
+
+-- The Account Host can't rename the page to a person's name by a direct update either (their own, or a team member's).
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$ begin
+  begin
+    update public.organizations set name = 'Paula Page' where id = 'ab000000-0000-0000-0000-000000000001';
+    assert false, 'org page: the Account Host renamed the page to their own name';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
+    update public.organizations set name = 'oren ONE' where id = 'ab000000-0000-0000-0000-000000000001';
+    assert false, 'org page: the Account Host renamed the page to a team member''s name';
+  exception when sqlstate 'P0001' then null;
+  end;
+  update public.organizations set name = 'Maple Grove PTO Families' where id = 'ab000000-0000-0000-0000-000000000001';
+  assert found, 'org page: the Account Host renames it to another group name';
+  update public.organizations set name = 'Maple Grove PTO' where id = 'ab000000-0000-0000-0000-000000000001';
+end $$;
+reset role;
+
+-- A shift already under way is never offered: the soonest shift and the open spots count only shifts still to start,
+-- and an event with one under way says so (happening_now).
+insert into public.shifts (id, station_id, event_id, title, starts_at, ends_at, max_capacity, registered_count) values
+  ('ab000000-0000-0000-0000-0000000006b6', 'ab000000-0000-0000-0000-0000000005b2', 'ab000000-0000-0000-0000-0000000000b2', 'Serve',
+   now() - interval '30 minutes', now() + interval '90 minutes', 5, 0),
+  ('ab000000-0000-0000-0000-0000000006a0', 'ab000000-0000-0000-0000-0000000005a1', 'ab000000-0000-0000-0000-0000000000a1', 'Setup',
+   now() - interval '30 minutes', now() + interval '90 minutes', 5, 0);
+set role anon;
+do $$
+declare
+  r  jsonb;
+  ev jsonb;
+begin
+  r := public.org_page_listing(current_setting('orgpage.slug'));
+  select x into ev from jsonb_array_elements(r -> 'events') x where x ->> 'slug' = 'ab-today';
+  assert ev is not null and (ev ->> 'happening_now')::boolean and ev -> 'soonest_shift' = 'null'::jsonb and (ev ->> 'open_spots')::int = 0,
+         'org page: an event with only a shift under way is listed as happening now, with nothing to sign up for: ' || coalesce(ev::text, 'none');
+  select x into ev from jsonb_array_elements(r -> 'events') x where x ->> 'slug' = 'ab-carnival';
+  assert (ev ->> 'happening_now')::boolean and ev -> 'soonest_shift' ->> 'id' = 'ab000000-0000-0000-0000-0000000006a1'
+         and (ev ->> 'open_spots')::int = 6,
+         'org page: a shift under way is never the soonest shift or counted as open: ' || ev::text;
+  r := public.org_page_listing(null, 'ab000000-0000-0000-0000-0000000000a2');
+  assert not exists (select 1 from jsonb_array_elements(r -> 'events') x where x -> 'soonest_shift' ->> 'id' in
+                       ('ab000000-0000-0000-0000-0000000006b6', 'ab000000-0000-0000-0000-0000000006a0')),
+         'org page: the block never offers a shift under way';
+end $$;
+reset role;
+delete from public.shifts where id in ('ab000000-0000-0000-0000-0000000006b6', 'ab000000-0000-0000-0000-0000000006a0');
+
+-- The logo's address reads one value, only while the page is on.
+update public.organizations set logo_path = 'ab000000-0000-0000-0000-000000000001/logo-1.png' where id = 'ab000000-0000-0000-0000-000000000001';
+set role service_role;
+do $$ begin
+  assert public.org_page_logo(current_setting('orgpage.slug')) = 'ab000000-0000-0000-0000-000000000001/logo-1.png', 'org page: the logo while the page is on';
+  assert public.org_page_logo('ab-riverside') is null, 'org page: no logo for a page that''s off';
+  assert public.org_page_logo('no-such-page') is null, 'org page: no logo for an unknown address';
+end $$;
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$ begin
+  begin
+    perform public.org_page_logo(current_setting('orgpage.slug'));
+    assert false, 'org page: a signed-in person called org_page_logo';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+update public.organizations set logo_path = null where id = 'ab000000-0000-0000-0000-000000000001';
 
 -- Each event's switch. A Co-host of one event, a Volunteer Lead, and a Coordinator can't change it, through the
 -- function or directly; a Co-host of every event can, through the function only. Other kinds never go on.
@@ -12904,6 +13072,24 @@ begin
   exception when check_violation then null;
   end;
   begin
+    insert into public.org_help_items (organization_id, title, link, ends_on)
+    values ('ab000000-0000-0000-0000-000000000001', 'Tricky link', 'https://amazon.com@evil.example/list', current_date + 3);
+    assert false, 'org page: a help item link with "@" before the first "/"';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.org_help_items (organization_id, title, link, ends_on)
+    values ('ab000000-0000-0000-0000-000000000001', 'Tricky link', 'https://a.b@evil.example', current_date + 3);
+    assert false, 'org page: a help item link with "@" in the host';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.org_help_items (organization_id, title, ends_on)
+    values ('ab000000-0000-0000-0000-000000000001', 'Yesterday', (now() at time zone 'America/Chicago')::date - 1);
+    assert false, 'org page: a new help item that already ended';
+  exception when sqlstate 'P0001' then null;
+  end;
+  begin
     insert into public.org_help_items (organization_id, title, ends_on) values ('ab000000-0000-0000-0000-000000000001', repeat('x', 81), current_date + 3);
     assert false, 'org page: a help item title over 80 characters';
   exception when check_violation then null;
@@ -12984,6 +13170,30 @@ do $$ begin
   assert jsonb_array_length(public.org_page_listing(current_setting('orgpage.slug')) -> 'help') = 1, 'org page: an item ending today shows today';
 end $$;
 reset role;
+-- "Take off the page now": an update may set yesterday (it leaves the page at once), but not earlier; Undo puts the
+-- end date back. A link with a path after the host is still fine.
+set role authenticated;
+set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
+do $$
+declare
+  today date := (now() at time zone 'America/Chicago')::date;
+begin
+  update public.org_help_items set ends_on = today - 1 where title = 'Classroom wish list';
+  assert found, 'org page: Take off the page now';
+  assert jsonb_array_length(public.org_page_listing(current_setting('orgpage.slug')) -> 'help') = 0, 'org page: taken off at once';
+  assert (select count(*) from public.org_help_items where title = 'Classroom wish list') = 1, 'org page: still listed for the organizer';
+  begin
+    update public.org_help_items set ends_on = today - 2 where title = 'Classroom wish list';
+    assert false, 'org page: an end date two days ago';
+  exception when sqlstate 'P0001' then null;
+  end;
+  update public.org_help_items set ends_on = today where title = 'Classroom wish list';
+  assert jsonb_array_length(public.org_page_listing(current_setting('orgpage.slug')) -> 'help') = 1, 'org page: Undo shows it again';
+  update public.org_help_items set link = 'https://www.amazon.com/hz/wishlist/ls/X1?x=a@b' where title = 'Classroom wish list';
+  assert found, 'org page: an "@" after the first "/" is fine';
+  update public.org_help_items set link = 'https://www.amazon.com/hz/wishlist/ls/X1' where title = 'Classroom wish list';
+end $$;
+reset role;
 
 -- The "sign-up closed" note's contact: the page's contact while the page is on, else a typed reply-to, never the
 -- creator's sign-in email. Server only.
@@ -13043,7 +13253,7 @@ set role authenticated;
 set request.jwt.claims = '{"sub":"000000ab-0000-0000-0000-000000000001","email":"abowner@example.com"}';
 do $$ begin
   begin
-    perform * from public.pass_contact(array[gen_random_uuid()], '{}');
+    perform * from public.pass_contact(array[gen_random_uuid()], '{}', 'ab000000-0000-0000-0000-0000000000a1');
     assert false, 'org page: a signed-in person called pass_contact';
   exception when insufficient_privilege then null;
   end;
@@ -13052,7 +13262,7 @@ reset role;
 set role anon;
 do $$ begin
   begin
-    perform * from public.pass_contact(array[gen_random_uuid()], '{}');
+    perform * from public.pass_contact(array[gen_random_uuid()], '{}', 'ab000000-0000-0000-0000-0000000000a1');
     assert false, 'org page: anon called pass_contact';
   exception when insufficient_privilege then null;
   end;
@@ -13069,22 +13279,45 @@ declare
   kid_shift    uuid := (select manage_token from public.volunteer_assignments where id = 'ab000000-0000-0000-0000-0000000009a2');
   rosa_shift   uuid := (select manage_token from public.volunteer_assignments where id = 'ab000000-0000-0000-0000-0000000009a3');
 begin
-  assert not exists (select 1 from public.pass_contact(array[gen_random_uuid()], array[gen_random_uuid()])),
+  assert not exists (select 1 from public.pass_contact(array[gen_random_uuid()], array[gen_random_uuid()], 'ab000000-0000-0000-0000-0000000000a2')),
          'org page: pass_contact gives nothing for unrelated tokens';
-  assert not exists (select 1 from public.pass_contact(array[kid_token], array[kid_shift])),
+  assert not exists (select 1 from public.pass_contact(array[kid_token], array[kid_shift], 'ab000000-0000-0000-0000-0000000000a2')),
          'org page: pass_contact never gives someone the booker added';
-  assert not exists (select 1 from public.pass_contact('{}', array[rosa_shift])),
+  assert not exists (select 1 from public.pass_contact('{}', array[rosa_shift], 'ab000000-0000-0000-0000-0000000000a2')),
          'org page: a shift added to someone else''s email doesn''t hand back their details';
-  select * into r from public.pass_contact('{}', array[booker_shift, kid_shift]);
+  select * into r from public.pass_contact('{}', array[booker_shift, kid_shift], 'ab000000-0000-0000-0000-0000000000a2');
   assert r.full_name = 'Priya Parent' and r.email = 'priya@example.com' and r.phone = '+15125550142' and not r.minor
          and r.event_id = 'ab000000-0000-0000-0000-0000000000a1' and r.event_slug = 'ab-carnival',
          'org page: pass_contact gives the booker''s own details';
-  select * into r from public.pass_contact(array[booker_token, lena_token], '{}');
+  select * into r from public.pass_contact(array[booker_token, lena_token], '{}', 'ab000000-0000-0000-0000-0000000000a2');
   assert r.full_name = 'Priya Parent', 'org page: the most recent booker comes first';
-  select * into r from public.pass_contact(array[lena_token], '{}');
+  select * into r from public.pass_contact(array[lena_token], '{}', 'ab000000-0000-0000-0000-0000000000a2');
   assert r.full_name = 'Lena Longago' and r.phone is null, 'org page: no phone once the event is past its 10-day keep';
 end $$;
 reset role;
+-- Only the same account's sign-ups carry over: on a shared device, Riverside's sign-up never fills in Maple Grove's
+-- form (or the other way round).
+insert into public.volunteers (id, event_id, full_name, email, phone, minor, contact_id, created_at) values
+  ('ab000000-0000-0000-0000-0000000008c1', 'ab000000-0000-0000-0000-0000000000c1', 'Rita Riverside', 'rita@example.com', '+15125550111', false, null,
+   now() - interval '1 hour');
+set role service_role;
+do $$
+declare
+  r record;
+  rita_token   uuid := (select access_token from public.volunteers where id = 'ab000000-0000-0000-0000-0000000008c1');
+  booker_token uuid := (select access_token from public.volunteers where id = 'ab000000-0000-0000-0000-0000000008a1');
+begin
+  assert not exists (select 1 from public.pass_contact(array[rita_token], '{}', 'ab000000-0000-0000-0000-0000000000a2')),
+         'org page: another account''s sign-up doesn''t carry over';
+  select * into r from public.pass_contact(array[rita_token, booker_token], '{}', 'ab000000-0000-0000-0000-0000000000a2');
+  assert r.full_name = 'Priya Parent', 'org page: the same account''s sign-up carries over, even when another''s is newer';
+  select * into r from public.pass_contact(array[rita_token, booker_token], '{}', 'ab000000-0000-0000-0000-0000000000c1');
+  assert r.full_name = 'Rita Riverside', 'org page: and on the other account''s form, only its own sign-up';
+  assert not exists (select 1 from public.pass_contact(array[booker_token], '{}', gen_random_uuid())),
+         'org page: an unknown event carries nothing over';
+end $$;
+reset role;
+delete from public.volunteers where id = 'ab000000-0000-0000-0000-0000000008c1';
 
 -- The names-free count: users can't read it or add to it; the server adds one per sign-up.
 set role authenticated;
@@ -13125,6 +13358,11 @@ do $$ begin
          'org page: the server counts sign-ups by source';
   assert (select count(*) from public.help_link_signups where organization_id = 'ab000000-0000-0000-0000-000000000001') = 2,
          'org page: one row per day and source';
+  -- The confirm step counts on its own.
+  perform public.bump_help_link_signup('ab000000-0000-0000-0000-0000000000a1', 'more_ways_confirm');
+  perform public.bump_help_link_signup('ab000000-0000-0000-0000-0000000000a1', 'org_page_confirm');
+  assert (select count(*) from public.help_link_signups where organization_id = 'ab000000-0000-0000-0000-000000000001') = 4,
+         'org page: the confirm step''s sign-ups are counted apart';
   begin
     perform public.bump_help_link_signup('ab000000-0000-0000-0000-0000000000a1', 'email');
     assert false, 'org page: an unknown source was counted';

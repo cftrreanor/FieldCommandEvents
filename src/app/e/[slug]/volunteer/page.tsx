@@ -14,17 +14,17 @@ import { eventPhase, sortStations } from "@/lib/contest-day";
 import { hasBooths, leadWords } from "@/lib/event-types";
 import { SignupForm, type PublicStation } from "./signup-form";
 import { helpLinkSource } from "@/lib/help-link-source";
-import { Suspense } from "react";
+import { cache, Suspense } from "react";
 import { formatTime } from "@/lib/time";
 import { confirmWithPass, forgetDevice } from "./actions";
 import { ConfirmStep, type ConfirmShift } from "./confirm-step";
 import { MoreWays } from "./more-ways";
 import type { MoreMode } from "./more-ways-block";
-import { loadRemembered, phoneEnding } from "./remembered";
+import { loadRemembered, maskEmail, phoneEnding } from "./remembered";
 
 type Params = { params: Promise<{ slug: string }> };
 
-async function loadEvent(slug: string) {
+const loadEvent = cache(async (slug: string) => {
   const supabase = await createClient();
   const { data } = await supabase
     .from("events")
@@ -32,7 +32,7 @@ async function loadEvent(slug: string) {
     .eq("slug", slug)
     .maybeSingle();
   return data;
-}
+});
 
 /** Whether this event's account keeps a 2-year volunteer history (only packages with volunteer tracking do). */
 async function keepsVolunteerHistory(eventId: string) {
@@ -45,12 +45,15 @@ async function keepsVolunteerHistory(eventId: string) {
   return org?.plan_tiers?.volunteer_history === true;
 }
 
-/** The account's organization page is on (a full shift then points down to "More ways to help"). */
-async function orgPageOn(eventId: string) {
+/**
+ * The account's organization page is on (a full shift then points down to "More ways to help", and the page asks
+ * search engines not to list it). Once per request: the metadata and the page share it.
+ */
+const orgPageOn = cache(async (eventId: string) => {
   const { data, error } = await createAdminClient().from("events").select("organizations(org_page_on)").eq("id", eventId).maybeSingle();
   if (error) return false;
   return (data?.organizations as { org_page_on?: boolean } | null | undefined)?.org_page_on === true;
-}
+});
 
 /** Who to ask when sign-up is closed: the page's contact, or a reply-to the organizer typed; never a sign-in email. */
 async function closedContact(eventId: string) {
@@ -62,13 +65,19 @@ const isUuid = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f-]
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const event = await loadEvent((await params).slug);
-  return { title: event ? `Volunteer: ${event.name}` : "Volunteer sign-up" };
+  if (!event) return { title: "Volunteer sign-up" };
+  // "More ways to help" puts the account's other events on this page, so while it can show, search engines are asked
+  // not to list the page (owner, 2026-11-21).
+  const block = event.status === "published" && (await orgPageOn(event.id));
+  return { title: `Volunteer: ${event.name}`, ...(block ? { robots: { index: false, follow: false } } : {}) };
 }
 
 export default async function VolunteerSignupPage({
   params,
   searchParams,
-}: Params & { searchParams: Promise<{ via?: string | string[]; shift?: string | string[]; fresh?: string | string[] }> }) {
+}: Params & {
+  searchParams: Promise<{ via?: string | string[]; shift?: string | string[]; fresh?: string | string[]; form?: string | string[]; minor?: string | string[] }>;
+}) {
   const { slug } = await params;
   const query = await searchParams;
   // Where the visitor came from ("More ways to help" or the organization page), for the names-free count.
@@ -176,9 +185,11 @@ export default async function VolunteerSignupPage({
     </Suspense>
   ) : null;
 
-  // The confirm step: another event's "More ways to help" (or the organization page) chose a shift here.
+  // The confirm step: another event's "More ways to help" (or the organization page) chose a shift here. Never a
+  // shift already under way.
+  const now = new Date();
   const shiftList: ConfirmShift[] = publicStations.flatMap((st) =>
-    st.shifts.map((sh) => ({
+    st.shifts.filter((sh) => new Date(sh.startsAt) > now).map((sh) => ({
       id: sh.id,
       job: st.name,
       when: `${formatDate(utcToZonedDate(sh.startsAt, tz), { year: undefined })} · ${formatTimeRange(sh.startsAt, sh.endsAt, tz)}`,
@@ -189,9 +200,11 @@ export default async function VolunteerSignupPage({
   );
   const wanted = viaShort && isOpen && isUuid(query.shift) ? shiftList.find((sh) => sh.id === query.shift) : undefined;
   const fresh = query.fresh === "1";
-  const remembered = viaShort && !fresh ? await loadRemembered() : null;
+  // "Under 18? Use the full sign-up form" (and "Use different details" from there): the full form, shift ticked.
+  const fullForm = query.form === "full";
+  const remembered = viaShort && !fresh ? await loadRemembered(event.id) : null;
   // Under-18s (and anyone adding people) use the full form, with the shift ticked.
-  const confirmStep = wanted && !remembered?.minor;
+  const confirmStep = wanted && !remembered?.minor && !fullForm;
   const stepHref = (extra: Record<string, string>) => `/e/${slug}/volunteer?${new URLSearchParams({ ...(wanted ? { shift: wanted.id } : {}), via: viaShort ?? "", ...extra })}`;
 
   // With the account's color, the event name sits on a full-width band of it. The confirm step's band is short, so
@@ -244,7 +257,7 @@ export default async function VolunteerSignupPage({
                 remembered
                   ? {
                       name: remembered.fullName,
-                      email: remembered.email,
+                      email: maskEmail(remembered.email),
                       phoneEnding: phoneEnding(remembered.phone),
                       from: remembered.eventId === event.id ? null : remembered.eventName,
                     }
@@ -255,13 +268,13 @@ export default async function VolunteerSignupPage({
               keepsHistory={keepsHistory}
               eventName={event.name}
               pickHref={`/e/${slug}/volunteer?via=${viaShort}`}
+              underHref={stepHref({ form: "full", minor: "1", fresh: "1" })}
               differentHref={stepHref({ fresh: "1" })}
               backHref={stepHref({})}
               startsFull={wanted.spotsLeft <= 0}
               more={more}
             />
           </div>
-          {alreadySigned}
         </main>
       </>
     );
@@ -349,14 +362,26 @@ export default async function VolunteerSignupPage({
               more={more}
               moreBelow={pageOn}
               initialShift={wanted?.id}
-              // Remembered details fill in the form from these links (name and email; the phone stays on the server).
-              prefill={remembered && !remembered.minor ? { name: remembered.fullName, email: remembered.email } : undefined}
+              // Remembered details fill in the form from these links (name and email, and "Phone ending 0142": the
+              // number stays on the server, which reads it again when the form is sent).
+              prefill={
+                remembered && !remembered.minor
+                  ? {
+                      name: remembered.fullName,
+                      email: remembered.email,
+                      phoneEnding: phoneEnding(remembered.phone),
+                      differentHref: stepHref({ fresh: "1", ...(fullForm ? { form: "full" } : {}) }),
+                    }
+                  : undefined
+              }
+              startMinor={fullForm && query.minor === "1"}
+              footer={alreadySigned}
             />
           )}
         </div>
       )}
 
-      {alreadySigned}
+      {(mode !== "open" || publicStations.length === 0) && alreadySigned}
     </main>
     </>
   );

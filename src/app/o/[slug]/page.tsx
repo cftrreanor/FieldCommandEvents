@@ -6,11 +6,13 @@ import { brandColor, loadOrgPage, orgLogoUrl } from "@/lib/org-brand";
 import { todayIn, type OrgListing } from "@/lib/org-page";
 import { missing } from "@/lib/schema-check";
 import { createAdminClient } from "@/lib/supabase/server";
+import { heldShiftIds } from "@/app/e/[slug]/volunteer/remembered";
 import { OrgBody, OrgFooter, OrgHeading, type ShiftFacts } from "./parts";
 
 type Params = { params: Promise<{ slug: string }> };
 
-// Not listed by search engines (owner decision 4, 2026-11-20): robots.ts also keeps /o/ out.
+// Not listed by search engines (owner, 2026-11-21): this tag, plus an X-Robots-Tag header on /o/* (next.config.ts).
+// robots.txt doesn't block /o/, so search engines can read both.
 const ROBOTS = { index: false, follow: false } as const;
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
@@ -19,29 +21,33 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 }
 
 /**
- * When each listed event's shifts run (the first start and last end still to come), and its one open shift when only
- * one is left (the button then goes straight to it). Shifts are public, like the sign-up pages that show them.
+ * When each listed event's shifts run (the first start and last end still to come), its one open shift when only
+ * one is left and still to start (the button then goes straight to it), and whether this device holds one of its
+ * shifts. Only this account's events. Shifts are public, like the sign-up pages that show them.
  */
-async function shiftFacts(slugs: string[]): Promise<Map<string, ShiftFacts>> {
+async function shiftFacts(orgId: string, slugs: string[], held: string[]): Promise<Map<string, ShiftFacts>> {
   const facts = new Map<string, ShiftFacts>();
   if (!slugs.length) return facts;
+  const now = new Date();
   const { data } = await createAdminClient()
     .from("events")
     .select("slug, shifts(id, starts_at, ends_at, max_capacity, registered_count, stations(showing, signup_kind))")
+    .eq("organization_id", orgId)
     .in("slug", slugs)
-    .gt("shifts.ends_at", new Date().toISOString());
+    .gt("shifts.ends_at", now.toISOString());
   type Row = {
     slug: string;
     shifts: { id: string; starts_at: string; ends_at: string; max_capacity: number; registered_count: number; stations: { showing?: boolean; signup_kind?: string } | null }[];
   };
   for (const ev of (data ?? []) as unknown as Row[]) {
     const live = (ev.shifts ?? []).filter((s) => s.stations?.showing !== false && s.stations?.signup_kind !== "items");
-    const open = live.filter((s) => s.max_capacity - s.registered_count > 0);
+    const open = live.filter((s) => s.max_capacity - s.registered_count > 0 && new Date(s.starts_at) > now);
     const starts = live.map((s) => s.starts_at).sort();
     const ends = live.map((s) => s.ends_at).sort();
     facts.set(ev.slug, {
       range: live.length ? { start: starts[0], end: ends.at(-1)! } : null,
       onlyOpenShift: open.length === 1 ? open[0].id : null,
+      held: live.some((s) => held.includes(s.id)),
     });
   }
   return facts;
@@ -49,18 +55,15 @@ async function shiftFacts(slugs: string[]): Promise<Map<string, ShiftFacts>> {
 
 /**
  * Every event on the page is full or closed right now, though some are switched on and still to come: the page says
- * "Every spot is taken right now" instead of "Nothing's coming up".
+ * "Every spot is full right now" instead of "Nothing's coming up".
  */
-async function hasFullEvents(slug: string) {
-  const admin = createAdminClient();
-  const { data: org } = await admin.from("organizations").select("id").eq("slug", slug).maybeSingle();
-  if (!org) return false;
-  const { data } = await admin
+async function hasFullEvents(orgId: string) {
+  const { data } = await createAdminClient()
     .from("events")
     // Something to take: shifts still to come, or things to bring (an event with neither isn't "full").
     .select("event_type, timezone, starts_on, ends_on, shifts(id), station_items(id)")
     .gt("shifts.ends_at", new Date().toISOString())
-    .eq("organization_id", org.id)
+    .eq("organization_id", orgId)
     .eq("status", "published")
     .eq("on_org_page", true)
     .eq("volunteer_signup_open", true)
@@ -83,7 +86,13 @@ export default async function OrgPage({ params }: Params) {
   const { org, events, help } = listing as OrgListing;
   const color = brandColor(org.brand_color);
   const logo = orgLogoUrl(org.slug, org.logo_path);
-  const [facts, allFull] = await Promise.all([shiftFacts(events.map((e) => e.slug)), events.length ? false : hasFullEvents(org.slug)]);
+  // The page's own account (the listing found it by this address), so facts never come from another account's event.
+  const { data: account } = await createAdminClient().from("organizations").select("id").eq("slug", org.slug).maybeSingle();
+  const orgId = (account?.id as string | undefined) ?? "";
+  const [facts, allFull] = await Promise.all([
+    heldShiftIds().then((held) => shiftFacts(orgId, events.map((e) => e.slug), held)),
+    events.length || !orgId ? false : hasFullEvents(orgId),
+  ]);
   const heading = <OrgHeading name={org.name} logo={logo} band={Boolean(color)} />;
 
   return (

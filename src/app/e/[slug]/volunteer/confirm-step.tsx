@@ -2,14 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useActionState, useState, type ReactNode } from "react";
+import { startTransition, useActionState, useState, type ReactNode } from "react";
 import { ActionPendingContext } from "@/components/action-form";
 import { BotCheck } from "@/components/bot-check";
+import { confirmDialog } from "@/components/confirm-dialog";
+import { CONFIRM_ADULT_LABEL, CONFIRM_UNDER_18_LINK } from "@/lib/confirm-age";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, Field, FormMessage, Input } from "@/components/ui";
 import type { ConfirmState } from "./actions";
 import { SignedUpContext } from "./more-ways-block";
-import { Confirmed, retentionLine } from "./signup-form";
+import { Confirmed, confirmFinePrint } from "./signup-form";
 
 export type ConfirmShift = { id: string; job: string; when: string; clock: string; spotsLeft: number; startsAt: string };
 
@@ -28,9 +30,10 @@ function nearest(to: ConfirmShift, shifts: ConfirmShift[]) {
 
 /**
  * Another event's shift, tapped from "More ways to help" or the organization page: one light card to confirm it.
- * With details this device remembers, they're shown (the phone only as its last four digits) and nothing is typed;
- * otherwise only the missing fields (name, email, phone). If the shift filled up, nothing was saved and the nearest
- * open shift is offered instead.
+ * With details this device remembers for this account, they're shown (the email masked, the phone only as its last
+ * four digits) and nothing is typed; otherwise only the missing fields (name, email, phone) and a required "I'm 18 or
+ * older", with the full form for anyone under 18. If the shift filled up, nothing was saved and the nearest open
+ * shift is offered instead, still highlighted.
  */
 export function ConfirmStep({
   action,
@@ -43,6 +46,7 @@ export function ConfirmStep({
   keepsHistory,
   eventName,
   pickHref,
+  underHref,
   differentHref,
   backHref,
   startsFull,
@@ -53,6 +57,7 @@ export function ConfirmStep({
   shift: ConfirmShift;
   /** This event's other shifts, for the nearest open one if this one fills up. */
   shifts: ConfirmShift[];
+  /** `email` arrives masked ("p•••@example.com"): the full address stays on the server. */
   remembered: { name: string; email: string; phoneEnding: string | null; from: string | null } | null;
   /** The fields this device doesn't have. */
   needs: { name: boolean; email: boolean; phone: boolean };
@@ -61,6 +66,8 @@ export function ConfirmStep({
   eventName: string;
   /** The full form, for a different shift. */
   pickHref: string;
+  /** The full form with this shift ticked and "I'm under 18" ticked. */
+  underHref: string;
   /** This step without the remembered details. */
   differentHref: string;
   /** This step's own address (to come back to after forgetting the device). */
@@ -106,7 +113,8 @@ export function ConfirmStep({
           </div>
         )}
         {choice && (
-          <div className={`rounded-lg border px-4 py-2.5 ${filled ? "border-border" : "border-brand bg-brand-soft"}`}>
+          // The shift they'll get keeps its highlight, the first pick or the one offered in its place.
+          <div className="rounded-lg border border-brand bg-brand-soft px-4 py-2.5">
             <p className="font-semibold [overflow-wrap:anywhere]">{choice.job}</p>
             <p className="text-sm">{choice.when}</p>
             <p className="text-sm font-medium">{spots(choice.spotsLeft)}</p>
@@ -139,7 +147,7 @@ export function ConfirmStep({
                     {remembered.phoneEnding ? ` · Phone ending ${remembered.phoneEnding}` : ""}
                   </p>
                   <p className="text-sm text-muted">{remembered.from ? `From your ${remembered.from} sign-up on this device` : "From your sign-up on this device"}</p>
-                  <p className="flex flex-wrap gap-x-5">
+                  <p>
                     <Link href={differentHref} className={LINK}>
                       Not {first}? Use different details
                     </Link>
@@ -165,6 +173,20 @@ export function ConfirmStep({
                   )}
                 </div>
               )}
+              {!remembered && (
+                // One adult only: anyone under 18 uses the full form (ages, Adults only, a guardian's consent).
+                <div>
+                  <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium">
+                    <input type="checkbox" name="adult" value="1" required className="h-5 w-5 shrink-0 accent-[var(--brand)]" />
+                    <span>{CONFIRM_ADULT_LABEL}</span>
+                  </label>
+                  <p>
+                    <Link href={underHref} className={LINK}>
+                      {CONFIRM_UNDER_18_LINK}
+                    </Link>
+                  </p>
+                </div>
+              )}
               <BotCheck eager />
               <FormMessage error={state.error} />
               <div className="space-y-1">
@@ -179,18 +201,32 @@ export function ConfirmStep({
                   <Link href={pickHref} className={LINK}>
                     Pick a different shift
                   </Link>
-                  {/* Below the button so it shows without scrolling on a phone. */}
-                  {remembered && (
-                    <button type="submit" formAction={forget} formNoValidate className={LINK}>
-                      Forget this device
-                    </button>
-                  )}
                 </p>
               </div>
-              <p className="text-center text-xs leading-5 text-muted">
-                Contact details are shared only with the event team. Only the people running {eventName} see your phone number, and only on event day.{" "}
-                {retentionLine(keepsHistory)}
-              </p>
+              <p className="text-center text-xs leading-5 text-muted">{confirmFinePrint(eventName, keepsHistory, needs.phone)}</p>
+              {remembered && (
+                // Under the privacy note, away from the main way out, and it asks first (built-page review).
+                <p className="text-center">
+                  <button
+                    type="button"
+                    className="inline-flex min-h-11 items-center text-sm font-medium text-muted underline underline-offset-4 hover:text-foreground"
+                    onClick={async () => {
+                      const ok = await confirmDialog({
+                        title: "Forget this device?",
+                        message: "Your sign-ups stay booked, but this phone won't show them in My volunteering.",
+                        confirmLabel: "Forget this device",
+                        cancelLabel: "Keep it",
+                      });
+                      if (!ok) return;
+                      const data = new FormData();
+                      data.set("back", backHref);
+                      startTransition(() => forget(data));
+                    }}
+                  >
+                    Forget this device
+                  </button>
+                </p>
+              )}
             </ActionPendingContext>
           </form>
         )}

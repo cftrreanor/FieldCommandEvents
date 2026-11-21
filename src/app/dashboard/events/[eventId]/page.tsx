@@ -1107,7 +1107,7 @@ export default async function EventPage({ params, searchParams }: PageProps<"/da
           orgPage
             ? {
                 shown: Boolean(setup?.orgPageShown),
-                node: <PublishOrgLine eventId={eventId} eventName={event.name} orgName={orgPage.orgName} status={orgPage.status} />,
+                node: <PublishOrgLine eventId={eventId} eventName={event.name} orgName={orgPage.orgName} orgId={event.organization_id} status={orgPage.status} />,
               }
             : undefined
         }
@@ -1609,14 +1609,15 @@ function PublishPanel({
               <Fragment key={line}>
                 {orgLine && /^(Nobody is emailed|Volunteers aren't emailed)/.test(line) && (
                   <li className="flex gap-2">
-                    <span aria-hidden className={orgLine.shown ? "text-success" : "text-muted"}>
+                    {/* The same width as the ticks, so every line starts in one column. */}
+                    <span aria-hidden className={`w-4 shrink-0 text-center ${orgLine.shown ? "text-success" : "text-muted"}`}>
                       {orgLine.shown ? "✓" : "–"}
                     </span>
                     <div className="min-w-0 flex-1 text-foreground">{orgLine.node}</div>
                   </li>
                 )}
                 <li className="flex gap-2">
-                  <span aria-hidden className="text-success">✓</span>
+                  <span aria-hidden className="w-4 shrink-0 text-center text-success">✓</span>
                   <span>{line}</span>
                 </li>
               </Fragment>

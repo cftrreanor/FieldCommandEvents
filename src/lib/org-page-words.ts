@@ -14,21 +14,26 @@ export const orgPageKindLabel = (type: string | null | undefined) => (type === "
 export const NEVER_LISTED = "Meetings, conferences, visitor days, band contests, and choir or orchestra festivals are never listed.";
 
 /** Why turn it on (Marketing, review): on the Off state, the Account card, and nowhere it would repeat. */
-export const WHY_LINE = "When a shift is full or someone can't make it, they see your other open spots instead of leaving";
+export const WHY_LINE = "When a shift is full or a volunteer can't make it, their sign-up page shows your other open spots";
 
-/** The rule for new events, above the list it's about (consultant, review). */
-export const NEW_EVENTS_RULE = "Events you publish after today start on your page. You can switch each one off.";
+/**
+ * The rule for new events, above the list it's about (consultant, review). What the database does: an event created
+ * while the page is on, by the Account Host or a Co-host of every event, starts on (built-page review, 2026-11-21).
+ */
+export const NEW_EVENTS_RULE = "New events you create from now on start on your page. You can switch each one off.";
 
 /** What the page shows, with the search-engine promise (robots noindex on /o). */
 export const WHAT_SHOWS =
-  "For each event: its name, kind, dates, place, and how many spots are open. Never anyone's name. We ask search engines not to list it.";
+  "For each event: its name, kind, dates, place, and how many spots are open. Never anyone's name. We ask search engines not to list your page.";
+
+/** Who chooses what's on the page, said one way everywhere. */
+export const WHO_CHOOSES = "the Account Host or a Co-host of every event";
 
 /** The switch's one name, everywhere (Content Manager: "Show on organization page"). */
 export const SWITCH_LABEL = "Show on organization page";
 
-/** The Co-host of one event's read-only line (Content Manager's exact words). */
-export const cohostLine = (org: string, event: string) =>
-  `Only the Account Host, or a Co-host on all of ${possessive(org)} events, can change this. You're a Co-host of ${event} only.`;
+/** The Co-host of one event's read-only line (Content Manager's exact words, built-page review). */
+export const cohostLine = (event: string) => `Only the Account Host and Co-hosts of every event can change this. You're a Co-host of ${event} only.`;
 
 /** "Maple Grove PTO's", "Cedar Ridge Boosters'". */
 export const possessive = (name: string) => (/s$/i.test(name.trim()) ? `${name.trim()}'` : `${name.trim()}'s`);
@@ -84,7 +89,7 @@ export type OrgPageSummary = {
  * Why an event isn't listed, in words (null when it is). `you`: the organizer's own page ("your page"), or a
  * Co-host of one event's view ("the organization page").
  */
-export function reasonWords(reason: OrgPageReason | null, opts: { needsReview?: boolean; you?: boolean } = {}): string | null {
+export function reasonWords(reason: OrgPageReason | null, opts: { needsReview?: boolean; you?: boolean; draft?: boolean } = {}): string | null {
   const page = opts.you === false ? "the organization page" : "your page";
   switch (reason) {
     case null:
@@ -100,9 +105,11 @@ export function reasonWords(reason: OrgPageReason | null, opts: { needsReview?: 
     case "page_off":
       return opts.you === false ? "The organization page is off, so it isn't listed anywhere" : "Your organization page is off, so it isn't listed anywhere";
     case "switched_off":
+      // A draft can't be opened by anyone yet, so "anyone with the link" isn't said about it.
+      if (opts.draft) return opts.you === false ? "Draft. Starts off the organization page when it's published" : "Draft. Starts off your page when it's published. Switch on to show it then";
       return opts.needsReview
         ? opts.you === false
-          ? "Not on the organization page yet. It's waiting for the Account Host to review it"
+          ? `Not on the organization page yet. Waiting for ${WHO_CHOOSES}`
           : "New, so it starts off your page until you choose. Anyone with the link can still open it"
         : `Not on ${page}. Anyone with the link can still open it`;
     case "draft":
@@ -114,9 +121,9 @@ export function reasonWords(reason: OrgPageReason | null, opts: { needsReview?: 
     case "later":
       return "More than a year away, so it's not listed yet";
     case "signup_closed":
-      return "Sign-up is closed, so it's not listed right now";
+      return `Sign-up is closed, so it's off ${page} for now`;
     case "full":
-      return "Every spot is filled, so it's not listed right now. It comes back if spots open up";
+      return `Full, so it's off ${page} for now. It comes back if a spot opens`;
   }
 }
 
@@ -171,8 +178,8 @@ export function cleanHelpLink(input: string | null | undefined): CleanLink {
   const raw = (input ?? "").trim();
   if (!raw) return { url: null, changed: false };
   const bad = (error: string): CleanLink => ({ url: null, changed: false, error });
-  const example = "Enter a web address, like amazon.com/hz/wishlist/…";
-  if (/\s/.test(raw)) return bad("Enter the link without spaces");
+  const example = "Enter a web address, like amazon.com/hz/wishlist/ABC123.";
+  if (/\s/.test(raw)) return bad("Enter the link without spaces.");
   let withScheme = raw;
   if (/^http:\/\//i.test(raw)) withScheme = `https://${raw.slice(7)}`;
   else if (!/^https:\/\//i.test(raw)) {
@@ -194,7 +201,7 @@ export function cleanHelpLink(input: string | null | undefined): CleanLink {
   let url = u.toString();
   url = url.replace(/\?(#|$)/, "$1");
   if (u.pathname === "/" && !u.search && !u.hash) url = url.replace(/\/$/, "");
-  if (url.length > HELP_LINK_MAX) return bad("That link is too long. Use the page's shorter address");
+  if (url.length > HELP_LINK_MAX) return bad("That link is too long. Use the page's shorter address.");
   return { url, changed: url !== raw };
 }
 

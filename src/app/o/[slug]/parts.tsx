@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { IconTile, LineIcon } from "@/components/line-icon";
 import { Badge, Card } from "@/components/ui";
+import { PublicFooter } from "@/components/public-footer";
 import { brand } from "@/lib/brand";
 import {
   OPEN_MONTHS,
@@ -27,8 +28,30 @@ export const BTN_OUTLINE =
 export const LINK = "font-semibold text-brand underline underline-offset-4";
 const CHIP = "inline-flex min-h-11 items-center rounded-full border border-field-border bg-surface px-4 text-sm font-semibold hover:border-brand";
 
-/** What the page knows about each event's shifts beyond the listing: when they run, and the one open shift if only one. */
-export type ShiftFacts = { range: { start: string; end: string } | null; onlyOpenShift: string | null };
+/**
+ * What the page knows about each event's shifts beyond the listing: when they run, the one open shift if only one is
+ * left (never one already under way), and whether this device holds one of its shifts.
+ */
+export type ShiftFacts = { range: { start: string; end: string } | null; onlyOpenShift: string | null; held?: boolean };
+
+/**
+ * A button on the page, or, in the organizer's preview, the same button that goes nowhere (inert: it looks the same
+ * and reads the same, but isn't a link).
+ */
+function PageLink({ href, inert, className, external, children }: { href: string; inert?: boolean; className: string; external?: boolean; children: React.ReactNode }) {
+  if (inert) return <span className={`${className} cursor-default`}>{children}</span>;
+  if (external)
+    return (
+      <a href={href} target="_blank" rel="nofollow noopener noreferrer" className={className}>
+        {children}
+      </a>
+    );
+  return (
+    <Link href={href} rel="nofollow" className={className}>
+      {children}
+    </Link>
+  );
+}
 
 /** The group's logo on its white tile (readable in dark mode), never stretched. */
 export function LogoTile({ src, name }: { src: string; name: string }) {
@@ -61,9 +84,12 @@ function DateTile({ iso }: { iso: string }) {
   );
 }
 
-function EventRow({ e, facts }: { e: OrgListingEvent; facts?: ShiftFacts }) {
+function EventRow({ e, facts, level, inert }: { e: OrgListingEvent; facts?: ShiftFacts; level: 3 | 4; inert?: boolean }) {
   const k = kindWords(e);
   const today = isToday(e);
+  const Heading = level === 3 ? "h3" : "h4";
+  // Under way, with nothing still to start: said in words, with no sign-up button (built-page review).
+  const nowOnly = Boolean(e.happening_now) && !e.soonest_shift && !e.opens_on && e.items_needed === 0;
   const on = shownOn(e);
   const when = whenWords(e, facts?.range ?? null);
   const href = e.opens_on
@@ -73,32 +99,50 @@ function EventRow({ e, facts }: { e: OrgListingEvent; facts?: ShiftFacts }) {
     <li className="flex gap-3 px-4 py-4 sm:gap-4">
       <DateTile iso={on} />
       <div className="min-w-0 flex-1">
-        {today && (
+        {(today || e.happening_now) && (
           <p className="mb-1">
-            <Badge tone="info">Today</Badge>
+            <Badge tone="info">{e.happening_now && !nowOnly ? "Happening now" : "Today"}</Badge>
           </p>
         )}
-        <h4 className="text-lg leading-6 font-semibold [overflow-wrap:anywhere]">{e.name}</h4>
+        <Heading className="text-lg leading-6 font-semibold [overflow-wrap:anywhere]">{e.name}</Heading>
         <p className="mt-1 flex items-center gap-1.5 text-sm">
           <LineIcon name={k.icon} className="size-4" />
           {k.word}
         </p>
         {when && <p className="mt-1 text-sm">{when}</p>}
         {e.venue_name && <p className="text-sm text-muted [overflow-wrap:anywhere]">{e.venue_name}</p>}
-        <p className="mt-2 text-sm font-semibold">{e.opens_on ? `Volunteer sign-up opens ${dayWords(e.opens_on)}` : needWords(e)}</p>
-        <Link href={href} className={`${BTN_OUTLINE} mt-3`}>
-          {e.opens_on ? "See the event" : k.button}
-          <span className="sr-only">
-            {" "}
-            for {e.name}, {shortDay(on)}
-          </span>
-        </Link>
+        {nowOnly ? (
+          // In place of the sign-up button: its shifts are under way, and none is left to start.
+          <p className="mt-2 text-sm font-semibold">Happening now</p>
+        ) : (
+          <p className="mt-2 text-sm font-semibold">{e.opens_on ? `Volunteer sign-up opens ${dayWords(e.opens_on)}` : needWords(e)}</p>
+        )}
+        {facts?.held && (
+          <p className="mt-2 text-sm">
+            <span aria-hidden className="text-success">
+              ✓{" "}
+            </span>
+            <span className="font-semibold">You&apos;re signed up</span> ·{" "}
+            <PageLink href="/my" inert={inert} className={`${LINK} inline-flex min-h-11 items-center`}>
+              See your shift<span className="sr-only"> at {e.name}</span>
+            </PageLink>
+          </p>
+        )}
+        {!nowOnly && (
+          <PageLink href={href} inert={inert} className={`${BTN_OUTLINE} ${facts?.held ? "mt-1" : "mt-3"}`}>
+            {e.opens_on ? "See the event" : k.button}
+            <span className="sr-only">
+              {" "}
+              for {e.name}, {shortDay(on)}
+            </span>
+          </PageLink>
+        )}
       </div>
     </li>
   );
 }
 
-function HelpRow({ h }: { h: OrgHelp }) {
+function HelpRow({ h, inert }: { h: OrgHelp; inert?: boolean }) {
   const site = h.link ? siteOf(h.link) : null;
   return (
     <li className="flex gap-3 px-4 py-4 sm:gap-4">
@@ -109,10 +153,10 @@ function HelpRow({ h }: { h: OrgHelp }) {
         <p className="mt-1 text-sm text-muted">Until {dayWords(h.ends_on)}</p>
         {h.link && site && (
           <p className="mt-2">
-            <a href={h.link} target="_blank" rel="noopener noreferrer" className={BTN_OUTLINE}>
+            <PageLink href={h.link} inert={inert} external className={BTN_OUTLINE}>
               Open on {site}
               <span className="sr-only"> for {h.title}, in a new tab</span>
-            </a>
+            </PageLink>
           </p>
         )}
       </div>
@@ -126,14 +170,18 @@ const Chevron = () => (
   </svg>
 );
 
-function Contact({ email }: { email: string | null }) {
+function Contact({ email, inert }: { email: string | null; inert?: boolean }) {
   if (!email) return null;
   return (
     <>
       Questions? Email{" "}
-      <a href={`mailto:${email}`} className={`${LINK} [overflow-wrap:anywhere]`}>
-        {email}
-      </a>
+      {inert ? (
+        <span className={`${LINK} [overflow-wrap:anywhere]`}>{email}</span>
+      ) : (
+        <a href={`mailto:${email}`} className={`${LINK} [overflow-wrap:anywhere]`}>
+          {email}
+        </a>
+      )}
     </>
   );
 }
@@ -141,7 +189,8 @@ function Contact({ email }: { email: string | null }) {
 /**
  * The page's body: Coming up by month first, then Help anytime, then the contact. Two chips at the top jump to each.
  * Only months with events show; the first two are open and later ones are folded rows that open when tapped
- * (owner, 2026-11-21). `allFull`: the page has events, but every spot is taken right now.
+ * (owner, 2026-11-21). `allFull`: the page has events, but every spot is full right now. `inert`: the organizer's
+ * preview, built from these same parts, with buttons that go nowhere.
  */
 export function OrgBody({
   name,
@@ -150,6 +199,7 @@ export function OrgBody({
   help,
   facts,
   allFull,
+  inert = false,
 }: {
   name: string;
   contact: string | null;
@@ -157,6 +207,7 @@ export function OrgBody({
   help: OrgHelp[];
   facts: Map<string, ShiftFacts>;
   allFull: boolean;
+  inert?: boolean;
 }) {
   if (!events.length && !help.length && !allFull) {
     return (
@@ -165,7 +216,7 @@ export function OrgBody({
         <p className="mt-2 leading-7">When {name} adds an event or a way to help, it shows here.</p>
         {contact && (
           <p className="mt-2 leading-7">
-            <Contact email={contact} />
+            <Contact email={contact} inert={inert} />
           </p>
         )}
       </Card>
@@ -178,17 +229,26 @@ export function OrgBody({
     <div className="mt-8 space-y-10">
       {events.length > 0 && help.length > 0 && (
         <nav aria-label="On this page" className="flex flex-wrap gap-2">
-          <a href="#coming" className={CHIP}>
-            Coming up · {events.length}
-          </a>
-          <a href="#help" className={CHIP}>
-            Help anytime · {help.length}
-          </a>
+          {inert ? (
+            <>
+              <span className={CHIP}>Coming up · {events.length}</span>
+              <span className={CHIP}>Help anytime · {help.length}</span>
+            </>
+          ) : (
+            <>
+              <a href="#coming" className={CHIP}>
+                Coming up · {events.length}
+              </a>
+              <a href="#help" className={CHIP}>
+                Help anytime · {help.length}
+              </a>
+            </>
+          )}
         </nav>
       )}
       {allFull && (
         <Card>
-          <h2 className="text-xl font-semibold">Every spot is taken right now.</h2>
+          <h2 className="text-xl font-semibold">Every spot is full right now</h2>
           <p className="mt-2 leading-7">When a spot opens or {name} adds an event, it shows here.</p>
         </Card>
       )}
@@ -199,7 +259,8 @@ export function OrgBody({
           </h2>
           {events.length === 1 ? (
             <ul className="mt-4 rounded-lg border border-border bg-surface">
-              <EventRow e={events[0]} facts={facts.get(events[0].slug)} />
+              {/* No month heading over a single event, so its name is the next level down from Coming up. */}
+              <EventRow e={events[0]} facts={facts.get(events[0].slug)} level={3} inert={inert} />
             </ul>
           ) : (
             <>
@@ -208,7 +269,7 @@ export function OrgBody({
                   <h3 className="text-lg font-semibold">{m.label}</h3>
                   <ul className="mt-2 divide-y divide-border rounded-lg border border-border bg-surface">
                     {m.events.map((e) => (
-                      <EventRow key={e.slug} e={e} facts={facts.get(e.slug)} />
+                      <EventRow key={e.slug} e={e} facts={facts.get(e.slug)} level={4} inert={inert} />
                     ))}
                   </ul>
                 </div>
@@ -219,15 +280,16 @@ export function OrgBody({
                     <li key={m.key}>
                       <details className="group">
                         <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
-                          <span className="min-w-0 flex-1">
+                          {/* The month is a heading here too, so the events under it never skip a level. */}
+                          <h3 className="min-w-0 flex-1 text-base">
                             <span className="font-semibold">{m.label}</span>
-                            <span className="text-muted"> · {plural(m.events.length, "event", "events")}</span>
-                          </span>
+                            <span className="font-normal text-muted"> · {plural(m.events.length, "event", "events")}</span>
+                          </h3>
                           <Chevron />
                         </summary>
                         <ul className="divide-y divide-border border-t border-border">
                           {m.events.map((e) => (
-                            <EventRow key={e.slug} e={e} facts={facts.get(e.slug)} />
+                            <EventRow key={e.slug} e={e} facts={facts.get(e.slug)} level={4} inert={inert} />
                           ))}
                         </ul>
                       </details>
@@ -246,7 +308,7 @@ export function OrgBody({
           </h2>
           <ul className="mt-4 divide-y divide-border rounded-lg border border-border bg-surface">
             {help.map((h) => (
-              <HelpRow key={h.id} h={h} />
+              <HelpRow key={h.id} h={h} inert={inert} />
             ))}
           </ul>
           {help.some((h) => h.link) && <p className="mt-2 text-sm text-muted">Links open other websites. {brand.name} never handles money or donations.</p>}
@@ -254,24 +316,14 @@ export function OrgBody({
       )}
       {contact && (
         <p className="text-sm leading-6 text-muted">
-          <Contact email={contact} />
+          <Contact email={contact} inert={inert} />
         </p>
       )}
     </div>
   );
 }
 
-/** The organization page's footer: words that fit any group. */
+/** The organization page's footer: the same one line as every public event page. */
 export function OrgFooter() {
-  return (
-    <footer className="mt-auto border-t border-border">
-      <p className="mx-auto max-w-2xl px-4 py-6 text-center text-sm text-muted sm:px-6">
-        Run with{" "}
-        <Link href="/" className="font-medium text-foreground underline-offset-4 hover:underline">
-          {brand.name}
-        </Link>
-        : volunteer sign-ups and check-in for schools, PTOs, clubs, and community groups
-      </p>
-    </footer>
-  );
+  return <PublicFooter />;
 }

@@ -44,8 +44,10 @@ export function MoreWaysBlock({
   const ways = pickMoreWays(events, help, { hereIsFull: mode !== "open", booked: signedUp.booked });
   if (!ways.length) return null;
   const top = mode !== "open";
-  const kicker = mode === "full" ? "This one's full" : mode === "closed" ? "Sign-up is closed" : after ? null : "Can't make this one?";
+  // Full or closed: the note above already says so, so no kicker repeats it.
+  const kicker = mode === "open" && !after ? "Can't make this one?" : null;
   const anyEvent = ways.some((w) => w.type === "event");
+  const anyHelp = ways.some((w) => w.type === "help");
   const carryLine = after ? (signedUp.carries ? " Your details carry over from this sign-up." : "") : carries ? " Your details carry over from this device." : "";
   return (
     <section id="more" aria-labelledby="more-title" className={`scroll-mt-6 ${top ? "mt-8" : "mt-12 border-t border-border pt-8"}`}>
@@ -55,7 +57,7 @@ export function MoreWaysBlock({
       </h2>
       {anyEvent && (
         <p className="mt-1 text-sm text-muted">
-          {after ? "The soonest open spots." : "The soonest open spots at their other events."}
+          {anyHelp ? "The soonest ways to help." : after ? "The soonest open spots." : "The soonest open spots at their other events."}
           {carryLine}
         </p>
       )}
@@ -72,7 +74,7 @@ export function MoreWaysBlock({
         <p className="mt-2 text-sm text-muted">Links open other websites. {brand.name} never handles money or donations.</p>
       )}
       <p className="mt-3">
-        <Link href={`/o/${org.slug}`} className={`${LINK} inline-flex min-h-11 items-center [overflow-wrap:anywhere]`}>
+        <Link href={`/o/${org.slug}`} rel="nofollow" className={`${LINK} inline-flex min-h-11 items-center [overflow-wrap:anywhere]`}>
           See everything from {org.name}
         </Link>
       </p>
@@ -95,7 +97,8 @@ function EventWay({ e, spots }: { e: OrgListingEvent; spots: Record<string, numb
         <p className="text-sm text-muted">{s ? shiftWhen(s, e.timezone) : dayWords(e.starts_on)}</p>
         <p className="text-sm font-medium">{s ? spotWords(left ?? e.open_spots) : needWords(e)}</p>
       </div>
-      <Link href={`${signupHref(e.slug, "more", s?.id)}${s ? "" : "#pick"}`} className={`${BTN_OUTLINE} self-start sm:self-center`}>
+      {/* That exact shift: the confirm step opens on it. */}
+      <Link href={`${signupHref(e.slug, "more", s?.id)}${s ? "" : "#pick"}`} rel="nofollow" className={`${BTN_OUTLINE} self-start sm:self-center`}>
         {k.button}
         <span className="sr-only">
           {" "}
@@ -114,13 +117,13 @@ function HelpWay({ h }: { h: OrgHelp }) {
       <div className="min-w-0 flex-1">
         <p className="font-semibold [overflow-wrap:anywhere]">
           {h.title}
-          <span className="font-normal">: Help anytime</span>
+          <span className="font-normal">: Anytime</span>
         </p>
         {h.note && <p className="text-sm [overflow-wrap:anywhere]">{h.note}</p>}
         <p className="text-sm text-muted">Until {dayWords(h.ends_on)}</p>
       </div>
       {h.link && site && (
-        <a href={h.link} target="_blank" rel="noopener noreferrer" className={`${BTN_OUTLINE} self-start sm:self-center`}>
+        <a href={h.link} target="_blank" rel="nofollow noopener noreferrer" className={`${BTN_OUTLINE} self-start sm:self-center`}>
           Open on {site}
           <span className="sr-only"> for {h.title}, in a new tab</span>
         </a>

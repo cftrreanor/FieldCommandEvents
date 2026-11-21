@@ -6,7 +6,9 @@ import { readPass, type Pass } from "@/lib/volunteer-pass";
 
 /**
  * The person this device remembers (pass_contact, server only): the most recent booker its pass proves, never
- * someone they added or a walk-up. The full phone number never leaves the server; pages get its last four digits.
+ * someone they added or a walk-up, and only from the same account as the event being signed up for (a shared device
+ * never carries one group's sign-up into another's form). The full phone number never leaves the server; pages get
+ * its last four digits.
  */
 export type Remembered = {
   fullName: string;
@@ -18,10 +20,10 @@ export type Remembered = {
   eventName: string | null;
 };
 
-export async function passContact(pass: Pass): Promise<Remembered | null> {
+export async function passContact(pass: Pass, eventId: string): Promise<Remembered | null> {
   if (!pass.v.length && !pass.a.length) return null;
   const admin = createAdminClient();
-  const { data, error } = await admin.rpc("pass_contact", { p_volunteer_tokens: pass.v, p_assignment_tokens: pass.a });
+  const { data, error } = await admin.rpc("pass_contact", { p_volunteer_tokens: pass.v, p_assignment_tokens: pass.a, p_event: eventId });
   if (error) {
     if (!isSchemaError(error)) console.error("pass_contact failed", error.message);
     return null;
@@ -40,8 +42,8 @@ export async function passContact(pass: Pass): Promise<Remembered | null> {
   };
 }
 
-/** This device's remembered person, once per request. */
-export const loadRemembered = cache(async () => passContact(await readPass()));
+/** This device's remembered person for this event's account, once per request. */
+export const loadRemembered = cache(async (eventId: string) => passContact(await readPass(), eventId));
 
 /** Shifts this device holds (its pass), so "More ways to help" leaves them, and anything at the same time, out. */
 export const heldShiftIds = cache(async (): Promise<string[]> => {
@@ -59,6 +61,12 @@ export const heldShiftIds = cache(async (): Promise<string[]> => {
   for (const v of (byVolunteer.data ?? []) as { volunteer_assignments: { shift_id: string }[] }[]) for (const a of v.volunteer_assignments ?? []) ids.add(a.shift_id);
   return [...ids];
 });
+
+/** "p•••@example.com": an email as the confirm card shows it (the full address stays on the server). */
+export const maskEmail = (email: string) => {
+  const [user, domain] = email.split("@");
+  return domain ? `${user.slice(0, 1)}•••@${domain}` : email;
+};
 
 /** "0142": the last four digits of a phone number, the only part a page shows. */
 export const phoneEnding = (phone: string | null) => (phone ? phone.replace(/\D/g, "").slice(-4) || null : null);

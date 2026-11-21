@@ -31,7 +31,8 @@ import { SuccessToast } from "@/components/toaster";
 import { IconTile, LineIcon } from "@/components/line-icon";
 import type { IconName } from "@/lib/icons";
 import { signupDay, signupDayShort, signupOpensLaterOn } from "@/lib/volunteer-signup";
-import { loadOrgPageSummary, orgPageCardWords } from "@/lib/org-page-summary";
+import { loadOrgPageAccounts } from "@/lib/org-page-summary";
+import { OrgPageCards } from "@/components/org-page-cards";
 
 export const metadata: Metadata = { title: "My events" };
 
@@ -361,8 +362,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Who can get or renew the plan: the Account Host, or ask them. Only when there's something to say.
   const accountHost =
     org && (ended || freeStatus(org)?.soon || [...drafts.values()].some((d) => d.planBlock)) ? await loadAccountHost(supabase, org.id, user.id) : null;
-  // The organization page at a glance (the Account Host and Co-hosts of every event; not teacher accounts).
-  const orgPage = org && !teacher ? await loadOrgPageSummary(supabase, org.id) : null;
+  // The organization page at a glance, one card per account (the Account Host and Co-hosts of every event; not
+  // teacher accounts).
+  const orgPages = org && !teacher ? await loadOrgPageAccounts(supabase) : [];
   return (
     <div className="space-y-10">
       <div className="space-y-4">
@@ -402,17 +404,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                   accountHost={accountHost}
                   urgent={[...drafts.values()].some((d) => d.planBlock && d.daysAway >= 0 && d.daysAway <= 30)}
                 />
-                {orgPage && (
-                  <Link
-                    href="/dashboard/organization"
-                    className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-border bg-surface px-4 py-2 text-sm hover:border-brand/40"
-                  >
-                    <span className="font-semibold">Organization page</span>
-                    <span className="text-muted">
-                      {orgPageCardWords(orgPage, utcToZonedDate(new Date().toISOString(), org.default_timezone || "America/Chicago"))}{"\u00a0→"}
-                    </span>
-                  </Link>
-                )}
+                <OrgPageCards accounts={orgPages} />
               </div>
             )
           }

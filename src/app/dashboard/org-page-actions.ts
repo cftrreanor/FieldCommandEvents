@@ -156,12 +156,12 @@ export async function saveHelpItem(
   const endsOn = String(input.endsOn ?? "");
   const { today, slug } = await orgToday(orgId);
   const fieldErrors: HelpFail["fieldErrors"] = {};
-  if (!title) fieldErrors.title = "Add a title";
-  else if (title.length > HELP_TITLE_MAX) fieldErrors.title = `Keep the title to ${HELP_TITLE_MAX} characters`;
-  if (note.length > HELP_NOTE_MAX) fieldErrors.note = `Keep the note to ${HELP_NOTE_MAX} characters`;
+  if (!title) fieldErrors.title = "Add a title.";
+  else if (title.length > HELP_TITLE_MAX) fieldErrors.title = `Keep the title to ${HELP_TITLE_MAX} characters.`;
+  if (note.length > HELP_NOTE_MAX) fieldErrors.note = `Keep the note to ${HELP_NOTE_MAX} characters.`;
   if (link.error) fieldErrors.link = link.error;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(endsOn)) fieldErrors.endsOn = "Pick an end date";
-  else if (endsOn < today || endsOn > addDays(today, HELP_LAST_DAY_AFTER)) fieldErrors.endsOn = "Pick an end date from today to a year from now";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(endsOn)) fieldErrors.endsOn = "Pick an end date.";
+  else if (endsOn < today || endsOn > addDays(today, HELP_LAST_DAY_AFTER)) fieldErrors.endsOn = "Pick an end date from today to a year from now.";
   if (Object.keys(fieldErrors).length) return { fieldErrors };
   const row = { title, note: note || null, link: link.url, ends_on: endsOn };
   const supabase = await createClient();
@@ -176,14 +176,23 @@ export async function saveHelpItem(
   return { item: data as HelpItem, linkChanged: link.changed && link.url !== `https://${String(input.link ?? "").trim()}` };
 }
 
-/** "End today": it stays on the page through today, then leaves. */
-export async function endHelpToday(orgId: string, id: string): Promise<HelpFail & { item?: HelpItem }> {
+/**
+ * "Take off the page now": the end date becomes yesterday, so it leaves the page at once and stays in the list as
+ * ended (to show again later). Undo puts back the end date it had (`endsOn`), which must be today or later.
+ */
+export async function setHelpEndsOn(orgId: string, id: string, endsOn: "yesterday" | string): Promise<HelpFail & { item?: HelpItem; was?: string }> {
   await requireUser();
   if (!isId(orgId) || !isId(id)) return { error: "Reload the page and try again." };
   const { today, slug } = await orgToday(orgId);
-  const { data, error } = await (await createClient())
+  const day = endsOn === "yesterday" ? addDays(today, -1) : endsOn;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || (endsOn !== "yesterday" && (day < today || day > addDays(today, HELP_LAST_DAY_AFTER)))) {
+    return { error: "Pick an end date from today to a year from now." };
+  }
+  const supabase = await createClient();
+  const { data: before } = await supabase.from("org_help_items").select("ends_on").eq("id", id).eq("organization_id", orgId).maybeSingle();
+  const { data, error } = await supabase
     .from("org_help_items")
-    .update({ ends_on: today })
+    .update({ ends_on: day })
     .eq("id", id)
     .eq("organization_id", orgId)
     .select("id, title, note, link, ends_on")
@@ -191,7 +200,7 @@ export async function endHelpToday(orgId: string, id: string): Promise<HelpFail 
   if (error) return { error: friendlyDbError(error) };
   if (!data) return { error: "That way to help was removed. Reload the page to see the current list." };
   await refresh(slug);
-  return { item: data as HelpItem };
+  return { item: data as HelpItem, was: (before?.ends_on as string | undefined) ?? undefined };
 }
 
 /** Remove for good (the screen waits a few seconds first, so Undo can stop it). */

@@ -676,15 +676,21 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                     orgName={orgPage.orgName}
                     status={orgPage.status}
                     need={orgPage.need}
-                    orgPageHref={orgPage.status.can_change ? "/dashboard/organization" : undefined}
+                    orgPageHref={orgPage.status.can_change ? `/dashboard/organization?org=${event.organization_id}` : undefined}
+                    draft={event.status !== "published"}
                   />
                   {orgPage.status.can_change && orgPage.status.page_on && (
-                    <p className="mt-3 text-sm leading-6">
-                      Off: it leaves your page, and anyone with the link can still open it.{" "}
-                      <Link href="/dashboard/organization" className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
-                        Go to Organization page
-                      </Link>
-                    </p>
+                    <>
+                      <p className="mt-3 text-sm leading-6">
+                        {event.status === "published" ? "Off: it leaves your page, and anyone with the link can still open it." : "Off: it stays off your page when you publish."}
+                      </p>
+                      {/* Its own line (built-page review). */}
+                      <p>
+                        <Link href={`/dashboard/organization?org=${event.organization_id}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-brand underline underline-offset-4">
+                          Go to Organization page
+                        </Link>
+                      </p>
+                    </>
                   )}
                 </Panel>
               )}

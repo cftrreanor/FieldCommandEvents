@@ -20,8 +20,8 @@
 --      switch changes only through set_event_on_org_page() or set_org_page() (a guard trigger), and is never
 --      on for any other kind (a check; changing an event's kind takes it off).
 --   5. org_help_items: "Help anytime" (title, note, optional https link, end date). Account Host and Co-hosts
---      of every event only; no public access. An item leaves the page after its end date ("End today" sets the
---      end date to today; there's no separate Done).
+--      of every event only; no public access. An item leaves the page after its end date ("Take off the page now"
+--      sets the end date to yesterday, which only an update may do; there's no separate Done).
 --   6. org_page_listing(): the one public read, for the page (by its address) and for the block on a sign-up
 --      page (by event, leaving that event out, and leaving out shifts this device holds or that overlap them).
 --      Only what's listed: no names, emails, or phones beyond the page's contact email. Capped at 12 months
@@ -29,10 +29,13 @@
 --   7. signup_closed_contact(): who the "sign-up closed" note points to: the page contact while the page is
 --      on, otherwise a reply-to the organizer typed, never the creator's sign-in email.
 --   8. pass_contact(): the details a device's own earlier sign-up carries over (server only). Only the booker,
---      never people they added; phone left out once the event is past its 10-day keep.
+--      never people they added, and only from the same account's events; phone left out once the event is past its
+--      10-day keep.
 --   9. event_org_page_status() for an event's hosts, org_page_summary() for the account's.
---  10. help_link_signups: a daily count of sign-ups by where they came from (more_ways, org_page, direct), per
---      account. No names, no cookie, no IP address, nothing stored on the person. Server only.
+--  10. help_link_signups: a daily count of sign-ups by where they came from (more_ways, org_page, direct, and the
+--      confirm step's own more_ways_confirm and org_page_confirm), per account. An estimate: the source comes from
+--      the link, which anyone can edit. No names, no cookie, no IP address, nothing stored on the person. Server only.
+--  11. org_page_logo(): the logo's storage path while the page is on, for the logo's address (server only).
 --
 -- Safe to run twice.
 -- =============================================================================
@@ -102,15 +105,16 @@ as $$
                 and (p.id in (select m.user_id from organization_members m where m.organization_id = p_org)
                      or p.id in (select s.user_id from event_staff s join events e on e.id = s.event_id
                                   where e.organization_id = p_org)))
-             then 'Use your group''s name, not a person''s name. It''s the heading of a public page.'
+             then 'This looks like a person''s name. Enter your group''s name, like Cedar Ridge Boosters.'
          end;
 $$;
 revoke execute on function public.org_page_name_problem(uuid, text) from public, anon, authenticated;
 
--- While the page is on, its name stays a group's name, however it's changed.
+-- While the page is on, its name stays a group's name, however it's changed. Security definer, so a host's own
+-- rename reaches the name check (which they can't call directly) and gets its refusal in words.
 create or replace function public.organizations_org_page_name()
 returns trigger
-language plpgsql set search_path = public
+language plpgsql security definer set search_path = public
 as $$
 declare
   problem text;
@@ -195,14 +199,18 @@ create table if not exists public.org_help_items (
   organization_id  uuid not null references public.organizations (id) on delete cascade,
   title            text not null constraint org_help_items_title_length check (char_length(btrim(title)) between 1 and 80),
   note             text constraint org_help_items_note_length check (note is null or char_length(note) <= 200),
-  link             text constraint org_help_items_link_safe check (
-                     link is null or (char_length(link) <= 500 and link ~ '^https://[^[:space:]/?#@]+\.[^[:space:]]*$')),
+  link             text,
   ends_on          date not null,
   created_by       uuid references public.profiles (id) on delete set null,
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
 );
 create index if not exists org_help_items_org_idx on public.org_help_items (organization_id, ends_on);
+-- An https address whose host has a dot and no "@" anywhere before the first "/", "?", or "#" (no "user@host"
+-- tricks). Re-added each run, so a database with the older check gets this one.
+alter table public.org_help_items drop constraint if exists org_help_items_link_safe;
+alter table public.org_help_items add constraint org_help_items_link_safe check (
+  link is null or (char_length(link) <= 500 and link ~ '^https://[^[:space:]/?#@]+\.[^[:space:]/?#@]+([/?#][^[:space:]]*)?$'));
 
 alter table public.org_help_items enable row level security;
 revoke all on public.org_help_items from anon, authenticated;
@@ -227,7 +235,8 @@ create policy "org help items: account hosts remove" on public.org_help_items
   for delete to authenticated using (public.is_org_admin(organization_id));
 
 -- Tidy text, a new end date from today to a year out (in the account's time zone), who added it, and when it
--- changed. The account can't change.
+-- changed. The account can't change. An update may also set yesterday: "Take off the page now" (it leaves the page
+-- at once and stays listed for the organizer as ended, so it can be shown again).
 create or replace function public.org_help_items_check()
 returns trigger
 language plpgsql set search_path = public
@@ -244,7 +253,7 @@ begin
   if tg_op = 'INSERT' or new.ends_on is distinct from old.ends_on then
     select (now() at time zone coalesce(o.default_timezone, 'America/Chicago'))::date into today
       from organizations o where o.id = new.organization_id;
-    if new.ends_on < today or new.ends_on > today + 366 then
+    if (new.ends_on < today and not (tg_op = 'UPDATE' and new.ends_on = today - 1)) or new.ends_on > today + 366 then
       raise exception 'Pick an end date from today to a year from now.' using errcode = 'P0001';
     end if;
   end if;
@@ -271,7 +280,11 @@ create trigger org_help_items_check
 -- leaves one event out (the sign-up page the block is on); p_skip leaves out shifts this device already holds,
 -- and any shift that overlaps one of them. Counts and the soonest shift are worked out from the shifts left.
 -- Mirrors the sign-up rules: volunteer_signup_is_open / volunteer_signup_opens_later, ended shifts gone, hidden
--- jobs gone, fairs closed online on fair day. Internal: the public reads it only through org_page_listing.
+-- jobs gone, fairs closed online on fair day. A shift already under way is never offered (the soonest shift and
+-- the open spots count only shifts still to start); happening_now says one is under way, so the page can say so in
+-- words instead of a sign-up button. Internal: the public reads it only through org_page_listing.
+-- (Dropped first: its columns grew happening_now, which "create or replace" can't do.)
+drop function if exists public.org_page_rows(uuid, uuid, uuid, uuid[]);
 create or replace function public.org_page_rows(p_org uuid, p_only uuid default null, p_except uuid default null,
                                                 p_skip uuid[] default '{}')
 returns table (
@@ -292,7 +305,8 @@ returns table (
   shift_job        text,
   on_org_page      boolean,
   needs_review     boolean,
-  reason           text
+  reason           text,
+  happening_now    boolean
 )
 language sql stable security definer set search_path = public
 as $$
@@ -307,7 +321,8 @@ as $$
                  else e.status = 'published' and e.on_org_page and e.ends_on >= current_date - 1 end)
   ),
   sh as (
-    select s.event_id, s.id, s.starts_at, s.ends_at, st.name as job, greatest(s.max_capacity - s.registered_count, 0) as room
+    select s.event_id, s.id, s.starts_at, s.ends_at, st.name as job, greatest(s.max_capacity - s.registered_count, 0) as room,
+           s.starts_at <= now() as started
       from shifts s
       join stations st on st.id = s.station_id
      where s.event_id in (select (ev.e).id from ev)
@@ -317,7 +332,9 @@ as $$
   ),
   counts as (
     select (ev.e).id as event_id,
-           coalesce((select sum(sh.room) from sh where sh.event_id = (ev.e).id), 0)::int as spots,
+           coalesce((select sum(sh.room) from sh where sh.event_id = (ev.e).id and not sh.started), 0)::int as spots,
+           exists (select 1 from sh where sh.event_id = (ev.e).id and sh.started) as now_on,
+           exists (select 1 from sh where sh.event_id = (ev.e).id and sh.started and sh.room > 0) as now_open,
            coalesce((select sum(greatest(i.needed - i.claimed_count, 0))
                        from station_items i join stations st on st.id = i.station_id
                       where i.event_id = (ev.e).id and st.showing), 0)::int as items
@@ -339,14 +356,15 @@ as $$
            when (ev.e).starts_on > (ev.today + interval '12 months')::date then 'later'
            when public.volunteer_signup_opens_later(ev.e) then null
            when not public.volunteer_signup_is_open(ev.e) then 'signup_closed'
-           when c.spots = 0 and c.items = 0 then 'full'
-         end
+           when c.spots = 0 and c.items = 0 and not c.now_open then 'full'
+         end,
+         c.now_on
     from ev
     cross join o
     join counts c on c.event_id = (ev.e).id
     left join lateral (
       select sh.id, sh.starts_at, sh.ends_at, sh.job from sh
-       where sh.event_id = (ev.e).id and sh.room > 0
+       where sh.event_id = (ev.e).id and sh.room > 0 and not sh.started
        order by sh.starts_at, sh.ends_at, sh.id
        limit 1
     ) first on true;
@@ -374,7 +392,8 @@ revoke execute on function public.org_page_help(uuid) from public, anon, authent
 --   { "page_on": true,
 --     "org": { "name", "slug", "logo_path", "brand_color", "contact_email" },
 --     "events": [ { "slug", "name", "kind", "starts_on", "ends_on", "timezone", "venue_name", "open_spots",
---                   "items_needed", "opens_on", "soonest_shift": { "id", "starts_at", "ends_at", "job" } | null } ],
+--                   "items_needed", "opens_on", "happening_now",
+--                   "soonest_shift": { "id", "starts_at", "ends_at", "job" } | null (never one already under way) } ],
 --     "help": [ { "id", "title", "note", "link", "ends_on" } ] }
 create or replace function public.org_page_listing(p_slug text default null, p_event uuid default null,
                                                    p_skip_shifts uuid[] default '{}', p_limit int default 100)
@@ -399,7 +418,7 @@ begin
     'events', (select coalesce(jsonb_agg(jsonb_build_object(
                  'slug', r.slug, 'name', r.name, 'kind', r.kind, 'starts_on', r.starts_on, 'ends_on', r.ends_on,
                  'timezone', r.timezone, 'venue_name', r.venue_name, 'open_spots', r.open_spots,
-                 'items_needed', r.items_needed, 'opens_on', r.opens_on,
+                 'items_needed', r.items_needed, 'opens_on', r.opens_on, 'happening_now', r.happening_now,
                  'soonest_shift', case when r.shift_id is null then null else jsonb_build_object(
                    'id', r.shift_id, 'starts_at', r.shift_starts_at, 'ends_at', r.shift_ends_at, 'job', r.shift_job) end)
                  order by r.starts_on, r.shift_starts_at nulls last, r.name, r.event_id), '[]'::jsonb)
@@ -432,8 +451,11 @@ grant execute on function public.signup_closed_contact(uuid) to service_role;
 -- The most recent booker this device's pass proves: a volunteer access token (the emailed link, so they own the
 -- inbox), or a shift or item manage token from a sign-up that created that volunteer (same moment), so typing
 -- someone else's email on a form never hands back their details. Never someone the booker added (contact_id),
--- never a walk-up. Phone is null once the event is past its 10-day keep. Server only.
-create or replace function public.pass_contact(p_volunteer_tokens uuid[], p_assignment_tokens uuid[])
+-- never a walk-up. Only from the same account as p_event (the event being signed up for): on a shared device, one
+-- group's sign-up never fills in another group's form. Phone is null once the event is past its 10-day keep.
+-- Server only. (The two-argument version from before is dropped.)
+drop function if exists public.pass_contact(uuid[], uuid[]);
+create or replace function public.pass_contact(p_volunteer_tokens uuid[], p_assignment_tokens uuid[], p_event uuid)
 returns table (full_name text, email text, phone text, minor boolean, event_id uuid, event_slug text)
 language sql stable security definer set search_path = public
 as $$
@@ -453,11 +475,12 @@ as $$
     join volunteers v on v.id = p.id
     join events e on e.id = v.event_id
    where v.contact_id is null and not v.walk_up and v.email is not null
+     and e.organization_id = (select x.organization_id from events x where x.id = p_event)
    order by v.created_at desc, v.id
    limit 1;
 $$;
-revoke execute on function public.pass_contact(uuid[], uuid[]) from public, anon, authenticated;
-grant execute on function public.pass_contact(uuid[], uuid[]) to service_role;
+revoke execute on function public.pass_contact(uuid[], uuid[], uuid) from public, anon, authenticated;
+grant execute on function public.pass_contact(uuid[], uuid[], uuid) to service_role;
 
 -- 9. Status for organizers ---------------------------------------------------------------------------------
 -- One event, for its hosts (a Co-host of one event sees the switch read-only, with who to ask).
@@ -660,15 +683,21 @@ grant execute on function public.set_event_on_org_page(uuid, boolean) to authent
 
 -- 10. Counting ----------------------------------------------------------------------------------------------
 -- Sign-ups per day, account, and where they came from. Only counts: no names, no cookie, no IP address, nothing
--- stored on the person. Read by the platform admin's pages through the server.
+-- stored on the person. An estimate, and shown as one: the source comes from the link (?via=), which anyone can
+-- edit. Read by the platform admin's pages through the server.
 create table if not exists public.help_link_signups (
   day              date not null,
   organization_id  uuid not null references public.organizations (id) on delete cascade,
-  source           text not null constraint help_link_signups_source check (source in ('more_ways', 'org_page', 'direct')),
+  source           text not null,
   signups          integer not null default 0 check (signups >= 0),
   primary key (day, organization_id, source)
 );
 create index if not exists help_link_signups_org_idx on public.help_link_signups (organization_id, day);
+-- The confirm step (a shift tapped from "More ways to help" or the organization page) counts on its own, so the
+-- plain sign-up form's numbers stay apart. Re-added each run.
+alter table public.help_link_signups drop constraint if exists help_link_signups_source;
+alter table public.help_link_signups add constraint help_link_signups_source
+  check (source in ('more_ways', 'org_page', 'direct', 'more_ways_confirm', 'org_page_confirm'));
 alter table public.help_link_signups enable row level security;
 revoke all on public.help_link_signups from anon, authenticated;
 grant select, insert, update, delete on public.help_link_signups to service_role;
@@ -681,7 +710,7 @@ as $$
 declare
   e public.events;
 begin
-  if p_source is null or p_source not in ('more_ways', 'org_page', 'direct') then
+  if p_source is null or p_source not in ('more_ways', 'org_page', 'direct', 'more_ways_confirm', 'org_page_confirm') then
     raise exception 'Unknown source.' using errcode = 'P0001';
   end if;
   select * into e from events where id = p_event;
@@ -695,3 +724,16 @@ end;
 $$;
 revoke execute on function public.bump_help_link_signup(uuid, text) from public, anon, authenticated;
 grant execute on function public.bump_help_link_signup(uuid, text) to service_role;
+
+-- 11. The logo's address -------------------------------------------------------------------------------------
+-- The account's logo path while its page is on (null otherwise): the logo's address reads this one value instead of
+-- the whole listing. Server only.
+create or replace function public.org_page_logo(p_slug text)
+returns text
+language sql stable security definer set search_path = public
+as $$
+  select o.logo_path from organizations o
+   where o.slug = lower(btrim(p_slug)) and o.org_page_slug_set_at is not null and public.org_page_live(o);
+$$;
+revoke execute on function public.org_page_logo(text) from public, anon, authenticated;
+grant execute on function public.org_page_logo(text) to service_role;

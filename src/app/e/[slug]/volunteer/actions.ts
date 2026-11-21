@@ -6,12 +6,13 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { z } from "zod";
 import type { ActionState } from "@/lib/action-state";
-import { BOT_CHECK_FAILED, passesBotCheck } from "@/lib/bot-check";
+import { BOT_CHECK_FAILED, botCheckConfigured, passesBotCheck } from "@/lib/bot-check";
+import { confirmAgeProblem } from "@/lib/confirm-age";
 import { eventPhase } from "@/lib/contest-day";
 import { getOrigin } from "@/lib/data";
 import { hasBooths } from "@/lib/event-types";
-import { helpLinkSource } from "@/lib/help-link-source";
-import { GUARDIAN_CONSENT, MAX_OTHERS } from "@/lib/group-signup";
+import { confirmSource, helpLinkSource, type HelpLinkSource } from "@/lib/help-link-source";
+import { GUARDIAN_CONSENT, MAX_OTHERS, PHONE_ON_FILE } from "@/lib/group-signup";
 import { googleCalendarUrl } from "@/lib/ics";
 import { normalizePhone } from "@/lib/phone";
 import { isSchemaError } from "@/lib/schema-check";
@@ -26,6 +27,7 @@ import {
   type CalendarEntry,
   type GroupLine,
   type ItemLine,
+  jobAndShift,
 } from "@/lib/volunteer-emails";
 import { addToPass, forgetPass, readPass } from "@/lib/volunteer-pass";
 import { passContact } from "./remembered";
@@ -115,7 +117,12 @@ export async function signUpVolunteer(eventId: string, _prev: SignupState, formD
   const parsed = payloadSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const { booker, shiftIds, items, people, consent } = parsed.data;
-  const phone = normalizePhone(booker.phone);
+  // "Phone ending 0142" carried over from this device's sign-up: the number is read again here, never from the page,
+  // and only for the same adult (same email) the device remembers for this account.
+  const onFile = booker.phone === PHONE_ON_FILE && !booker.minor ? await passContact(await readPass(), eventId) : null;
+  const carried = onFile && !onFile.minor && onFile.phone && onFile.email.toLowerCase() === booker.email.trim().toLowerCase() ? onFile.phone : null;
+  if (booker.phone === PHONE_ON_FILE && !carried) return { error: "Please enter your mobile phone number." };
+  const phone = normalizePhone(carried ?? booker.phone);
   if (!phone) return { error: "Please enter a 10-digit mobile phone number." };
   if (booker.minor && booker.age == null) return { error: "Please enter your age." };
   const others = [];
@@ -163,7 +170,7 @@ async function saveSignup(
     others: Other[];
     consent: boolean;
   },
-  source: ReturnType<typeof helpLinkSource>,
+  source: HelpLinkSource,
 ): Promise<SignupState & { code?: string }> {
   const phone = booker.phone;
   const admin = createAdminClient();
@@ -322,7 +329,7 @@ async function saveSignup(
     .map((e) => {
       const ics = toIcsEvent(e, origin);
       return {
-        title: `${e.station_name}: ${e.shift_title}`,
+        title: jobAndShift(e.station_name, e.shift_title),
         detail: [when(e), e.station_location].filter(Boolean).join(" · "),
         googleUrl: googleCalendarUrl(ics),
         icsUrl: icsDownloadUrl(origin, e.manage_token),
@@ -358,7 +365,8 @@ async function loadCalendarEntriesAll(assignmentIds: string[]): Promise<Calendar
 // ---------------------------------------------------------------------------------------------------------------
 // The confirm step: arriving from "More ways to help" or the organization page with ?shift=, details carried over
 // from the sign-up this device remembers. Its own action (owner decision, 2026-11-20): no 2.5-second timer (a
-// remembered parent can confirm at once), an invisible bot check, and a limit per device.
+// remembered parent can confirm at once), an invisible bot check, and limits per device, per network address, and
+// per shift.
 // ---------------------------------------------------------------------------------------------------------------
 
 export type ConfirmState = SignupState & {
@@ -367,17 +375,36 @@ export type ConfirmState = SignupState & {
 };
 
 const CONFIRM_WINDOW_MS = 10 * 60 * 1000;
+/** Confirms per device (or per network address, with no pass yet) in ten minutes. */
 const CONFIRM_LIMIT = 6;
+/** Confirms from one network address in ten minutes, whatever the device (a looser line for shared wifi). */
+const CONFIRM_IP_LIMIT = 30;
+/** Sign-ups on one shift in ten minutes before the confirm step sends people to the full form instead. */
+const CONFIRM_SHIFT_LIMIT = 10;
 const recentConfirms = new Map<string, number[]>();
 
-/** A few confirms per device in ten minutes (this server's memory: a first line, with the per-email check below). */
-function overConfirmLimit(key: string) {
+/** Under the limit for this key: counts this try. Over it: false (this server's memory, a first line). */
+function underLimit(key: string, limit: number) {
   const now = Date.now();
   const times = (recentConfirms.get(key) ?? []).filter((t) => now - t < CONFIRM_WINDOW_MS);
-  if (times.length >= CONFIRM_LIMIT) return true;
+  if (times.length >= limit) return false;
   recentConfirms.set(key, [...times, now]);
   if (recentConfirms.size > 5000) recentConfirms.delete(recentConfirms.keys().next().value!);
-  return false;
+  return true;
+}
+
+/** The visitor's address from the header our host sets (Vercel's x-real-ip), else the first forwarded hop. */
+function clientIp(h: Headers) {
+  return h.get("x-real-ip")?.trim() || h.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() || h.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
+}
+
+/**
+ * The device, kept the same across sign-ups: the oldest volunteer token in its pass (new ones are added in front,
+ * so this one doesn't change when a sign-up adds another), or, with no pass yet, its network address.
+ */
+function deviceKey(pass: { v: string[]; a: string[] }, ip: string) {
+  const anchor = pass.v.at(-1) ?? pass.a.at(-1);
+  return anchor ? `pass:${createHash("sha256").update(anchor).digest("hex")}` : `ip:${ip}`;
 }
 
 /** Shifts booked under one email in the last ten minutes, everywhere (the limit that survives restarts). */
@@ -391,19 +418,35 @@ async function recentBookings(email: string) {
   return ((data ?? []) as { volunteer_assignments: unknown[] }[]).reduce((n, v) => n + (v.volunteer_assignments?.length ?? 0), 0);
 }
 
+/** Sign-ups on one shift in the last ten minutes (survives restarts too). */
+async function recentOnShift(shiftId: string) {
+  const since = new Date(Date.now() - CONFIRM_WINDOW_MS).toISOString();
+  const { count } = await createAdminClient()
+    .from("volunteer_assignments")
+    .select("id", { count: "exact", head: true })
+    .eq("shift_id", shiftId)
+    .gte("created_at", since);
+  return count ?? 0;
+}
+
 const confirmSchema = z.object({
   shift: uuid,
   fresh: z.boolean(),
+  adult: z.boolean(),
   name: z.string().trim().max(200),
   email: z.string().trim().toLowerCase().max(320),
   phone: z.string().trim().max(40),
 });
 
+const TOO_MANY = "That's a lot of sign-ups in a few minutes. Please wait a little, then try again.";
+
 /**
- * Signs the remembered person (pass_contact, read again here: never from the page) up for one shift, filling in
- * only what the device doesn't have (name, email, phone) from the form. Minors never come here (they use the full
- * form). Through sign_up_group like every sign-up; the new shift joins this device's pass, the usual confirmation
- * email goes out, and the sign-up is counted by source.
+ * Signs the remembered person (pass_contact for this event's account, read again here: never from the page) up for
+ * one shift, filling in only what the device doesn't have (name, email, phone) from the form. One adult only: the
+ * remembered booker is an adult, or, with no details on this device, "I'm 18 or older" is ticked (confirmAgeProblem);
+ * anyone under 18 uses the full form, which checks ages and asks for a guardian's consent. Through sign_up_group like
+ * every sign-up; the new shift joins this device's pass, the usual confirmation email goes out, and the sign-up is
+ * counted under the confirm step's own source.
  */
 export async function confirmWithPass(eventId: string, _prev: ConfirmState, formData: FormData): Promise<ConfirmState> {
   // The bot trap field still applies; the timer doesn't.
@@ -411,16 +454,22 @@ export async function confirmWithPass(eventId: string, _prev: ConfirmState, form
   const parsed = confirmSchema.safeParse({
     shift: formData.get("shift"),
     fresh: formData.get("fresh") === "1",
+    adult: formData.get("adult") === "1",
     name: formData.get("name") ?? "",
     email: formData.get("email") ?? "",
     phone: formData.get("phone") ?? "",
   });
   if (!parsed.success) return { error: "Something went wrong. Please try again." };
-  const { shift, fresh, name, email, phone: typedPhone } = parsed.data;
+  const { shift, fresh, adult, name, email, phone: typedPhone } = parsed.data;
 
   const pass = await readPass();
-  const remembered = fresh ? null : await passContact(pass);
-  if (remembered?.minor) return { error: "Please use the sign-up form for anyone under 18." };
+  const remembered = fresh ? null : await passContact(pass, eventId);
+  const ageProblem = confirmAgeProblem({ remembered, adultTicked: adult });
+  if (ageProblem) return { error: ageProblem };
+  // The first-time path leans on the invisible bot check: without it set up on the live site, it's refused.
+  if (!remembered && !botCheckConfigured() && process.env.VERCEL_ENV === "production") {
+    return { error: "Signing up from this link isn't available right now. Please use the full sign-up form." };
+  }
   const who = {
     name: remembered?.fullName ?? name,
     email: remembered?.email ?? email,
@@ -431,21 +480,25 @@ export async function confirmWithPass(eventId: string, _prev: ConfirmState, form
   const phone = normalizePhone(who.phone);
   if (!phone) return { error: who.phone ? "Please enter a 10-digit mobile phone number." : "Please enter your mobile phone number." };
 
-  const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
-  const key = pass.v.length || pass.a.length ? `pass:${createHash("sha256").update([...pass.v, ...pass.a].sort().join(",")).digest("hex")}` : `ip:${ip}`;
-  if (overConfirmLimit(key) || (await recentBookings(who.email)) >= 12) {
-    return { error: "That's a lot of sign-ups in a few minutes. Please wait a little, then try again." };
+  const ip = clientIp(await headers());
+  if (!underLimit(deviceKey(pass, ip), CONFIRM_LIMIT) || (ip && !underLimit(`net:${ip}`, CONFIRM_IP_LIMIT)) || (await recentBookings(who.email)) >= 12) {
+    return { error: TOO_MANY };
+  }
+  if (!underLimit(`shift:${shift}`, CONFIRM_SHIFT_LIMIT) || (await recentOnShift(shift)) >= CONFIRM_SHIFT_LIMIT) {
+    return { error: "Lots of people are signing up for this shift right now. Please use the full sign-up form, or try again in a few minutes." };
   }
   if (!(await passesBotCheck(formData))) return { error: BOT_CHECK_FAILED };
 
   const admin = createAdminClient();
   const { data: picked } = await admin.from("shifts").select("id, event_id, starts_at, stations(name)").eq("id", shift).maybeSingle();
   if (!picked || picked.event_id !== eventId) return { error: "That shift isn't part of this event. Please pick another." };
+  // Never one already under way (the block and the organization page leave them out too).
+  if (new Date(picked.starts_at) <= new Date()) return { error: "That shift has already started. Please pick another." };
 
   const result = await saveSignup(
     eventId,
     { booker: { name: who.name, email: who.email, phone, minor: false, age: null }, shiftIds: [shift], items: [], people: [], others: [], consent: false },
-    helpLinkSource(formData.get("via")),
+    confirmSource(formData.get("via")),
   );
   if (result.code === "P0002") {
     const { data: ev } = await admin.from("events").select("timezone").eq("id", eventId).maybeSingle();
