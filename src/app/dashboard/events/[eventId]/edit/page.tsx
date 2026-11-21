@@ -52,6 +52,9 @@ import { SavedBy } from "@/components/saved-by";
 import { LogoForm } from "@/components/logo-form";
 import { SetupLogo } from "../../_components/setup-logo";
 import { loadBrand } from "@/lib/badges";
+import { OrgPageEventControl } from "@/components/org-page-switch";
+import { loadEventOrgPage } from "@/lib/org-page-summary";
+import { possessive } from "@/lib/org-page-words";
 
 export const metadata: Metadata = { title: "Event settings" };
 
@@ -90,7 +93,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   const { data: event } = await supabase
     .from("events")
     .select(
-      "id, organization_id, name, status, event_type, created_by, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng, band_registration_open, band_registration_deadline, band_registration_opens_on, public_notes, volunteer_signup_open, volunteer_signup_opens_on",
+      "id, slug, organization_id, name, status, event_type, created_by, timezone, starts_on, ends_on, window_start, window_end, venue_name, venue_address, venue_place_id, venue_lat, venue_lng, band_registration_open, band_registration_deadline, band_registration_opens_on, public_notes, volunteer_signup_open, volunteer_signup_opens_on",
     )
     .eq("id", eventId)
     .maybeSingle();
@@ -305,6 +308,8 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
   // A live event: how many people are in it (booked, signed up, or registered), so unpublishing and deleting
   // say what happens to them (light check, 2026-11-08). Only fetched on Publishing and more.
   const onMore = section === "more";
+  // Volunteer events and fairs: whether it's on the organization page, with its switch (read-only for a Co-host of one event).
+  const orgPage = onMore ? await loadEventOrgPage(supabase, event) : null;
   const [bookedNow, volunteersNow, bandsNow] = onMore
     ? await Promise.all([
         hasConferences(event.event_type) ? conferenceBookedCount(supabase, eventId) : Promise.resolve(0),
@@ -657,6 +662,32 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                   </div>
                 )}
               </Panel>
+
+              {orgPage && (
+                <Panel
+                  id="organization-page"
+                  title="Organization page"
+                  intro={`${possessive(orgPage.orgName)} public page of volunteer events and fairs, and the “More ways to help” on other events’ sign-up pages.`}
+                >
+                  <OrgPageEventControl
+                    layout="stack"
+                    eventId={eventId}
+                    eventName={event.name}
+                    orgName={orgPage.orgName}
+                    status={orgPage.status}
+                    need={orgPage.need}
+                    orgPageHref={orgPage.status.can_change ? "/dashboard/organization" : undefined}
+                  />
+                  {orgPage.status.can_change && orgPage.status.page_on && (
+                    <p className="mt-3 text-sm leading-6">
+                      Off: it leaves your page, and anyone with the link can still open it.{" "}
+                      <Link href="/dashboard/organization" className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4">
+                        Go to Organization page
+                      </Link>
+                    </p>
+                  )}
+                </Panel>
+              )}
 
               {/* A live festival closes (and reopens) registration here, away from its event page (owner, 2026-11-11). */}
               {published && hasRooms(event.event_type) && (
