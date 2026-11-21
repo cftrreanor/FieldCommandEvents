@@ -28,3 +28,10 @@ public form before the day, Clear on a live event, a hidden day on copies, a fai
 written, with every severity 2 and 1 item, under the owner's standing "all as recommended" for this feature. Added: an
 "Add a reminder to my calendar" link on the public pages before the day (a calendar file, no email), as the consultant
 suggested. Notify me stays later.
+
+## Updated mock-up (2026-11-21)
+
+Owner, after seeing the updated public page (`docs/design-reviews/2026-11-20-organization-page-mockups-2/`):
+- **Drop "Show later months".** Later months are folded rows ("January · 4 events") that open when tapped; nothing else.
+- **A month with no events doesn't show at all**, open or folded. "The next two months open" means the first two months
+  that have events.
