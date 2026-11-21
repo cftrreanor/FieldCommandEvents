@@ -35,3 +35,13 @@ Owner, after seeing the updated public page (`docs/design-reviews/2026-11-20-org
 - **Drop "Show later months".** Later months are folded rows ("January · 4 events") that open when tapped; nothing else.
 - **A month with no events doesn't show at all**, open or folded. "The next two months open" means the first two months
   that have events.
+
+## Built pages: light check (2026-11-21)
+
+Review: docs/design-reviews/2026-11-21-organization-page-built.md. Three findings rated 3, each with one clear fix
+(the confirm step asks "I'm 18 or older"; the group color's dark-mode contrast; a preview built from the real page);
+fixed with every severity 2 and 1 item under the owner's standing "all as recommended". Also fixed: the turn-on rule now
+says "New events you create from now on start on your page", which is what the database does.
+- **Search engines (owner):** when "More ways to help" shows on a volunteer sign-up page, that page asks search engines
+  not to list it (noindex). The organization page sends a noindex header and is no longer blocked in robots.txt, so
+  search engines can read that header.
