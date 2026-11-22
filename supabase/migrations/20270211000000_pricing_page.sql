@@ -10,14 +10,19 @@
 --   * pricing_page(): the only public read of packages. Null unless the page is live (admins get it anyway, for the
 --     preview). Only shown packages and passes and their public fields: never monthly prices, retired or hidden
 --     rows, or anything about accounts.
---   * Visitors no longer read plan_tiers directly (signed-in people still do; the app reads it with the server key).
+--   * Only platform admins read plan_tiers directly; visitors and signed-in people get pricing_page(), the app reads
+--     it with the server key, and the trigger functions that look packages up run as their owner.
 --   * Admin switches, each checked here and logged in admin_log: admin_set_package_website, admin_set_pass_shown,
 --     admin_set_pricing_page; admin_update_package now also changes weekly hours (with an admin_package_impact case).
 --   * Retiring a package hides it and takes off Recommended. A new package (admin_create_package) starts hidden.
 --   * Upgrade suggestions in the app (upgrade_for, the full-team message, the pass offer) name only packages and
 --     passes on the website, and never say "Upgrade to ." when none fits.
 --   * pricing_requests: "Ask about [package]" and "Get a [kind] pass" from the pricing page. Written only through
---     submit_pricing_request() (checked and rate-limited); read and marked handled only by platform admins.
+--     submit_pricing_request() (checked and rate-limited); read and marked handled only by platform admins. A
+--     request from someone on the account who isn't its Account Host is marked (account_role).
+--   * account_host_asks: "Ask your Account Host" emails each Account Host at most once a day per person and package
+--     (record_account_host_ask), only while the page is live.
+--   * A price of 0 shows as "Ask us"; a lapsed plan's message names what Free publishes now.
 --
 -- Safe to run twice.
 -- =============================================================================
@@ -95,9 +100,10 @@ begin
                'event_types', to_jsonb(t.event_types), 'one_at_a_time', to_jsonb(t.one_at_a_time),
                'weekly_hours', t.weekly_hours, 'max_team', t.max_team, 'event_staff', t.event_staff,
                'volunteer_history', t.volunteer_history,
-               'price_year_cents', t.price_year_cents,
+               -- A price of 0 isn't a real price for a paid package or a pass: it shows as "Ask us".
+               'price_year_cents', nullif(t.price_year_cents, 0),
                'teacher_rate', t.teacher_rate,
-               'teacher_year_cents', case when t.teacher_rate then t.teacher_year_cents end,
+               'teacher_year_cents', case when t.teacher_rate then nullif(t.teacher_year_cents, 0) end,
                'best_for', t.best_for, 'recommended', t.recommended, 'sort', t.sort)
              order by t.sort, t.code)
         from plan_tiers t
@@ -106,7 +112,7 @@ begin
     'passes', coalesce((
       select jsonb_agg(jsonb_build_object(
                'code', t.code, 'name', t.name, 'kind', t.kind, 'event_type', t.event_types[1],
-               'price_cents', t.price_cents, 'sort', t.sort)
+               'price_cents', nullif(t.price_cents, 0), 'sort', t.sort)
              order by t.sort, t.code)
         from plan_tiers t
        where t.kind = 'pass' and t.show_on_website), '[]'::jsonb),
@@ -126,12 +132,20 @@ $$;
 revoke execute on function public.pricing_page() from public;
 grant execute on function public.pricing_page() to anon, authenticated, service_role;
 
--- 4. Visitors read packages only through pricing_page() -------------------------------------------------------
--- Signed-out pages read packages with the server key (loadTiers), never the visitor's client.
+-- 4. Packages are read only through pricing_page(), the server, and admins ------------------------------------
+-- The packages table holds monthly prices, hidden and retired packages, and the website switches, so visitors and
+-- signed-in people don't read it directly: the public page reads pricing_page(), the app reads it with the server
+-- key (loadTiers), the database's own functions read it as their owner, and only platform admins read it as
+-- themselves. The three trigger functions that look packages up while a signed-in person writes an account or an
+-- invitation run as their owner first, so they keep working once the table is closed.
+alter function public.teacher_accounts_start_free() security definer set search_path = public;
+alter function public.package_changes_go_through_admin() security definer set search_path = public;
+alter function public.host_invitations_package_check() security definer set search_path = public;
 drop policy if exists "plan tiers: everyone reads" on public.plan_tiers;
 drop policy if exists "plan tiers: signed-in people read" on public.plan_tiers;
-create policy "plan tiers: signed-in people read" on public.plan_tiers for select to authenticated using (true);
-revoke all on public.plan_tiers from anon;
+drop policy if exists "plan tiers: admins read" on public.plan_tiers;
+create policy "plan tiers: admins read" on public.plan_tiers for select to authenticated using (public.is_platform_admin());
+revoke all on public.plan_tiers from public, anon, authenticated;
 grant select on public.plan_tiers to authenticated, service_role;
 
 -- 5. Admin switches -------------------------------------------------------------------------------------------
@@ -310,7 +324,7 @@ revoke execute on function public.admin_package_impact(text, text, text, integer
 grant execute on function public.admin_package_impact(text, text, text, integer) to authenticated;
 
 -- Change what a package includes, now with weekly hours. p_weekly_hours null keeps it as it is, so a caller that
--- doesn't send it yet still works.
+-- doesn't send it yet still works. Removing every kind of event from the last card on a live page is refused.
 drop function if exists public.admin_update_package(text, text[], text[], integer, boolean, boolean, text);
 create or replace function public.admin_update_package(
   p_code text,
@@ -341,6 +355,14 @@ begin
   end if;
   if p_max_team is not null and (p_max_team < 1 or p_max_team > 10000) then
     raise exception 'Team spots must be at least 1, or unlimited' using errcode = 'P0001';
+  end if;
+  -- A package with no kinds of event isn't a card, so emptying the last card would leave a live page empty.
+  if cardinality(coalesce(p_event_types, '{}')) = 0 and cardinality(before.event_types) > 0 and before.show_on_website
+     and before.retired_at is null and before.code not in ('free', 'free_teacher')
+     and coalesce((select pricing_page_live from site_settings where id), false)
+     and public.pricing_card_count() <= 1 then
+    raise exception '% is the last package on the live pricing page, so it needs at least one kind of event. Show another package first, or switch the page off',
+      before.name using errcode = 'P0001';
   end if;
 
   update plan_tiers
@@ -374,7 +396,8 @@ revoke execute on function public.admin_update_package(text, text[], text[], int
 grant execute on function public.admin_update_package(text, text[], text[], integer, boolean, boolean, text, boolean) to authenticated;
 
 -- Retiring a package (from 20270127000000_package_create_retire.sql) also takes it off the website and takes off
--- Recommended. Bringing it back leaves it hidden until an admin shows it again.
+-- Recommended. Bringing it back leaves it hidden until an admin shows it again. The last card on a live pricing
+-- page can't be retired (the page would be empty).
 create or replace function public.admin_set_package_retired(p_code text, p_retired boolean, p_note text default null)
 returns void
 language plpgsql security definer set search_path = public
@@ -394,6 +417,12 @@ begin
   end if;
   if (before.retired_at is not null) = p_retired then
     return;
+  end if;
+  if p_retired and before.show_on_website and cardinality(before.event_types) > 0
+     and coalesce((select pricing_page_live from site_settings where id), false)
+     and public.pricing_card_count() <= 1 then
+    raise exception '% is the last package on the live pricing page. Show another package first, or switch the page off',
+      before.name using errcode = 'P0001';
   end if;
   update plan_tiers
      set retired_at = case when p_retired then now() end,
@@ -428,8 +457,25 @@ as $$
 $$;
 revoke execute on function public.upgrade_for(text, text) from public, anon, authenticated;
 
+-- A list of kinds of event in words, in the order given, with an Oxford comma: "volunteer events and meetings",
+-- "band contests, school fairs, and meetings".
+create or replace function public.event_types_words(p_types text[])
+returns text
+language sql immutable set search_path = public
+as $$
+  select case
+    when n = 0 then 'nothing'
+    when n = 1 then w[1]
+    when n = 2 then w[1] || ' and ' || w[2]
+    else array_to_string(w[1:n - 1], ', ') || ', and ' || w[n]
+  end
+  from (select coalesce(array_agg(public.event_type_words(t, true) order by o), '{}') as w, count(*)::int as n
+          from unnest(coalesce(p_types, '{}')) with ordinality as x(t, o)) x;
+$$;
+
 -- Why this event can't be published (from 20270104000000_drafts_any_type.sql). The pass offer names a pass only
--- when one is on the website, and each message has a way forward when no package fits.
+-- when one is on the website, and each message has a way forward when no package fits. A lapsed plan names what
+-- Free publishes now (from the Free package, not a fixed list) and offers a pass when one is shown.
 create or replace function public.org_publish_reason(p_org uuid, p_type text, p_event uuid)
 returns text
 language plpgsql stable security definer set search_path = public
@@ -449,13 +495,16 @@ begin
     if public.org_pass_for(p_org, p_type, p_event) is not null then
       return null;
     end if;
-    if chosen <> tier.code then
-      return format('Your %s plan isn''t active right now, so you can publish %s only. Write to us to renew it.',
-                    (select name from plan_tiers where code = chosen), public.event_type_words('conference', true));
-    end if;
-    up := public.upgrade_for(p_type);
     pass_price := (select price_cents from plan_tiers
                     where kind = 'pass' and show_on_website and p_type = any (event_types) order by sort, code limit 1);
+    if chosen <> tier.code then
+      return format('Your %s plan isn''t active right now, so you can publish %s only. %s',
+                    (select name from plan_tiers where code = chosen), public.event_types_words(tier.event_types),
+                    case when pass_price is not null
+                         then format('Add a %s pass, or write to us to renew it.', public.event_type_words(p_type))
+                         else 'Write to us to renew it.' end);
+    end if;
+    up := public.upgrade_for(p_type);
     if pass_price is not null then
       return format('Your %s plan doesn''t include %s. Add a %s pass or %s.',
                     tier.name, public.event_type_words(p_type, true), public.event_type_words(p_type),
@@ -568,6 +617,14 @@ create table if not exists public.pricing_requests (
   handled_at       timestamptz,
   handled_by       uuid references auth.users (id) on delete set null
 );
+-- Their role on that account when they sent it: 'owner' is the Account Host; anyone else ('admin', a Co-host) is
+-- shown as "Not the Account Host", since only the Account Host chooses a package.
+alter table public.pricing_requests add column if not exists account_role text;
+do $$ begin
+  alter table public.pricing_requests add constraint pricing_requests_account_role_check
+    check (account_role is null or (account_role in ('owner', 'admin') and organization_id is not null));
+exception when duplicate_object then null;
+end $$;
 create index if not exists pricing_requests_created_at_idx on public.pricing_requests (created_at desc);
 create index if not exists pricing_requests_email_idx on public.pricing_requests (lower(email), created_at desc);
 
@@ -580,8 +637,16 @@ create policy "Platform admins read pricing requests" on public.pricing_requests
   for select to authenticated using (public.is_platform_admin());
 
 -- Send a request. The only way in for visitors and signed-in people (the server action checks the bot traps and
--- the form first). Returns {"id", "status"}: 'saved'; 'duplicate' when the same email sent one in the last hour
--- (a double tap: nothing new is saved or emailed); 'busy' after 30 requests in an hour from everyone.
+-- the form first). Returns {"id", "status", "alert"}:
+--   'saved'      saved; the server action emails it to the admins.
+--   'duplicate'  the same email asked about the same package or pass (or both about nothing) in the last hour: a
+--                double tap or the back button. Nothing new is saved or emailed. A package and then a pass both go in.
+--   'limit'      3 requests from this email in the last hour already: nothing saved; the person is asked to wait or
+--                email us. One address can't flood the list.
+--   'quiet'      saved, but more than 30 came in from everyone in the last hour: no email for this one, so a script
+--                can't flood the admins' inboxes, and real requests are never lost. "alert" is true for the first one
+--                past the limit, so the server action sends the admins one warning instead.
+-- An account is attached only when the signed-in person is on it, with their role there (account_role).
 create or replace function public.submit_pricing_request(
   p_name text,
   p_email text,
@@ -605,6 +670,8 @@ declare
   v_types text[];
   plan plan_tiers;
   existing uuid;
+  v_role text;
+  hour_count int;
   new_id uuid;
 begin
   if not coalesce((select pricing_page_live from site_settings where id), false) and not public.is_platform_admin() then
@@ -627,36 +694,44 @@ begin
     raise exception 'Pick kinds of event from the list.' using errcode = 'P0001';
   end if;
   if p_plan_code is not null then
+    -- Only what the page shows: a shown pass, or a shown, unretired paid package with kinds of event.
     select * into plan from plan_tiers
-     where code = p_plan_code and show_on_website and (kind = 'pass' or retired_at is null);
+     where code = p_plan_code and show_on_website
+       and (kind = 'pass' or (retired_at is null and code not in ('free', 'free_teacher') and cardinality(event_types) > 0));
     if plan.code is null then
       raise exception 'That package isn''t offered. Pick another, or ask without one.' using errcode = 'P0001';
     end if;
+  end if;
+  if auth.uid() is not null and p_organization_id is not null then
+    select m.role::text into v_role from organization_members m
+     where m.organization_id = p_organization_id and m.user_id = auth.uid();
   end if;
 
   -- One at a time, so two requests at once can't both slip under the limits.
   perform pg_advisory_xact_lock(hashtext('pricing_requests'));
   select id into existing from pricing_requests
-   where lower(email) = v_email and created_at > now() - interval '1 hour'
+   where lower(email) = v_email and plan_code is not distinct from plan.code and created_at > now() - interval '1 hour'
    order by created_at desc limit 1;
   if existing is not null then
-    return jsonb_build_object('id', existing, 'status', 'duplicate');
+    return jsonb_build_object('id', existing, 'status', 'duplicate', 'alert', false);
   end if;
-  if (select count(*) from pricing_requests where created_at > now() - interval '1 hour') >= 30 then
-    return jsonb_build_object('id', null, 'status', 'busy');
+  if (select count(*) from pricing_requests where lower(email) = v_email and created_at > now() - interval '1 hour') >= 3 then
+    return jsonb_build_object('id', null, 'status', 'limit', 'alert', false);
   end if;
+  hour_count := (select count(*) from pricing_requests where created_at > now() - interval '1 hour');
 
   insert into pricing_requests (name, email, organization, event_types, plan_code, teacher_rate, pay_by_invoice, message,
-                                user_id, organization_id)
+                                user_id, organization_id, account_role)
   values (v_name, v_email, v_org, v_types, plan.code,
           -- The teacher rate is for packages; a pass has one price.
           coalesce(p_teacher_rate, false) and coalesce(plan.kind, 'package') = 'package', coalesce(p_pay_by_invoice, false), v_message,
           auth.uid(),
-          case when auth.uid() is not null and exists (select 1 from organization_members m
-                                                        where m.organization_id = p_organization_id and m.user_id = auth.uid())
-               then p_organization_id end)
+          case when v_role is not null then p_organization_id end,
+          v_role)
   returning id into new_id;
-  return jsonb_build_object('id', new_id, 'status', 'saved');
+  return jsonb_build_object('id', new_id,
+                            'status', case when hour_count >= 30 then 'quiet' else 'saved' end,
+                            'alert', hour_count = 30);
 end;
 $$;
 revoke execute on function public.submit_pricing_request(text, text, text, text[], text, boolean, boolean, text, uuid) from public;
@@ -705,3 +780,69 @@ as $$
 $$;
 revoke execute on function public.purge_pricing_requests() from public, anon, authenticated;
 grant execute on function public.purge_pricing_requests() to service_role;
+
+-- 8. "Ask your Account Host" -----------------------------------------------------------------------------------
+-- A team member who isn't the Account Host asks them to choose a package; the app emails the Account Host. Each
+-- person can ask about each package (or about packages in general) once a day, so the button can't be used to
+-- flood someone's inbox. One row per ask; rows older than a week are cleared as new ones come in.
+create table if not exists public.account_host_asks (
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  -- The package or pass asked about; '' for packages in general.
+  plan_code  text not null default '',
+  -- The day, in Chicago (like the pilot's dates).
+  asked_on   date not null,
+  created_at timestamptz not null default now(),
+  primary key (user_id, plan_code, asked_on)
+);
+alter table public.account_host_asks enable row level security;
+revoke all on public.account_host_asks from public, anon, authenticated;
+grant select, insert, delete on public.account_host_asks to service_role;
+
+-- Record an ask before the email goes out. Returns 'ok' (send it) or 'already' (asked about this today: don't send
+-- again). Only signed-in people on a team, only while the page is live (admins can try it in the preview), and
+-- only about a package or pass the page shows.
+create or replace function public.record_account_host_ask(p_plan_code text)
+returns text
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_code text := coalesce(nullif(btrim(coalesce(p_plan_code, '')), ''), '');
+  today date := (now() at time zone 'America/Chicago')::date;
+  added int;
+begin
+  if auth.uid() is null then
+    raise exception 'Please sign in again, then try once more.' using errcode = '42501';
+  end if;
+  if not coalesce((select pricing_page_live from site_settings where id), false) and not public.is_platform_admin() then
+    raise exception 'The pricing page isn''t open yet' using errcode = '42501';
+  end if;
+  if not exists (select 1 from organization_members where user_id = auth.uid()) then
+    raise exception 'Only someone on an account''s team can ask its Account Host.' using errcode = '42501';
+  end if;
+  if v_code <> '' and not exists (
+       select 1 from plan_tiers
+        where code = v_code and show_on_website
+          and (kind = 'pass' or (retired_at is null and code not in ('free', 'free_teacher') and cardinality(event_types) > 0))) then
+    raise exception 'That package isn''t offered. Pick another, or ask about packages in general.' using errcode = 'P0001';
+  end if;
+  delete from account_host_asks where asked_on < today - 7;
+  insert into account_host_asks (user_id, plan_code, asked_on) values (auth.uid(), v_code, today)
+  on conflict do nothing;
+  get diagnostics added = row_count;
+  return case when added = 1 then 'ok' else 'already' end;
+end;
+$$;
+revoke execute on function public.record_account_host_ask(text) from public, anon;
+grant execute on function public.record_account_host_ask(text) to authenticated;
+
+-- If the email couldn't be sent, take the ask back so they can try again today.
+create or replace function public.forget_account_host_ask(p_plan_code text)
+returns void
+language sql security definer set search_path = public
+as $$
+  delete from account_host_asks
+   where user_id = auth.uid() and plan_code = coalesce(nullif(btrim(coalesce(p_plan_code, '')), ''), '')
+     and asked_on = (now() at time zone 'America/Chicago')::date;
+$$;
+revoke execute on function public.forget_account_host_ask(text) from public, anon;
+grant execute on function public.forget_account_host_ask(text) to authenticated;

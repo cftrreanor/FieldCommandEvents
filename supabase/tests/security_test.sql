@@ -7085,7 +7085,7 @@ set request.jwt.claims = '{"sub":"0000000b-0000-0000-0000-000000000001","email":
 do $$
 declare ok boolean := false;
 begin
-  assert (select count(*) from public.plan_tiers) >= 10, 'hosts can read the packages';
+  assert not exists (select 1 from public.plan_tiers), 'hosts can''t read the packages table (monthly prices, hidden packages): only admins do';
   begin
     perform public.set_account_package('70000000-0000-0000-0000-000000000001', 'district', 'standard', null, 'admin');
   exception when insufficient_privilege then ok := true;
@@ -13445,7 +13445,7 @@ set request.jwt.claims = '{"sub":"ac000000-0000-0000-0000-000000000001","email":
 do $$
 declare ok boolean := false;
 begin
-  assert (select count(*) from public.plan_tiers) >= 10, 'pricing: signed-in people still read packages';
+  assert not exists (select 1 from public.plan_tiers where code = 'volunteer'), 'pricing: a host can''t read package prices, monthly prices, or hidden packages';
   assert public.pricing_page() is null, 'pricing: a host doesn''t get the admin preview';
   begin
     update public.site_settings set pricing_page_live = true;
@@ -13570,6 +13570,23 @@ begin
   assert (select count(*) from jsonb_array_elements(page -> 'packages')) = 3, 'pricing: a visitor sees the shown packages only';
   assert page::text not like '%month%', 'pricing: a visitor never sees monthly prices';
 end $$;
+-- A price of 0 isn't a price: it comes back empty, so the page says "Ask us".
+reset role;
+update public.plan_tiers set price_cents = 0 where code = 'pass_band_contest';
+update public.plan_tiers set price_year_cents = 0, teacher_year_cents = 0 where code = 'schedule';
+set role anon;
+do $$
+declare page jsonb := public.pricing_page();
+begin
+  assert (select p -> 'price_cents' from jsonb_array_elements(page -> 'passes') p where p ->> 'code' = 'pass_band_contest') = 'null'::jsonb,
+         'pricing: a $0 pass has no price on the page';
+  assert (select p -> 'price_year_cents' = 'null'::jsonb and p -> 'teacher_year_cents' = 'null'::jsonb
+            from jsonb_array_elements(page -> 'packages') p where p ->> 'code' = 'schedule'),
+         'pricing: a $0 package has no price on the page';
+end $$;
+reset role;
+update public.plan_tiers set price_cents = 15000 where code = 'pass_band_contest';
+update public.plan_tiers set price_year_cents = 6000, teacher_year_cents = 4800 where code = 'schedule';
 
 -- Retiring, copying, and hiding the last card.
 set role authenticated;
@@ -13608,6 +13625,23 @@ begin
   end;
   assert ok and msg like '%last package on the live pricing page%', 'pricing: the live page keeps at least one card';
   perform public.admin_set_package_website('schedule', true, null, false, null);
+
+  -- Nor retired, nor left with no kinds of event (which takes it off the page too).
+  perform public.admin_set_package_website('event', false, null, false, null);
+  ok := false;
+  begin
+    perform public.admin_set_package_retired('schedule', true, null);
+  exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg like 'Schedule Command is the last package on the live pricing page%', 'pricing: the last card can''t be retired off a live page';
+  assert (select retired_at is null and show_on_website from public.plan_tiers where code = 'schedule'), 'pricing: and it stays as it was';
+  ok := false;
+  begin
+    perform public.admin_update_package('schedule', '{}', '{}', 2, false, false, null);
+  exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg like '%needs at least one kind of event%', 'pricing: the last card can''t lose every kind of event';
+  perform public.admin_set_package_website('event', true, 'Groups that run every kind of event', false, null);
 end $$;
 reset role;
 do $$
@@ -13701,6 +13735,61 @@ begin
   assert msg like '%, or move to Event Command for more spots.', 'pricing: the full-team message names a shown package: ' || msg;
   update public.plan_tiers set retired_at = null where code = 'district';
 end $$;
+-- Weekly hours, one at a time, and volunteer tracking: a package to move to when one is shown, "write to us" when not.
+set session_replication_role = replica;
+insert into public.events (id, organization_id, name, slug, status, event_type, starts_on, ends_on, window_start, window_end, venue_address)
+values ('ac000000-0000-0000-0000-0000000000e2', 'ac000000-0000-0000-0000-0000000000a1', 'Spring Car Wash', 'price-carwash', 'published',
+        'volunteer', current_date + 3, current_date + 3, now() + interval '3 days', now() + interval '3 days 4 hours', '1 School Rd');
+set session_replication_role = origin;
+do $$
+declare
+  msg text;
+  ok boolean := false;
+begin
+  update public.plan_tiers set weekly_hours = false where code = 'schedule';
+  msg := public.org_publish_reason('ac000000-0000-0000-0000-0000000000a1', 'conference', 'ac000000-0000-0000-0000-0000000000e1');
+  assert msg = 'Your Schedule Command plan doesn''t include weekly hours. Upgrade to Event Command for them.', 'pricing: weekly hours name a shown package: ' || msg;
+  msg := public.org_publish_reason('ac000000-0000-0000-0000-0000000000a1', 'volunteer', null);
+  assert msg like '%You can publish this one after Spring Car Wash ends, or upgrade to Event Command.', 'pricing: one at a time names a shown package: ' || msg;
+  update public.plan_tiers set show_on_website = false where code = 'event';
+  msg := public.org_publish_reason('ac000000-0000-0000-0000-0000000000a1', 'conference', 'ac000000-0000-0000-0000-0000000000e1');
+  assert msg = 'Your Schedule Command plan doesn''t include weekly hours. Write to us about a plan that includes them.',
+         'pricing: weekly hours with no package to offer: ' || msg;
+  msg := public.org_publish_reason('ac000000-0000-0000-0000-0000000000a1', 'volunteer', null);
+  assert msg like '%You can publish this one after Spring Car Wash ends.', 'pricing: one at a time with no package to offer: ' || msg;
+  -- Volunteer tracking, asked for by the Account Host.
+  perform set_config('request.jwt.claims', '{"sub":"ac000000-0000-0000-0000-000000000001","email":"pricehost@example.com"}', true);
+  begin
+    perform 1 from public.volunteer_report('ac000000-0000-0000-0000-0000000000a1');
+  exception when insufficient_privilege then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg like '%doesn''t include volunteer tracking. Write to us about a plan that includes it.', 'pricing: volunteer tracking with no package to offer: ' || msg;
+  perform set_config('request.jwt.claims', '{}', true);
+  update public.plan_tiers set show_on_website = true where code = 'event';
+  update public.plan_tiers set weekly_hours = true where code = 'schedule';
+end $$;
+set session_replication_role = replica;
+delete from public.events where id = 'ac000000-0000-0000-0000-0000000000e2';
+set session_replication_role = origin;
+-- A lapsed plan publishes what Free includes (read from Free, so it follows the admin), and offers a shown pass.
+update public.organizations set free_until = current_date - 1 where id = 'ac000000-0000-0000-0000-0000000000a1';
+do $$
+declare
+  msg text;
+  free_kinds text[] := (select event_types from public.plan_tiers where code = 'free');
+  free_one text[] := (select one_at_a_time from public.plan_tiers where code = 'free');
+begin
+  msg := public.org_publish_reason('ac000000-0000-0000-0000-0000000000a1', 'band_contest', null);
+  assert msg = 'Your Schedule Command plan isn''t active right now, so you can publish parent-teacher conferences only. Add a band contest pass, or write to us to renew it.',
+         'pricing: a lapsed plan names Free''s kinds and a shown pass: ' || msg;
+  update public.plan_tiers set event_types = '{volunteer,meeting}', one_at_a_time = '{volunteer,meeting}' where code = 'free';
+  msg := public.org_publish_reason('ac000000-0000-0000-0000-0000000000a1', 'fair', null);
+  assert msg = 'Your Schedule Command plan isn''t active right now, so you can publish volunteer events and meetings only. Write to us to renew it.',
+         'pricing: the lapsed message follows Free''s kinds, with no hidden pass offered: ' || msg;
+  assert public.event_types_words('{band_contest,fair,meeting}') = 'band contests, school fairs, and meetings', 'pricing: kinds listed with an Oxford comma';
+  update public.plan_tiers set event_types = free_kinds, one_at_a_time = free_one where code = 'free';
+end $$;
+update public.organizations set free_until = date '2099-01-01' where id = 'ac000000-0000-0000-0000-0000000000a1';
 
 -- Requests from the pricing page: written only through submit_pricing_request(), read only by admins.
 set role anon;
@@ -13724,6 +13813,24 @@ begin
   assert ok, 'pricing requests: a visitor can''t write to the table';
   ok := false;
   begin
+    perform public.purge_pricing_requests();
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing requests: a visitor can''t purge them';
+  ok := false;
+  begin
+    perform public.pricing_card_count();
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing: a visitor can''t call pricing_card_count()';
+  ok := false;
+  begin
+    perform public.admin_set_pricing_request_handled(gen_random_uuid(), true);
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing requests: a visitor can''t mark one handled';
+  ok := false;
+  begin
     perform public.submit_pricing_request('Bo', 'not-an-email', 'Lakeside PTO', '{volunteer}', null, false, false, null);
   exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
   end;
@@ -13736,6 +13843,12 @@ begin
   assert ok and msg like 'That package isn''t offered%', 'pricing requests: a hidden package can''t be asked about';
   ok := false;
   begin
+    perform public.submit_pricing_request('Bo Baker', 'bo@example.com', 'Lakeside PTO', '{volunteer}', 'booster_price_command', false, false, null);
+  exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg like 'That package isn''t offered%', 'pricing requests: a retired package can''t be asked about';
+  ok := false;
+  begin
     perform public.submit_pricing_request('Bo Baker', 'bo@example.com', 'Lakeside PTO', '{rodeo}', null, false, false, null);
   exception when sqlstate 'P0001' then ok := true;
   end;
@@ -13743,15 +13856,21 @@ begin
   r := public.submit_pricing_request(' Bo Baker ', 'Bo@Example.com', 'Lakeside PTO', '{volunteer,band_contest,volunteer}', 'pass_band_contest',
                                      true, true, 'Our spring contest', 'ac000000-0000-0000-0000-0000000000a1');
   assert r ->> 'status' = 'saved' and r ->> 'id' is not null, 'pricing requests: a visitor sends one';
+  r := public.submit_pricing_request('Bo Baker', 'bo@example.com', 'Lakeside PTO', '{volunteer}', 'pass_band_contest', false, false, null);
+  assert r ->> 'status' = 'duplicate', 'pricing requests: the same email about the same pass within an hour isn''t saved twice';
+  r := public.submit_pricing_request('Bo Baker', 'bo@example.com', 'Lakeside PTO', '{volunteer}', 'event', false, false, null);
+  assert r ->> 'status' = 'saved', 'pricing requests: a pass and then a package from the same email both go in';
   r := public.submit_pricing_request('Bo Baker', 'bo@example.com', 'Lakeside PTO', '{volunteer}', null, false, false, null);
-  assert r ->> 'status' = 'duplicate', 'pricing requests: the same email within an hour isn''t saved twice';
+  assert r ->> 'status' = 'saved', 'pricing requests: and a general question';
+  r := public.submit_pricing_request('Bo Baker', 'bo@example.com', 'Lakeside PTO', '{volunteer}', 'schedule', false, false, null);
+  assert r ->> 'status' = 'limit' and r ->> 'id' is null, 'pricing requests: three an hour from one email, then a limit';
 end $$;
 reset role;
 do $$ begin
-  assert (select count(*) from public.pricing_requests) = 1, 'pricing requests: one saved';
-  assert (select name = 'Bo Baker' and email = 'bo@example.com' and event_types = '{band_contest,volunteer}' and plan_code = 'pass_band_contest'
-                 and not teacher_rate and pay_by_invoice and user_id is null and organization_id is null
-            from public.pricing_requests),
+  assert (select count(*) from public.pricing_requests) = 3, 'pricing requests: three saved';
+  assert (select name = 'Bo Baker' and email = 'bo@example.com' and event_types = '{band_contest,volunteer}'
+                 and not teacher_rate and pay_by_invoice and user_id is null and organization_id is null and account_role is null
+            from public.pricing_requests where plan_code = 'pass_band_contest'),
          'pricing requests: tidied, no teacher rate on a pass, and a visitor can''t attach an account';
 end $$;
 set role authenticated;
@@ -13774,32 +13893,64 @@ begin
   exception when insufficient_privilege then ok := true;
   end;
   assert ok, 'pricing requests: a host can''t mark one handled';
+  ok := false;
+  begin
+    perform public.purge_pricing_requests();
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing requests: a host can''t purge them';
+  ok := false;
+  begin
+    perform public.pricing_card_count();
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing: a host can''t call pricing_card_count()';
   r := public.submit_pricing_request('Priya Price', 'pricehost@example.com', 'Price Boosters', '{band_contest}', 'event', true, false, null,
                                      'ac000000-0000-0000-0000-0000000000a1');
   assert r ->> 'status' = 'saved', 'pricing requests: a host sends one';
   r := public.submit_pricing_request('Priya Price', 'other@example.com', 'Someone Else', '{band_contest}', null, false, false, null, other_org);
   assert r ->> 'status' = 'saved', 'pricing requests: a general question';
 end $$;
+-- A Co-host can send one for the account, but it's marked as not from the Account Host.
+set request.jwt.claims = '{"sub":"ac000000-0000-0000-0000-000000000002","email":"priceco@example.com"}';
+do $$ begin
+  assert public.submit_pricing_request('Cole Price', 'priceco@example.com', 'Price Boosters', '{fair}', 'event', false, false, null,
+                                       'ac000000-0000-0000-0000-0000000000a1') ->> 'status' = 'saved',
+         'pricing requests: someone on the team who isn''t the Account Host sends one';
+end $$;
 set role service_role;
 do $$ begin
   assert (select user_id = 'ac000000-0000-0000-0000-000000000001' and organization_id = 'ac000000-0000-0000-0000-0000000000a1' and teacher_rate
+                 and account_role = 'owner'
             from public.pricing_requests where email = 'pricehost@example.com'),
-         'pricing requests: a signed-in person''s own account is attached, with the teacher-rate claim';
-  assert (select organization_id is null from public.pricing_requests where email = 'other@example.com'),
+         'pricing requests: a signed-in person''s own account is attached, with the teacher-rate claim, from the Account Host';
+  assert (select organization_id is null and account_role is null from public.pricing_requests where email = 'other@example.com'),
          'pricing requests: an account they aren''t on is never attached';
+  assert (select organization_id = 'ac000000-0000-0000-0000-0000000000a1' and account_role = 'admin'
+            from public.pricing_requests where email = 'priceco@example.com'),
+         'pricing requests: a request from a team member who isn''t the Account Host says so';
 end $$;
 reset role;
--- 30 an hour from everyone, then "busy".
+-- More than 30 an hour from everyone: still saved, but quiet (no email each), with one alert.
 insert into public.pricing_requests (name, email, organization)
-select 'Flood ' || n, 'flood' || n || '@example.com', 'Flood PTO' from generate_series(1, 27) n;
+select 'Flood ' || n, 'flood' || n || '@example.com', 'Flood PTO' from generate_series(1, 24) n;
 set role anon;
 set request.jwt.claims = '{}';
-do $$ begin
-  assert public.submit_pricing_request('Late Larry', 'larry@example.com', 'Late PTO', '{}', null, false, false, null) ->> 'status' = 'busy',
-         'pricing requests: rate-limited like the pilot form';
+do $$
+declare r jsonb;
+begin
+  r := public.submit_pricing_request('Late Larry', 'larry@example.com', 'Late PTO', '{}', null, false, false, null);
+  assert r ->> 'status' = 'quiet' and r ->> 'id' is not null and (r ->> 'alert')::boolean,
+         'pricing requests: past the hourly limit, the request is still saved, with one alert';
+  r := public.submit_pricing_request('Later Lena', 'lena@example.com', 'Late PTO', '{}', null, false, false, null);
+  assert r ->> 'status' = 'quiet' and r ->> 'id' is not null and not (r ->> 'alert')::boolean,
+         'pricing requests: and only one alert';
 end $$;
 reset role;
-delete from public.pricing_requests where email like 'flood%';
+do $$ begin
+  assert (select count(*) from public.pricing_requests where email in ('larry@example.com', 'lena@example.com')) = 2, 'pricing requests: nothing is lost';
+end $$;
+delete from public.pricing_requests where email like 'flood%' or email in ('larry@example.com', 'lena@example.com');
 -- Admins read them and mark them handled; nobody writes them directly.
 set role authenticated;
 set request.jwt.claims = '{"sub":"ac000000-0000-0000-0000-000000000003","email":"priceadmin@example.com"}';
@@ -13808,8 +13959,8 @@ declare
   ok boolean := false;
   rid uuid;
 begin
-  assert (select count(*) from public.pricing_requests) = 3, 'pricing requests: an admin reads them';
-  rid := (select id from public.pricing_requests where email = 'bo@example.com');
+  assert (select count(*) from public.pricing_requests) = 6, 'pricing requests: an admin reads them';
+  rid := (select id from public.pricing_requests where email = 'bo@example.com' and plan_code = 'pass_band_contest');
   begin
     update public.pricing_requests set handled_at = now() where id = rid;
   exception when insufficient_privilege then ok := true;
@@ -13820,6 +13971,79 @@ begin
   assert exists (select 1 from public.admin_log where action = 'pricing_request_handled' and details ->> 'request' = rid::text), 'pricing requests: handling is logged';
   perform public.admin_set_pricing_request_handled(rid, false);
   assert (select handled_at is null and handled_by is null from public.pricing_requests where id = rid), 'pricing requests: and can reopen it';
+end $$;
+
+-- "Ask your Account Host": once a day per person and package, only shown packages, only while the page is live.
+set role anon;
+set request.jwt.claims = '{}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.record_account_host_ask('event');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'account host asks: a visitor can''t ask';
+  ok := false;
+  begin
+    perform 1 from public.account_host_asks;
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'account host asks: a visitor can''t read them';
+end $$;
+set role authenticated;
+set request.jwt.claims = '{"sub":"ac000000-0000-0000-0000-000000000002","email":"priceco@example.com"}';
+do $$
+declare
+  ok boolean := false;
+  msg text;
+begin
+  assert public.record_account_host_ask('event') = 'ok', 'account host asks: a Co-host asks about a package';
+  assert public.record_account_host_ask('event') = 'already', 'account host asks: once a day per package';
+  assert public.record_account_host_ask('schedule') = 'ok', 'account host asks: another package is its own ask';
+  assert public.record_account_host_ask(null) = 'ok' and public.record_account_host_ask('') = 'already',
+         'account host asks: packages in general, once a day too';
+  begin
+    perform public.record_account_host_ask('volunteer');
+  exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg like 'That package isn''t offered%', 'account host asks: never a hidden package';
+  ok := false;
+  begin
+    perform public.record_account_host_ask('free');
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'account host asks: never Free';
+  ok := false;
+  begin
+    perform 1 from public.account_host_asks;
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'account host asks: nobody reads the table directly';
+  ok := false;
+  begin
+    insert into public.account_host_asks (user_id, plan_code, asked_on) values (auth.uid(), 'district', current_date);
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'account host asks: nobody writes the table directly';
+  -- An email that didn't go out doesn't count.
+  perform public.forget_account_host_ask('event');
+  assert public.record_account_host_ask('event') = 'ok', 'account host asks: a failed email can be tried again';
+end $$;
+set request.jwt.claims = '{"sub":"ac000000-0000-0000-0000-000000000003","email":"priceadmin@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.record_account_host_ask('event');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'account host asks: only someone on a team';
+end $$;
+reset role;
+do $$ begin
+  assert (select count(*) from public.account_host_asks where user_id = 'ac000000-0000-0000-0000-000000000002') = 3,
+         'account host asks: one row per package per day';
 end $$;
 -- Switched off: the page and the form close to everyone but admins.
 do $$ begin
@@ -13837,14 +14061,26 @@ begin
   end;
   assert ok, 'pricing requests: no requests while the page is off';
 end $$;
+set role authenticated;
+set request.jwt.claims = '{"sub":"ac000000-0000-0000-0000-000000000002","email":"priceco@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.record_account_host_ask('district');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'account host asks: none while the page is off';
+end $$;
 reset role;
 do $$ begin
   update public.pricing_requests set created_at = now() - interval '13 months' where email = 'bo@example.com';
-  assert public.purge_pricing_requests() = 1, 'pricing requests: kept a year';
+  assert public.purge_pricing_requests() = 3, 'pricing requests: kept a year';
 end $$;
 
 -- Clean up: packages as they were.
 delete from public.pricing_requests;
+delete from public.account_host_asks;
 set session_replication_role = replica;
 delete from public.conference_settings where event_id = 'ac000000-0000-0000-0000-0000000000e1';
 delete from public.events where id = 'ac000000-0000-0000-0000-0000000000e1';

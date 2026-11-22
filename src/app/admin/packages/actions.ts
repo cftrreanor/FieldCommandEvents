@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { requirePlatformAdmin } from "@/lib/admin";
 import { friendlyDbError } from "@/lib/action-state";
 import { createClient } from "@/lib/supabase/server";
@@ -164,7 +164,8 @@ export async function setPassShown(code: string, show: boolean, note: string): P
 
 /**
  * Put the pricing page live, or hide it (admin_set_pricing_page refuses live with no package cards, and logs it).
- * The home page, menus, footer, audience pages, and sitemap link to it only while it's live, so they refresh too.
+ * The home page, menus, footer, audience pages, and sitemap link to it only while it's live, so they refresh too,
+ * and the cached switch is cleared so the next page read sees it at once.
  */
 export async function setPricingPage(live: boolean, note: string): Promise<Result> {
   await requirePlatformAdmin();
@@ -174,6 +175,8 @@ export async function setPricingPage(live: boolean, note: string): Promise<Resul
     p_note: note.trim().slice(0, 500) || null,
   });
   if (error) return { error: friendlyDbError(error) };
+  // pricingPageLive() (src/lib/site-pricing.ts) keeps the switch for a minute under this tag: clear it now.
+  updateTag("pricing-page");
   revalidatePackages();
   revalidatePath("/", "layout");
   revalidatePath("/sitemap.xml");

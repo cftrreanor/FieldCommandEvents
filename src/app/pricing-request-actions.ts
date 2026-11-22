@@ -7,7 +7,7 @@ import { getOrigin } from "@/lib/data";
 import { notifyAdmins } from "@/lib/admin-alerts";
 import { emailLayout } from "@/lib/email";
 import { tierNames } from "@/lib/package-names";
-import { checkPricingRequest, type PricingRequestResult } from "@/lib/pricing";
+import { checkPricingRequest } from "@/lib/pricing";
 import { pilotEventTypeLabels } from "@/lib/pilot";
 import { createClient } from "@/lib/supabase/server";
 
@@ -21,6 +21,9 @@ import { createClient } from "@/lib/supabase/server";
  * teacherRate ("1"), payByInvoice ("1"), message, organizationId (the signed-in person's account, optional), and
  * the same bot traps as the pilot form: website (hidden, left empty), startedAt, touched, and the Turnstile token.
  */
+/** What submit_pricing_request() returns (see the migration for each status). */
+type SubmitResult = { id: string | null; status: "saved" | "duplicate" | "limit" | "quiet"; alert: boolean };
+
 export async function requestPricing(_prev: ActionState, formData: FormData): Promise<ActionState> {
   // Bot traps: a hidden field people never fill in, a minimum time on the page,
   // and a real tap, click or key press in the form (scripts filling it in don't make one).
@@ -55,16 +58,30 @@ export async function requestPricing(_prev: ActionState, formData: FormData): Pr
     console.error("Saving pricing request failed", error);
     return { error: `We couldn't send that. Please try again, or email us at ${brand.supportEmail}.` };
   }
-  const result = data as PricingRequestResult;
+  const result = data as SubmitResult;
   // Sent twice (double tap, back button): we already have it.
   if (result.status === "duplicate") return { ok: true, message: "We already had this request, so we didn't send it twice." };
-  if (result.status === "busy") {
-    return { error: `We're getting a lot of requests right now. Please email us at ${brand.supportEmail} instead.` };
+  if (result.status === "limit") {
+    return { error: `You've sent 3 requests in the last hour. We'll answer those first, or email us at ${brand.supportEmail}.` };
+  }
+  const origin = await getOrigin();
+  if (result.status === "quiet") {
+    // Saved, but too many came in this hour to email each one: the admins get one warning, and the list has them all.
+    if (result.alert) {
+      const { html, text } = emailLayout({
+        heading: "Lots of pricing requests this hour",
+        paragraphs: [
+          "More than 30 pricing requests came in during the last hour. They're all saved, but we've stopped emailing each one until it slows down. Check the list for anything that looks automated.",
+        ],
+        button: { label: "Open pricing requests", url: `${origin}/admin/pricing-requests` },
+      });
+      await notifyAdmins({ subject: "Lots of pricing requests this hour", html, text });
+    }
+    return { ok: true };
   }
 
   const names = await tierNames();
   const planName = d.plan ? (names[d.plan] ?? d.plan) : "No package picked";
-  const origin = await getOrigin();
   const rows = [
     { title: "Name", detail: d.name },
     { title: "Email", detail: d.email },
