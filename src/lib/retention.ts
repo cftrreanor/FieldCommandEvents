@@ -44,6 +44,8 @@ export async function runRetention(admin: Admin) {
 
   const accountsClosed = await call("purge_closed_accounts");
   const pilotRequestsPurged = await call("purge_pilot_requests");
+  // Requests from the pricing page, a year after they're sent.
+  const pricingRequestsPurged = await call("purge_pricing_requests");
   const bandDetailsRemoved = await call("purge_band_directors");
   const boothContactsRemoved = await call("purge_booth_contacts");
   const bandPrefillsRemoved = await call("purge_band_prefills");
@@ -77,5 +79,5 @@ export async function runRetention(admin: Admin) {
     else usersDeleted++;
   }
 
-  return { accountsClosed, usersDeleted, pilotRequestsPurged, bandDetailsRemoved, boothContactsRemoved, bandPrefillsRemoved, copyRemovalsCleared, filesDeleted, sponsorsPurged, sponsorLogosCleared, sponsorFilesRemoved };
+  return { accountsClosed, usersDeleted, pilotRequestsPurged, pricingRequestsPurged, bandDetailsRemoved, boothContactsRemoved, bandPrefillsRemoved, copyRemovalsCleared, filesDeleted, sponsorsPurged, sponsorLogosCleared, sponsorFilesRemoved };
 }

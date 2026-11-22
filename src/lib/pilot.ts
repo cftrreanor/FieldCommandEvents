@@ -1,5 +1,5 @@
-import { EVENT_TYPES } from "@/lib/event-types";
-import { normalizePhone } from "@/lib/phone";
+import { EVENT_TYPES } from "./event-types.ts";
+import { normalizePhone } from "./phone.ts";
 import type { IconName } from "./icons";
 
 /** The pilot ends January 1, 2027 for everyone: the last free day of a pilot account. */

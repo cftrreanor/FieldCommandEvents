@@ -7062,6 +7062,9 @@ values ('70000000-0000-0000-0000-000000000001', 'Package PTA', 'package-pta', 'c
 insert into public.organization_members (organization_id, user_id, role)
 values ('70000000-0000-0000-0000-000000000001', '0000000b-0000-0000-0000-000000000001', 'owner');
 insert into public.platform_admins (user_id) values ('00000000-0000-0000-0000-000000000006');
+-- Upgrade suggestions name only packages and passes shown on the website (20270211000000_pricing_page.sql):
+-- show the ones on offer, as the owner does on the Packages page.
+update public.plan_tiers set show_on_website = true where code not in ('free', 'free_teacher');
 do $$ begin
   assert (select package from public.organizations where id = '70000000-0000-0000-0000-000000000001') = 'event',
          'accounts start on Event Command';
@@ -13380,5 +13383,472 @@ select set_config('app.cleaning_up', 'off', false);
 reset role;
 delete from public.organizations where id in ('ab000000-0000-0000-0000-000000000001', 'ab000000-0000-0000-0000-000000000002',
                                               'ab000000-0000-0000-0000-000000000003');
+
+-- ---------------------------------------------------------------------------
+-- The pricing page (20270211000000_pricing_page.sql): the page switch, the one public read, the admin
+-- switches, upgrade suggestions that skip hidden and retired packages, and requests from the page.
+-- ---------------------------------------------------------------------------
+reset role;
+create temp table pricing_before as select code, show_on_website, best_for, recommended, retired_at from public.plan_tiers;
+grant select on pricing_before to anon, authenticated, service_role;
+update public.plan_tiers set recommended = false;
+update public.plan_tiers set show_on_website = false, best_for = null;
+update public.plan_tiers set retired_at = null where code in ('schedule', 'volunteer', 'event', 'district');
+update public.plan_tiers set price_month_cents = 3000, price_year_cents = 24000 where code = 'volunteer';
+update public.plan_tiers set price_month_cents = 700, price_year_cents = 6000, teacher_month_cents = 600, teacher_year_cents = 4800
+ where code = 'schedule';
+update public.plan_tiers set teacher_year_cents = 99900 where code = 'event'; -- not a teacher-rate package: never shown
+update public.site_settings set pricing_page_live = false;
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('ac000000-0000-0000-0000-000000000001', 'pricehost@example.com', '{"full_name":"Priya Price"}'),
+  ('ac000000-0000-0000-0000-000000000002', 'priceco@example.com', '{"full_name":"Cole Price"}'),
+  ('ac000000-0000-0000-0000-000000000003', 'priceadmin@example.com', '{"full_name":"Ada Admin"}');
+insert into public.platform_admins (user_id) values ('ac000000-0000-0000-0000-000000000003');
+insert into public.organizations (id, name, slug, subscription_status, free_until)
+values ('ac000000-0000-0000-0000-0000000000a1', 'Price Boosters', 'price-boosters', 'comped', date '2099-01-01');
+insert into public.organization_members (organization_id, user_id, role) values
+  ('ac000000-0000-0000-0000-0000000000a1', 'ac000000-0000-0000-0000-000000000001', 'owner'),
+  ('ac000000-0000-0000-0000-0000000000a1', 'ac000000-0000-0000-0000-000000000002', 'admin');
+select set_config('app.package_change', 'on', false);
+update public.organizations set package = 'schedule' where id = 'ac000000-0000-0000-0000-0000000000a1';
+select set_config('app.package_change', 'off', false);
+
+-- Visitors: no packages table, no settings, and nothing from pricing_page() while the page is off.
+set role anon;
+set request.jwt.claims = '{}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform 1 from public.plan_tiers;
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing: a visitor can''t read the packages table';
+  ok := false;
+  begin
+    perform 1 from public.site_settings;
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing: a visitor can''t read site settings';
+  assert public.pricing_page() is null, 'pricing: the page is hidden from visitors until it''s switched on';
+end $$;
+
+-- A host: still reads packages, but can't read or change site settings, preview the page, or use the admin switches.
+set role authenticated;
+set request.jwt.claims = '{"sub":"ac000000-0000-0000-0000-000000000001","email":"pricehost@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  assert (select count(*) from public.plan_tiers) >= 10, 'pricing: signed-in people still read packages';
+  assert public.pricing_page() is null, 'pricing: a host doesn''t get the admin preview';
+  begin
+    update public.site_settings set pricing_page_live = true;
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing: a host can''t switch the page on directly';
+  ok := false;
+  begin
+    perform public.admin_set_pricing_page(true, null);
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing: a host can''t switch the page on';
+  ok := false;
+  begin
+    perform public.admin_set_package_website('volunteer', true, null, true, null);
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing: a host can''t show a package';
+  ok := false;
+  begin
+    perform public.admin_set_pass_shown('pass_fair', true, null);
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing: a host can''t show a pass';
+  ok := false;
+  begin
+    update public.plan_tiers set show_on_website = true where code = 'volunteer';
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing: a host can''t write website fields directly';
+end $$;
+
+-- An admin: going live needs a package card; then shows packages and passes and moves Recommended.
+set request.jwt.claims = '{"sub":"ac000000-0000-0000-0000-000000000003","email":"priceadmin@example.com"}';
+do $$
+declare
+  ok boolean := false;
+  msg text;
+  page jsonb;
+begin
+  page := public.pricing_page();
+  assert page is not null and page ->> 'live' = 'false', 'pricing: an admin previews the hidden page, marked not live';
+  assert jsonb_array_length(page -> 'packages') = 0 and jsonb_array_length(page -> 'passes') = 0, 'pricing: nothing shown yet';
+  begin
+    perform public.admin_set_pricing_page(true, 'Too soon');
+  exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg like 'Show at least one package%', 'pricing: the page can''t go live with no package cards';
+  -- Free and retired packages never show as a card; neither does one with no kinds of event.
+  ok := false;
+  begin
+    perform public.admin_set_package_website('free', true, null, false, null);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'pricing: Free can''t be a card';
+  ok := false;
+  begin
+    perform public.admin_set_package_website('free_teacher', false, null, true, null);
+    perform public.admin_set_package_website('free_teacher', true, null, true, null);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok and not (select recommended from public.plan_tiers where code = 'free_teacher'), 'pricing: Free Teacher can''t be recommended';
+  ok := false;
+  begin
+    perform public.admin_set_package_website('volunteer', true, repeat('x', 121), false, null);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'pricing: "Best for" is 120 characters at most';
+
+  perform public.admin_set_package_website('volunteer', true, E'  Booster clubs\nthat run volunteer events  ', true, 'Launch');
+  perform public.admin_set_package_website('schedule', true, null, false, null);
+  perform public.admin_set_package_website('event', true, 'Groups that run every kind of event', false, null);
+  assert (select best_for from public.plan_tiers where code = 'volunteer') = 'Booster clubs that run volunteer events',
+         'pricing: "Best for" is saved on one line';
+  assert (select recommended from public.plan_tiers where code = 'volunteer'), 'pricing: an admin marks a package Recommended';
+  perform public.admin_set_package_website('event', true, 'Groups that run every kind of event', true, null);
+  assert (select array_agg(code) from public.plan_tiers where recommended) = '{event}', 'pricing: Recommended moves; only one package has it';
+  assert exists (select 1 from public.admin_log where action = 'package_website_changed' and details ->> 'code' = 'event'
+                   and details ->> 'recommended_moved_from' = 'Volunteer Command'),
+         'pricing: the log says where Recommended moved from';
+  -- Hiding a package takes Recommended off it.
+  perform public.admin_set_package_website('volunteer', false, null, true, null);
+  assert not (select show_on_website or recommended from public.plan_tiers where code = 'volunteer'), 'pricing: a hidden package isn''t recommended';
+  perform public.admin_set_package_website('volunteer', true, 'Booster clubs that run volunteer events', false, null);
+
+  perform public.admin_set_pass_shown('pass_band_contest', true, null);
+  perform public.admin_set_pass_shown('pass_fair', true, null);
+  perform public.admin_set_pass_shown('pass_fair', false, 'Not yet');
+  assert exists (select 1 from public.admin_log where action = 'pass_hidden' and details ->> 'code' = 'pass_fair'), 'pricing: pass switches are logged';
+  assert exists (select 1 from public.admin_log where action = 'package_website_changed' and details ->> 'note' = 'Launch'),
+         'pricing: package website changes are logged';
+
+  page := public.pricing_page();
+  assert (select array_agg(p ->> 'code' order by (p ->> 'sort')::int) from jsonb_array_elements(page -> 'packages') p) = '{schedule,volunteer,event}',
+         'pricing: shown packages, smallest first';
+  assert (select array_agg(p ->> 'code') from jsonb_array_elements(page -> 'passes') p) = '{pass_band_contest}', 'pricing: only shown passes';
+  assert (select p ->> 'event_type' from jsonb_array_elements(page -> 'passes') p) = 'band_contest', 'pricing: a pass says its kind of event';
+  assert (select (p ->> 'price_year_cents')::int from jsonb_array_elements(page -> 'packages') p where p ->> 'code' = 'volunteer') = 24000,
+         'pricing: the yearly price is public';
+  assert (select (p ->> 'teacher_year_cents')::int from jsonb_array_elements(page -> 'packages') p where p ->> 'code' = 'schedule') = 4800,
+         'pricing: the teacher yearly rate shows where the package has one';
+  assert (select p -> 'teacher_year_cents' from jsonb_array_elements(page -> 'packages') p where p ->> 'code' = 'event') = 'null'::jsonb,
+         'pricing: never a teacher price for a package without the teacher rate';
+  assert page::text not like '%month%' and page::text not like '%retired%' and page::text not like '%organization%'
+         and page::text not like '%show_on_website%', 'pricing: no monthly prices, retirement, accounts, or switches in the public read';
+  assert (select array_agg(p ->> 'code' order by (p ->> 'sort')::int) from jsonb_array_elements(page -> 'free') p) = '{free_teacher,free}',
+         'pricing: Free and Free Teacher come as their own lines';
+  assert (select count(*) from jsonb_array_elements(page -> 'free') p where p ? 'price_year_cents') = 0, 'pricing: the free lines have no price';
+
+  perform public.admin_set_pricing_page(true, 'January 1');
+  assert public.pricing_page() ->> 'live' = 'true', 'pricing: an admin switches the page on';
+  assert exists (select 1 from public.admin_log where action = 'pricing_page_live' and details ->> 'note' = 'January 1'), 'pricing: going live is logged';
+end $$;
+
+-- Live: visitors get the same shown, public fields.
+set role anon;
+set request.jwt.claims = '{}';
+do $$
+declare page jsonb := public.pricing_page();
+begin
+  assert page ->> 'live' = 'true', 'pricing: a visitor reads the live page';
+  assert (select count(*) from jsonb_array_elements(page -> 'packages')) = 3, 'pricing: a visitor sees the shown packages only';
+  assert page::text not like '%month%', 'pricing: a visitor never sees monthly prices';
+end $$;
+
+-- Retiring, copying, and hiding the last card.
+set role authenticated;
+set request.jwt.claims = '{"sub":"ac000000-0000-0000-0000-000000000003","email":"priceadmin@example.com"}';
+do $$
+declare
+  ok boolean := false;
+  msg text;
+  copy_code text;
+begin
+  perform public.admin_set_package_website('volunteer', true, 'Booster clubs that run volunteer events', true, null);
+  perform public.admin_set_package_retired('volunteer', true, null);
+  assert (select not show_on_website and not recommended from public.plan_tiers where code = 'volunteer'),
+         'pricing: retiring a package hides it and takes off Recommended';
+  assert not exists (select 1 from jsonb_array_elements(public.pricing_page() -> 'packages') p where p ->> 'code' = 'volunteer'),
+         'pricing: a retired package is never on the page';
+  begin
+    perform public.admin_set_package_website('volunteer', true, null, false, null);
+  exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg like '%retired%', 'pricing: a retired package can''t be shown';
+  perform public.admin_set_package_retired('volunteer', false, null);
+  assert not (select show_on_website from public.plan_tiers where code = 'volunteer'), 'pricing: a package brought back stays hidden';
+
+  copy_code := public.admin_create_package('Booster Price Command', 'event', null);
+  assert (select not show_on_website and best_for is null and not recommended from public.plan_tiers where code = copy_code),
+         'pricing: a copied package starts hidden, with no "Best for" and not recommended';
+  perform public.admin_set_package_retired(copy_code, true, null);
+
+  -- The last card on a live page can't be hidden.
+  perform public.admin_set_package_website('schedule', false, null, false, null);
+  ok := false;
+  begin
+    perform public.admin_set_package_website('event', false, null, false, null);
+  exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg like '%last package on the live pricing page%', 'pricing: the live page keeps at least one card';
+  perform public.admin_set_package_website('schedule', true, null, false, null);
+end $$;
+reset role;
+do $$
+declare ok boolean := false;
+begin
+  update public.plan_tiers set recommended = true where code = 'event';
+  begin
+    update public.plan_tiers set recommended = true where code = 'schedule';
+  exception when unique_violation then ok := true;
+  end;
+  assert ok, 'pricing: the database allows one Recommended package';
+  ok := false;
+  begin
+    update public.plan_tiers set best_for = E'Two\nlines' where code = 'schedule';
+  exception when check_violation then ok := true;
+  end;
+  assert ok, 'pricing: "Best for" has no line breaks';
+  ok := false;
+  begin
+    update public.plan_tiers set show_on_website = true where code = 'free';
+  exception when check_violation then ok := true;
+  end;
+  assert ok, 'pricing: the database never shows Free as a card';
+end $$;
+
+-- Weekly hours: admin_update_package changes them, and admin_package_impact says who's using them.
+set session_replication_role = replica;
+insert into public.events (id, organization_id, name, slug, status, event_type, starts_on, ends_on, window_start, window_end, venue_address)
+values ('ac000000-0000-0000-0000-0000000000e1', 'ac000000-0000-0000-0000-0000000000a1', 'Spring Conferences', 'price-conf', 'published',
+        'conference', current_date + 5, current_date + 30, now() + interval '5 days', now() + interval '30 days', '1 School Rd');
+insert into public.conference_settings (event_id, schedule) values ('ac000000-0000-0000-0000-0000000000e1', 'weekly');
+set session_replication_role = origin;
+set role authenticated;
+set request.jwt.claims = '{"sub":"ac000000-0000-0000-0000-000000000001","email":"pricehost@example.com"}';
+do $$
+declare ok boolean := false;
+begin
+  begin
+    perform public.admin_update_package('schedule', '{volunteer,meeting,conference}', '{volunteer}', 2, false, false, null, false);
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing: a host can''t change weekly hours';
+end $$;
+set request.jwt.claims = '{"sub":"ac000000-0000-0000-0000-000000000003","email":"priceadmin@example.com"}';
+do $$
+declare
+  t public.plan_tiers;
+  impact jsonb;
+begin
+  select * into t from public.plan_tiers where code = 'schedule';
+  impact := public.admin_package_impact('schedule', 'weekly_hours', 'no', null);
+  assert impact -> 'affected' -> 0 ->> 'name' = 'Price Boosters' and impact -> 'affected' -> 0 ->> 'detail' = 'Spring Conferences',
+         'pricing: turning weekly hours off lists accounts using them';
+  assert jsonb_array_length(public.admin_package_impact('schedule', 'weekly_hours', 'yes', null) -> 'affected') = 0,
+         'pricing: turning weekly hours on affects nobody';
+  perform public.admin_update_package('schedule', t.event_types, t.one_at_a_time, t.max_team, t.event_staff, t.volunteer_history, 'Off', false);
+  assert not (select weekly_hours from public.plan_tiers where code = 'schedule'), 'pricing: an admin turns weekly hours off';
+  assert (select details -> 'to' ->> 'weekly_hours' from public.admin_log where action = 'package_edited' and details ->> 'note' = 'Off') = 'false',
+         'pricing: weekly hours changes are logged';
+  perform public.admin_update_package('schedule', t.event_types, t.one_at_a_time, t.max_team, t.event_staff, t.volunteer_history, null);
+  assert not (select weekly_hours from public.plan_tiers where code = 'schedule'), 'pricing: leaving weekly hours out keeps them as they are';
+  perform public.admin_update_package('schedule', t.event_types, t.one_at_a_time, t.max_team, t.event_staff, t.volunteer_history, null, t.weekly_hours);
+end $$;
+
+-- Upgrade suggestions name only shown, unretired packages and passes, and always offer a way forward.
+reset role;
+do $$
+declare msg text;
+begin
+  -- Shown now: schedule, event. Hidden: volunteer, district. Passes shown: band contest.
+  assert public.upgrade_for('volunteer') = 'Event Command', 'pricing: upgrade_for skips a hidden package';
+  assert public.upgrade_for(null, 'volunteer_history') = 'Event Command', 'pricing: upgrade_for skips hidden packages for features too';
+  msg := public.org_publish_reason('ac000000-0000-0000-0000-0000000000a1', 'band_contest', null);
+  assert msg like '%Add a band contest pass or upgrade to Event Command.', 'pricing: a shown pass and package are offered: ' || msg;
+  update public.plan_tiers set show_on_website = false where code = 'pass_band_contest';
+  msg := public.org_publish_reason('ac000000-0000-0000-0000-0000000000a1', 'band_contest', null);
+  assert msg like '%doesn''t include band contests. Upgrade to Event Command.', 'pricing: a hidden pass isn''t offered: ' || msg;
+  update public.plan_tiers set show_on_website = false, recommended = false where code = 'event';
+  update public.plan_tiers set retired_at = now() where code = 'district';
+  assert public.upgrade_for('band_contest') is null, 'pricing: upgrade_for skips retired packages';
+  msg := public.org_publish_reason('ac000000-0000-0000-0000-0000000000a1', 'band_contest', null);
+  assert msg like '%Write to us about a plan that includes them.' and msg not like '%Upgrade to%', 'pricing: never "Upgrade to ." ' || msg;
+  update public.plan_tiers set show_on_website = true where code = 'pass_band_contest';
+  msg := public.org_publish_reason('ac000000-0000-0000-0000-0000000000a1', 'band_contest', null);
+  assert msg like '%Add a band contest pass or write to us about a plan that includes them.', 'pricing: a pass with no package to offer: ' || msg;
+  -- A full team on Schedule Command (2 spots), with no bigger package shown.
+  msg := public.team_add_reason('ac000000-0000-0000-0000-0000000000a1', null, 'third@example.com', false);
+  assert msg like 'Your team is full%, or write to us about a bigger team.', 'pricing: the full-team message without a bigger package: ' || msg;
+  update public.plan_tiers set show_on_website = true where code = 'event';
+  msg := public.team_add_reason('ac000000-0000-0000-0000-0000000000a1', null, 'third@example.com', false);
+  assert msg like '%, or move to Event Command for more spots.', 'pricing: the full-team message names a shown package: ' || msg;
+  update public.plan_tiers set retired_at = null where code = 'district';
+end $$;
+
+-- Requests from the pricing page: written only through submit_pricing_request(), read only by admins.
+set role anon;
+set request.jwt.claims = '{}';
+do $$
+declare
+  ok boolean := false;
+  msg text;
+  r jsonb;
+begin
+  begin
+    perform 1 from public.pricing_requests;
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing requests: a visitor can''t read them';
+  ok := false;
+  begin
+    insert into public.pricing_requests (name, email, organization) values ('Spam Bot', 'bot@example.com', 'Spam');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing requests: a visitor can''t write to the table';
+  ok := false;
+  begin
+    perform public.submit_pricing_request('Bo', 'not-an-email', 'Lakeside PTO', '{volunteer}', null, false, false, null);
+  exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg like 'Please enter a valid email%', 'pricing requests: the email is checked';
+  ok := false;
+  begin
+    perform public.submit_pricing_request('Bo Baker', 'bo@example.com', 'Lakeside PTO', '{volunteer}', 'volunteer', false, false, null);
+  exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg like 'That package isn''t offered%', 'pricing requests: a hidden package can''t be asked about';
+  ok := false;
+  begin
+    perform public.submit_pricing_request('Bo Baker', 'bo@example.com', 'Lakeside PTO', '{rodeo}', null, false, false, null);
+  exception when sqlstate 'P0001' then ok := true;
+  end;
+  assert ok, 'pricing requests: only known kinds of event';
+  r := public.submit_pricing_request(' Bo Baker ', 'Bo@Example.com', 'Lakeside PTO', '{volunteer,band_contest,volunteer}', 'pass_band_contest',
+                                     true, true, 'Our spring contest', 'ac000000-0000-0000-0000-0000000000a1');
+  assert r ->> 'status' = 'saved' and r ->> 'id' is not null, 'pricing requests: a visitor sends one';
+  r := public.submit_pricing_request('Bo Baker', 'bo@example.com', 'Lakeside PTO', '{volunteer}', null, false, false, null);
+  assert r ->> 'status' = 'duplicate', 'pricing requests: the same email within an hour isn''t saved twice';
+end $$;
+reset role;
+do $$ begin
+  assert (select count(*) from public.pricing_requests) = 1, 'pricing requests: one saved';
+  assert (select name = 'Bo Baker' and email = 'bo@example.com' and event_types = '{band_contest,volunteer}' and plan_code = 'pass_band_contest'
+                 and not teacher_rate and pay_by_invoice and user_id is null and organization_id is null
+            from public.pricing_requests),
+         'pricing requests: tidied, no teacher rate on a pass, and a visitor can''t attach an account';
+end $$;
+set role authenticated;
+set request.jwt.claims = '{"sub":"ac000000-0000-0000-0000-000000000001","email":"pricehost@example.com"}';
+do $$
+declare
+  ok boolean := false;
+  r jsonb;
+  other_org uuid := (select id from public.organizations where id <> 'ac000000-0000-0000-0000-0000000000a1' limit 1);
+begin
+  assert (select count(*) from public.pricing_requests) = 0, 'pricing requests: a host can''t read them';
+  begin
+    insert into public.pricing_requests (name, email, organization) values ('Priya Price', 'pricehost@example.com', 'Price Boosters');
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing requests: a signed-in person can''t write to the table';
+  ok := false;
+  begin
+    perform public.admin_set_pricing_request_handled(gen_random_uuid(), true);
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing requests: a host can''t mark one handled';
+  r := public.submit_pricing_request('Priya Price', 'pricehost@example.com', 'Price Boosters', '{band_contest}', 'event', true, false, null,
+                                     'ac000000-0000-0000-0000-0000000000a1');
+  assert r ->> 'status' = 'saved', 'pricing requests: a host sends one';
+  r := public.submit_pricing_request('Priya Price', 'other@example.com', 'Someone Else', '{band_contest}', null, false, false, null, other_org);
+  assert r ->> 'status' = 'saved', 'pricing requests: a general question';
+end $$;
+set role service_role;
+do $$ begin
+  assert (select user_id = 'ac000000-0000-0000-0000-000000000001' and organization_id = 'ac000000-0000-0000-0000-0000000000a1' and teacher_rate
+            from public.pricing_requests where email = 'pricehost@example.com'),
+         'pricing requests: a signed-in person''s own account is attached, with the teacher-rate claim';
+  assert (select organization_id is null from public.pricing_requests where email = 'other@example.com'),
+         'pricing requests: an account they aren''t on is never attached';
+end $$;
+reset role;
+-- 30 an hour from everyone, then "busy".
+insert into public.pricing_requests (name, email, organization)
+select 'Flood ' || n, 'flood' || n || '@example.com', 'Flood PTO' from generate_series(1, 27) n;
+set role anon;
+set request.jwt.claims = '{}';
+do $$ begin
+  assert public.submit_pricing_request('Late Larry', 'larry@example.com', 'Late PTO', '{}', null, false, false, null) ->> 'status' = 'busy',
+         'pricing requests: rate-limited like the pilot form';
+end $$;
+reset role;
+delete from public.pricing_requests where email like 'flood%';
+-- Admins read them and mark them handled; nobody writes them directly.
+set role authenticated;
+set request.jwt.claims = '{"sub":"ac000000-0000-0000-0000-000000000003","email":"priceadmin@example.com"}';
+do $$
+declare
+  ok boolean := false;
+  rid uuid;
+begin
+  assert (select count(*) from public.pricing_requests) = 3, 'pricing requests: an admin reads them';
+  rid := (select id from public.pricing_requests where email = 'bo@example.com');
+  begin
+    update public.pricing_requests set handled_at = now() where id = rid;
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing requests: marked handled only through the function';
+  perform public.admin_set_pricing_request_handled(rid, true);
+  assert (select handled_at is not null and handled_by = auth.uid() from public.pricing_requests where id = rid), 'pricing requests: an admin marks one handled';
+  assert exists (select 1 from public.admin_log where action = 'pricing_request_handled' and details ->> 'request' = rid::text), 'pricing requests: handling is logged';
+  perform public.admin_set_pricing_request_handled(rid, false);
+  assert (select handled_at is null and handled_by is null from public.pricing_requests where id = rid), 'pricing requests: and can reopen it';
+end $$;
+-- Switched off: the page and the form close to everyone but admins.
+do $$ begin
+  perform public.admin_set_pricing_page(false, null);
+end $$;
+set role anon;
+set request.jwt.claims = '{}';
+do $$
+declare ok boolean := false;
+begin
+  assert public.pricing_page() is null, 'pricing: switched off, the page is hidden again';
+  begin
+    perform public.submit_pricing_request('Nora New', 'nora@example.com', 'New PTO', '{}', null, false, false, null);
+  exception when insufficient_privilege then ok := true;
+  end;
+  assert ok, 'pricing requests: no requests while the page is off';
+end $$;
+reset role;
+do $$ begin
+  update public.pricing_requests set created_at = now() - interval '13 months' where email = 'bo@example.com';
+  assert public.purge_pricing_requests() = 1, 'pricing requests: kept a year';
+end $$;
+
+-- Clean up: packages as they were.
+delete from public.pricing_requests;
+set session_replication_role = replica;
+delete from public.conference_settings where event_id = 'ac000000-0000-0000-0000-0000000000e1';
+delete from public.events where id = 'ac000000-0000-0000-0000-0000000000e1';
+set session_replication_role = origin;
+delete from public.organizations where id = 'ac000000-0000-0000-0000-0000000000a1';
+delete from public.platform_admins where user_id = 'ac000000-0000-0000-0000-000000000003';
+update public.plan_tiers set recommended = false;
+update public.plan_tiers t set retired_at = b.retired_at, show_on_website = b.show_on_website, best_for = b.best_for
+  from pricing_before b where b.code = t.code;
+update public.plan_tiers t set recommended = b.recommended from pricing_before b where b.code = t.code and b.recommended;
+update public.site_settings set pricing_page_live = false;
 
 \echo 'All database security tests passed.'

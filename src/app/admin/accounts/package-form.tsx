@@ -45,10 +45,10 @@ export function PackageForm({ action, pkg, rate, packages }: { action: Action; p
   );
 }
 
-/** A one-time pass: one published event of a type the package doesn't include. */
+/** A one-time pass: one published event of a type the package doesn't include. List prices come from plan_tiers. */
 export function PassForm({ action, prices }: { action: Action; prices: Record<string, number> }) {
   const [type, setType] = useState<string>(PASSES[0].type);
-  const listPrice = prices[type] ?? PASSES.find((p) => p.type === type)?.cents ?? 0;
+  const listPrice = prices[type];
   return (
     <ActionForm action={action} className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -56,13 +56,14 @@ export function PassForm({ action, prices }: { action: Action; prices: Record<st
           <Select name="type" value={type} onChange={(e) => setType(e.target.value)}>
             {PASSES.map((p) => (
               <option key={p.type} value={p.type}>
-                {p.label} ({dollars(prices[p.type] ?? p.cents)})
+                {p.label}
+                {prices[p.type] != null ? ` (${dollars(prices[p.type])})` : ""}
               </option>
             ))}
           </Select>
         </Field>
         <Field label="Price paid in dollars" hint="0 for a pass given free.">
-          <NumberInput key={type} name="price" defaultValue={String(listPrice / 100)} required />
+          <NumberInput key={type} name="price" defaultValue={listPrice != null ? String(listPrice / 100) : ""} required />
         </Field>
       </div>
       <Field label="Note (optional)" hint="Why, for the admin activity log.">

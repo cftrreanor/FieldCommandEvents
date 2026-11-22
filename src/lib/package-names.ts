@@ -26,7 +26,18 @@ export type Tier = {
   teacher_rate?: boolean;
   // Added by 20270127000000_package_create_retire.sql: a retired package stays on its accounts but isn't offered.
   retired_at?: string | null;
+  // Added by 20270211000000_pricing_page.sql: the pricing page's fields (new packages and passes start hidden).
+  show_on_website?: boolean;
+  best_for?: string | null;
+  recommended?: boolean;
 };
+
+/**
+ * A paid package the app may suggest as an upgrade: on the website and not retired (the database's upgrade_for()
+ * says the same). Before 20270211000000_pricing_page.sql there's no website switch, so only retired ones are left out.
+ */
+export const isOfferedPackage = (t: Tier) =>
+  t.kind === "package" && !t.retired_at && t.show_on_website !== false && t.code !== "free" && t.code !== "free_teacher";
 
 /** Every package and pass, smallest first (once per request). Empty if it can't be read. */
 export const loadTiers = cache(async (): Promise<Tier[]> => {
