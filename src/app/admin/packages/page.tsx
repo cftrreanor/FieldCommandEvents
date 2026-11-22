@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { requirePlatformAdmin } from "@/lib/admin";
+import { botCheckConfigured } from "@/lib/bot-check";
+import { pilotOver } from "@/lib/site-pricing";
 import { loadTiers } from "@/lib/package-names";
 import { createAdminClient } from "@/lib/supabase/server";
 import { PageHeader } from "../kit";
@@ -46,6 +48,8 @@ export default async function PackagesPage() {
         passes={tiers.filter((t) => t.kind === "pass")}
         counts={counts}
         live={!!settings?.pricing_page_live}
+        botCheck={botCheckConfigured()}
+        afterPilot={pilotOver()}
       />
     </div>
   );

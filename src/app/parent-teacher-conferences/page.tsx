@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { PublicMenu } from "@/components/public-menu";
-import { HeaderCta, PricesHeaderLink, pricesLinks } from "@/components/site-prices";
-import { sitePricing } from "@/lib/site-pricing";
+import { HeaderCta, PRICES, PricesHeaderLink, pricesLinks } from "@/components/site-prices";
+import { pilotOver, sitePricing } from "@/lib/site-pricing";
 import Link from "next/link";
 import { HeaderBar, headerLinkClass } from "@/components/logo";
 import { FeatureSections, infoBox, SupportSection } from "@/components/audience-page";
-import { FaqList } from "@/components/faq-list";
+import { FaqList, type Faq } from "@/components/faq-list";
 import { HowItWorks, type HowStep } from "@/components/how-it-works";
 import { JumpLink } from "@/components/jump-link";
 import { SiteFooter } from "@/components/site-footer";
@@ -29,11 +29,12 @@ async function freeTeacher(): Promise<Tier | null> {
 }
 
 /**
- * What a free teacher account includes, in words, from the Free Teacher package. Once the pricing page is live it
- * says what that page's Free options line says (Free Teacher: for classroom teachers, just you on the team), not
- * "during the pilot".
+ * What a free teacher account includes, in words, from the Free Teacher package. Once the pilot ends (whether or not
+ * the pricing page is on) it says what that page's Free options line says (Free Teacher: for classroom teachers, just
+ * you on the team), not "during the pilot"; links to the packages page are added by the page only while it's live
+ * (owner decision 2 of the built check).
  */
-function freeOffer(t: Tier | null, live = false) {
+function freeOffer(t: Tier | null, afterPilot = false) {
   const level = (type: string) =>
     !t ? (type === "conference" ? "one" : "none") : !t.event_types.includes(type) ? "none" : t.one_at_a_time.includes(type) ? "one" : "all";
   const conf = level("conference");
@@ -43,15 +44,15 @@ function freeOffer(t: Tier | null, live = false) {
   const runs = [conf !== "none" && part("parent-teacher conference days", conf), meet !== "none" && part("meetings like office hours", meet)].filter(Boolean);
   const runsText = runs.join(conf === "one" ? ", and " : " and ");
   const weeklyWords = weekly ? "Weekly hours are included." : "Weekly hours come with a paid package.";
-  if (live) {
+  if (afterPilot) {
     const name = t?.name ?? "Free Teacher";
     return {
       included: conf !== "none",
       weekly,
       faq:
         conf === "none"
-          ? "Conference scheduling comes with a paid package. Our Prices page lists them, with a teacher rate for classroom teachers on some."
-          : `Yes. ${name} is free for classroom teachers using an account in their own name: it runs ${runsText}, with just you on the team, and there's no credit card. ${weekly ? "Weekly hours are included." : "Weekly hours come with a paid package, listed on our Prices page."}`,
+          ? "Conference scheduling comes with a paid package, with a teacher rate for classroom teachers on some."
+          : `Yes. ${name} is free for classroom teachers using an account in their own name: it runs ${runsText}, with just you on the team, and there's no credit card. ${weeklyWords}`,
       whatsFree:
         conf === "none"
           ? "Conference scheduling comes with a paid package."
@@ -75,16 +76,18 @@ function freeOffer(t: Tier | null, live = false) {
 }
 
 export async function generateMetadata(): Promise<Metadata> {
-  const offer = freeOffer(await freeTeacher());
+  const after = pilotOver();
+  const offer = freeOffer(await freeTeacher(), after);
   return {
-    title: "Parent-Teacher Conference Scheduling, Free During the Pilot",
-    description: `Free for teachers during the pilot: set aside a day and families book their own conference time, in person, on video, or by phone, with calendar invites, reminders, and a link to change or cancel. ${offer.description}`,
+    title: after ? "Parent-Teacher Conference Scheduling, Free for Classroom Teachers" : "Parent-Teacher Conference Scheduling, Free During the Pilot",
+    description: `${after ? "Free for classroom teachers" : "Free for teachers during the pilot"}: set aside a day and families book their own conference time, in person, on video, or by phone, with calendar invites, reminders, and a link to change or cancel. ${offer.description}`,
     alternates: { canonical: CONFERENCES_PAGE.path },
   };
 }
 
-/** "Free during the pilot": the pilot form at the bottom of this page (we set up each account). */
+/** "Free during the pilot", then "Start free": the form at the bottom of this page (we set up each account). */
 const START = "#join" as const;
+const startLabel = (afterPilot: boolean) => (afterPilot ? "Start free" : "Free during the pilot");
 
 const steps: HowStep[] = [
   {
@@ -168,11 +171,15 @@ const privacy = [
   "Bookings are deleted 30 days after your conferences, or for weekly hours, 30 days after each meeting.",
 ];
 
-// Plain answers to what teachers ask before signing up.
-const faqs = (freeAnswer: string) => [
+const PRICES_LINK = { href: PRICES.href, label: "See packages and prices" };
+
+// Plain answers to what teachers ask before signing up. While the pricing page is live, the paid-package answers point
+// to it (Content F7).
+const faqs = (freeAnswer: string, live: boolean): Faq[] => [
   {
     q: "Is it free for teachers?",
     a: freeAnswer,
+    ...(live ? { link: PRICES_LINK } : {}),
   },
   {
     q: "Can families meet on video or by phone?",
@@ -182,10 +189,16 @@ const faqs = (freeAnswer: string) => [
     q: "Do families see my phone number?",
     a: "No. We never ask for your number. Calling from your own phone? In the US, dial *67 before the number to hide yours, or use a school phone.",
   },
-  {
-    q: "Can I offer the same times every week?",
-    a: `Yes, with weekly hours, which come with a paid package. Set hours like Tuesday and Thursday afternoons, add days off, and choose how much notice families give and how far ahead they can book. Write to us at ${brand.supportEmail} to add weekly hours to your account.`,
-  },
+  live
+    ? {
+        q: "Can I offer the same times every week?",
+        a: "Yes, with weekly hours, which come with a paid package. Set hours like Tuesday and Thursday afternoons, add days off, and choose how much notice families give and how far ahead they can book.",
+        link: PRICES_LINK,
+      }
+    : {
+        q: "Can I offer the same times every week?",
+        a: `Yes, with weekly hours, which come with a paid package. Set hours like Tuesday and Thursday afternoons, add days off, and choose how much notice families give and how far ahead they can book. Write to us at ${brand.supportEmail} to add weekly hours to your account.`,
+      },
   {
     q: "Do families need to make an account?",
     a: "No. Families book from your link without an account. Each booking gets its own link to change or cancel.",
@@ -215,12 +228,14 @@ const faqs = (freeAnswer: string) => [
 /** Parent-teacher conferences: what they do, and a free teacher account to run them. */
 export default async function ConferencesPage() {
   const site = await sitePricing();
-  const offer = freeOffer(await freeTeacher(), site.live);
+  const after = site.afterPilot;
+  const offer = freeOffer(await freeTeacher(), after);
+  const START_LABEL = startLabel(after);
   return (
     <div className="flex flex-1 flex-col">
       <HeaderBar maxWidth="max-w-6xl">
         <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
-          All event types
+          All kinds of events
         </Link>
         <PricesHeaderLink live={site.live} />
         <PublicMenu
@@ -228,7 +243,7 @@ export default async function ConferencesPage() {
             { href: "/#organizing", label: "All kinds of events" },
             { href: "#how", label: "How it works" },
             { href: "#faq", label: "Questions" },
-            { href: "/#pilot", label: "Pilot details" },
+            ...(after ? [] : [{ href: "/#pilot", label: "Pilot details" }]),
             ...pricesLinks(site.live),
           ]}
         />
@@ -254,7 +269,7 @@ export default async function ConferencesPage() {
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <JumpLink href={START} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
-                Free during the pilot
+                {START_LABEL}
               </JumpLink>
             </div>
             <p className="mt-4 text-sm text-on-dark-mute">Tell us about your school, and we&apos;ll set up your account. No credit card.</p>
@@ -283,7 +298,7 @@ export default async function ConferencesPage() {
         <section id="faq" className="scroll-mt-20 border-t border-border">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
             <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">Common questions</h2>
-            <FaqList faqs={faqs(offer.faq)} />
+            <FaqList faqs={faqs(offer.faq, site.live)} />
           </div>
         </section>
 
@@ -294,18 +309,27 @@ export default async function ConferencesPage() {
               {offer.whatsFree} Planning a band contest,
               school fair, volunteer sign-ups, or visitor registration and check-in too? Pick those on the form, and we&apos;ll set up {brand.name} for your school.
             </p>
+            {site.live && (
+              <p className="mt-3 leading-7 text-muted">
+                See which package fits on our{" "}
+                <Link href={PRICES.href} className="font-medium text-brand underline dark:text-foreground">
+                  packages and prices
+                </Link>{" "}
+                page.
+              </p>
+            )}
           </div>
         </section>
 
         <section id="join" tabIndex={-1} className="scroll-mt-20 border-t border-border bg-surface outline-none">
           <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
-            <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Free during the pilot</p>
-            <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">Join the pilot</h2>
+            <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">{after ? "Free for classroom teachers" : "Free during the pilot"}</p>
+            <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{after ? "Start free" : "Join the pilot"}</h2>
             <p className="mt-3 leading-7 text-muted">
-              Tell us about your school, and we&apos;ll set up your account and email you when it&apos;s ready. The pilot ends {PILOT_END_LABEL}.
+              Tell us about your school, and we&apos;ll set up your account and email you when it&apos;s ready.{after ? "" : ` The pilot ends ${PILOT_END_LABEL}.`}
             </p>
             <div className="mt-8">
-              <PilotForm action={requestPilot} defaultEventTypes={["conference"]} />
+              <PilotForm action={requestPilot} defaultEventTypes={["conference"]} submitLabel={after ? "Start free" : undefined} />
             </div>
           </div>
         </section>
@@ -314,7 +338,7 @@ export default async function ConferencesPage() {
           <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-20">
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">Every detail organized. Every organizer supported.</h2>
             <JumpLink href={START} className="mt-8 inline-flex rounded-md bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
-              Free during the pilot
+              {START_LABEL}
             </JumpLink>
           </div>
         </section>

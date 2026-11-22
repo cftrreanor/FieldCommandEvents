@@ -6,8 +6,9 @@ import { NumberInput } from "@/components/number-input";
 import { Field, Input } from "@/components/ui";
 import { EVENT_TYPES } from "@/lib/event-types";
 import type { Tier } from "@/lib/package-names";
+import { confirmDialog } from "@/components/confirm-dialog";
 import { dollars, isFreePackage, PACKAGES } from "@/lib/plan";
-import { bestFor, passLabel, sortKinds } from "@/lib/pricing";
+import { bestFor, kindLabel, passLabel, sortKinds, stacksOn } from "@/lib/pricing";
 import {
   createPackage,
   packageImpact,
@@ -21,7 +22,7 @@ import {
   type PackageDetails,
   type PackageValues,
 } from "./actions";
-import { PricingPageSwitch } from "./pricing-switch";
+import { passesOnPage, PricingPageSwitch } from "./pricing-switch";
 
 type Setting = "yes" | "one" | "no";
 type Editing =
@@ -81,6 +82,32 @@ const websiteOf = (p: Tier) => ({
   recommended: !!p.recommended,
 });
 
+const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
+/** Whether two packages include exactly the same things. */
+const sameContents = (a: Tier, b: Tier) =>
+  sameSet(a.event_types, b.event_types) &&
+  sameSet(a.one_at_a_time, b.one_at_a_time) &&
+  a.max_team === b.max_team &&
+  a.event_staff === b.event_staff &&
+  a.volunteer_history === b.volunteer_history &&
+  a.weekly_hours === b.weekly_hours;
+
+/**
+ * A quiet note when a package looks odd next to the others (consultant 14): it copies another one exactly, or costs
+ * more than one that includes everything it does and more kinds of event.
+ */
+function oddNote(p: Tier, packages: Tier[]): string | null {
+  if (isFreePackage(p.code) || p.retired_at) return null;
+  // Only against packages people can see on the website: a hidden copy being set up isn't worth a note on the original.
+  const others = packages.filter((o) => o.code !== p.code && !o.retired_at && !isFreePackage(o.code) && o.show_on_website);
+  const twin = others.find((o) => sameContents(o, p));
+  if (twin) return `Same contents as ${twin.name}`;
+  const price = p.price_year_cents;
+  if (price == null) return null;
+  const better = others.find((o) => o.price_year_cents != null && o.price_year_cents < price && stacksOn(o, p) && o.event_types.length > p.event_types.length);
+  return better ? `Costs more than ${better.name} with fewer kinds of event` : null;
+}
+
 /** An on/off switch with its state in words. */
 function Switch({ on, label, busy, onChange }: { on: boolean; label: string; busy: boolean; onChange: () => void }) {
   return (
@@ -94,7 +121,8 @@ function Switch({ on, label, busy, onChange }: { on: boolean; label: string; bus
       className="inline-flex min-h-11 items-center gap-2 rounded-full px-1 text-sm font-semibold disabled:cursor-wait"
     >
       <span className={`relative inline-flex h-6 w-10 shrink-0 rounded-full ring-1 ${on ? "bg-brand ring-brand" : "bg-background ring-field-border"}`}>
-        <span className={`absolute top-0.5 size-5 rounded-full shadow transition-[left] ${on ? "left-[1.125rem] bg-white" : "left-0.5 bg-field-border"}`} />
+        {/* Navy on the light track in dark mode, so the knob shows (UI 11). */}
+        <span className={`absolute top-0.5 size-5 rounded-full shadow transition-[left] ${on ? "left-[1.125rem] bg-white dark:bg-header" : "left-0.5 bg-field-border"}`} />
       </span>
       {busy ? "Saving…" : on ? "Shown" : "Hidden"}
     </button>
@@ -102,7 +130,21 @@ function Switch({ on, label, busy, onChange }: { on: boolean; label: string; bus
 }
 
 /** The packages as a grid: a column each, a row for each thing they include. Selecting a box opens its editor. */
-export function PackagesGrid({ packages, passes, counts, live }: { packages: Tier[]; passes: Tier[]; counts: Record<string, number>; live: boolean }) {
+export function PackagesGrid({
+  packages,
+  passes,
+  counts,
+  live,
+  botCheck,
+  afterPilot,
+}: {
+  packages: Tier[];
+  passes: Tier[];
+  counts: Record<string, number>;
+  live: boolean;
+  botCheck: boolean;
+  afterPilot: boolean;
+}) {
   const [editing, setEditingState] = useState<Editing | null>(null);
   const [creating, setCreating] = useState(false);
   // The box that opened the editor, to put focus back on when it closes.
@@ -124,6 +166,8 @@ export function PackagesGrid({ packages, passes, counts, live }: { packages: Tie
     return order.indexOf(a.event_types[0] ?? "") - order.indexOf(b.event_types[0] ?? "") || a.sort - b.sort;
   });
   const hiddenNote = live ? "" : " The pricing page is hidden, so visitors don't see it yet.";
+  const freePkg = packages.find((p) => p.code === "free");
+  const onPage = new Set(passesOnPage(packages, passes).map((p) => p.code));
 
   /** Save a website switch right away, with Undo in the message. */
   const saveSwitch = async (code: string, run: () => Promise<{ ok: true } | { error: string }>, message: string, undo: Undo) => {
@@ -141,11 +185,21 @@ export function PackagesGrid({ packages, passes, counts, live }: { packages: Tie
       router.refresh();
     }
   };
-  const toggleShow = (p: Tier) => {
+  const toggleShow = async (p: Tier) => {
     const was = websiteOf(p);
     const show = !was.show;
+    // On a live page, a card with no price goes up saying "Ask us": ask first (consultant 9).
+    if (show && live && !p.price_year_cents) {
+      const ok = await confirmDialog({
+        title: `Show ${p.name} with no price?`,
+        message: `It has no yearly price, so its card on the live pricing page will say “Ask us.” To set a price first, select its name in the grid.`,
+        confirmLabel: "Show it",
+        cancelLabel: "Keep it hidden",
+      });
+      if (!ok) return;
+    }
     const message = show
-      ? `${p.name} is shown on the website.${p.price_year_cents == null ? " No price set. The page will say Ask us." : ""}${hiddenNote}`
+      ? `${p.name} is shown on the website.${!p.price_year_cents ? " No price set, so the page says “Ask us.”" : ""}${hiddenNote}`
       : `${p.name} is hidden from the website.${was.recommended ? " It's no longer Recommended." : ""}`;
     return saveSwitch(
       p.code,
@@ -217,8 +271,9 @@ export function PackagesGrid({ packages, passes, counts, live }: { packages: Tie
   };
 
   return (
-    <div className="space-y-4">
-      <PricingPageSwitch packages={packages} passes={passes} live={live} />
+    // Room under the page while the saved message shows, so it never covers a control (consultant 9).
+    <div className={`space-y-4 ${saved ? "pb-28" : ""}`}>
+      <PricingPageSwitch packages={packages} passes={passes} live={live} botCheck={botCheck} afterPilot={afterPilot} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted lg:hidden">Scroll sideways to see every package →</p>
         <button
@@ -246,6 +301,7 @@ export function PackagesGrid({ packages, passes, counts, live }: { packages: Tie
                   >
                     {p.name}
                   </button>
+                  {oddNote(p, packages) && <span className="mx-auto block max-w-40 text-xs font-normal text-muted italic">{oddNote(p, packages)}</span>}
                   <span className="block text-xs font-normal text-muted">
                     {counts[p.code] ?? 0} account
                     {(counts[p.code] ?? 0) === 1 ? "" : "s"}
@@ -276,8 +332,8 @@ export function PackagesGrid({ packages, passes, counts, live }: { packages: Tie
                 ) : (
                   <>
                     <Switch on={!!p.show_on_website} label={`Show ${p.name} on the website`} busy={busy === p.code} onChange={() => toggleShow(p)} />
-                    {p.show_on_website && p.price_year_cents == null && (
-                      <span className="mx-auto block max-w-40 text-xs">No price set. The page will say Ask us</span>
+                    {p.show_on_website && !p.price_year_cents && (
+                      <span className="mx-auto block max-w-40 text-xs">No price set, so the page says &ldquo;Ask us&rdquo;</span>
                     )}
                   </>
                 ),
@@ -292,14 +348,15 @@ export function PackagesGrid({ packages, passes, counts, live }: { packages: Tie
                   <button
                     type="button"
                     onClick={() => setEditing({ kind: "best_for", code: p.code })}
-                    aria-label={`Best for, ${p.name}: ${bf.from === "admin" ? bf.text : `blank. The page says: ${bf.text}`}. Change`}
-                    className="mx-auto block w-full max-w-44 rounded-sm border border-border px-2 py-1.5 text-left text-xs leading-5 hover:ring-2 hover:ring-brand/40"
+                    aria-label={`Best for, ${p.name}: ${bf.from === "admin" ? bf.text : `blank, so the page writes one: ${bf.text}`}. Change`}
+                    className={`mx-auto block w-full max-w-44 rounded-sm px-2 py-1.5 text-left text-xs leading-5 hover:ring-2 hover:ring-brand/40 ${bf.from === "admin" ? "border border-border" : "border border-dashed border-field-border text-muted"}`}
                   >
                     {bf.from === "admin" ? (
                       <span>{bf.text}</span>
                     ) : (
+                      // Quieter when blank (UI 10): what the page writes, in muted type.
                       <>
-                        <span className="block font-semibold">Blank. The page says:</span>
+                        <span className="block font-semibold">Blank: the page writes one</span>
                         <span className="italic">{bf.text}</span>
                       </>
                     )}
@@ -328,16 +385,20 @@ export function PackagesGrid({ packages, passes, counts, live }: { packages: Tie
                     </button>
                   </span>
                 ) : p.show_on_website && !p.retired_at ? (
-                  <button
-                    type="button"
-                    disabled={busy === p.code}
-                    onClick={() => setRecommended(p, true)}
-                    className="mx-auto inline-flex min-h-11 max-w-40 items-center text-sm text-brand underline underline-offset-4 disabled:cursor-wait"
-                  >
-                    {busy === p.code ? "Saving…" : recommended ? `Move Recommended here (from ${recommended.name})` : "Recommend"}
-                  </button>
+                  // Content's words over UI's shorter "Make recommended": the hint says what it replaces.
+                  <span className="flex flex-col items-center">
+                    <button
+                      type="button"
+                      disabled={busy === p.code}
+                      onClick={() => setRecommended(p, true)}
+                      className="mx-auto inline-flex min-h-11 max-w-40 items-center text-sm text-brand underline underline-offset-4 disabled:cursor-wait"
+                    >
+                      {busy === p.code ? "Saving…" : "Make this Recommended"}
+                    </button>
+                    {recommended && <span className="text-xs text-muted">Replaces {recommended.name}</span>}
+                  </span>
                 ) : (
-                  note("Show it on the website first")
+                  note("Switch on “Show on website” first")
                 ),
               true,
             )}
@@ -371,14 +432,15 @@ export function PackagesGrid({ packages, passes, counts, live }: { packages: Tie
               ),
             )}
             {sectionRow("Event types")}
-            {EVENT_TYPES.map((t) =>
-              row(t.label, (p) => {
-                const s = typeSetting(p, t.value);
+            {/* The website's plural names, in its order (consultant 11). */}
+            {sortKinds(EVENT_TYPES.map((t) => t.value)).map((type) =>
+              row(kindLabel(type), (p) => {
+                const s = typeSetting(p, type);
                 return cell(
                   SETTING_LABEL[s],
                   cellClass[s],
-                  () => setEditing({ kind: "type", code: p.code, type: t.value }),
-                  `${t.label} on ${p.name}: ${SETTING_LABEL[s]}`,
+                  () => setEditing({ kind: "type", code: p.code, type }),
+                  `${kindLabel(type)} on ${p.name}: ${SETTING_LABEL[s]}`,
                   s === "one",
                 );
               }),
@@ -416,9 +478,18 @@ export function PackagesGrid({ packages, passes, counts, live }: { packages: Tie
         <ul className="divide-y divide-border">
           {orderedPasses.map((p) => {
             const name = passLabel(p.event_types[0] ?? "");
+            // Shown on the website, but never on the page: Free already includes its kind (UX F2, UI 1).
+            const freeHasIt = p.show_on_website && !onPage.has(p.code) && !!freePkg?.event_types.includes(p.event_types[0] ?? "");
             return (
               <li key={p.code} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 text-sm">
-                <span className="min-w-0 flex-1 basis-48 font-semibold">{name}</span>
+                <span className="min-w-0 flex-1 basis-48">
+                  <span className="block font-semibold">{name}</span>
+                  {freeHasIt && (
+                    <span className="block text-xs text-muted">
+                      Not on the page: {freePkg?.name ?? "Free"} already includes {kindLabel(p.event_types[0] ?? "").toLowerCase()}
+                    </span>
+                  )}
+                </span>
                 <span className="flex items-center gap-3">
                   <Switch
                     on={!!p.show_on_website}
@@ -465,12 +536,16 @@ export function PackagesGrid({ packages, passes, counts, live }: { packages: Tie
                     router.refresh();
                   })
                 }
-                className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4"
+                className="inline-flex min-h-11 items-center rounded-md border border-field-border bg-surface px-4 font-semibold hover:border-brand"
               >
                 {undoing ? "Undoing…" : "Undo"}
               </button>
             )}
-            <button type="button" onClick={() => setSaved(null)} className="inline-flex min-h-11 items-center text-muted underline underline-offset-4">
+            <button
+              type="button"
+              onClick={() => setSaved(null)}
+              className="inline-flex min-h-11 items-center rounded-md border border-border bg-surface px-4 text-muted hover:border-brand"
+            >
               Close
             </button>
           </div>
@@ -537,7 +612,9 @@ function Editor({
   const [checkKey, setCheckKey] = useState(0);
 
   // The current setting, and the one being picked.
-  const typeLabel = editing.kind === "type" ? (EVENT_TYPES.find((t) => t.value === editing.type)?.label ?? editing.type) : "";
+  const typeLabel = editing.kind === "type" ? kindLabel(editing.type) : "";
+  // One of the kind, for "have a published band contest".
+  const typeOne = editing.kind === "type" ? (EVENT_TYPES.find((t) => t.value === editing.type)?.label ?? editing.type).toLowerCase() : "";
   const now: Setting | null =
     pkg && editing.kind === "type"
       ? typeSetting(pkg, editing.type)
@@ -739,7 +816,7 @@ function Editor({
           ? "have Volunteer Leads or Coordinators on upcoming events. They stay; these accounts can't invite more."
           : editing.kind === "weekly_hours"
             ? "have published conferences or meetings on weekly hours. Those stay live and keep their hours; these accounts can't publish another on weekly hours."
-            : `have a published ${typeLabel.toLowerCase()}. Those stay live and editable; ${choice === "one" ? "they can't publish another while one is up" : "these accounts can't publish another until they upgrade or buy a pass"}.`;
+            : `have a published ${typeOne}. Those stay live and editable; ${choice === "one" ? "they can't publish another while one is up" : "these accounts can't publish another until they upgrade or buy a pass"}.`;
     return (
       <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm">
         <p className="font-semibold">
@@ -840,7 +917,8 @@ function Editor({
           >
             <Input value={bestForText} maxLength={120} onChange={(e) => setBestForText(e.target.value)} autoFocus />
           </Field>
-          <p className="rounded-md bg-background p-3 text-sm">
+          {/* Brand-soft, so the panel shows on the window's surface in light mode too (UI 4). */}
+          <p className="rounded-md border border-border bg-brand-soft p-3 text-sm">
             <span className="font-semibold">{typedBestFor ? "The page will say: " : "Left blank, the page says: "}</span>
             {typedBestFor || bestFor({ ...pkg, best_for: null }).text}
           </p>

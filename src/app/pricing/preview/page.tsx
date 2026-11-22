@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { LINK } from "../parts";
 import { PreviewBanner, PricingView } from "../pricing-view";
 
-export const metadata: Metadata = { title: "Packages and Prices (preview)", robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: "Packages and prices (preview)", robots: { index: false, follow: false } };
 
 /**
  * An admin's look at the pricing page, live or not. pricing_page() returns it only to platform admins while the page

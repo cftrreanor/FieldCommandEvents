@@ -103,7 +103,7 @@ export default function StudentDataPrivacyPage() {
     <div className="flex flex-1 flex-col">
       <HeaderBar maxWidth="max-w-4xl">
         <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
-          All event types
+          All kinds of events
         </Link>
         <Link href="/login" className={headerLinkClass}>
           Sign in

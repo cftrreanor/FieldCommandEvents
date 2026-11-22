@@ -75,7 +75,7 @@ export async function AudiencePage({ audience: a }: { audience: Audience }) {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <HeaderBar maxWidth="max-w-6xl">
         <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
-          All event types
+          All kinds of events
         </Link>
         <PricesHeaderLink live={site.live} />
         <PublicMenu

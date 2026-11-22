@@ -1,7 +1,8 @@
 "use client";
 // The pricing page's interactive parts: "What are you running?" and the cards it marks, and the phones' two-package
-// compare (which starts on the packages that match). They share what was picked.
-import { createContext, use, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+// compare (which starts on the packages that match). They share what was picked, which is kept in the address
+// (?kinds=…), so Back from the request form comes back to the same picks (UX F3).
+import { createContext, use, useEffect, useId, useState, useSyncExternalStore, type ReactNode } from "react";
 import { LineIcon } from "@/components/line-icon";
 import { Badge } from "@/components/ui";
 import { dollars, listWords } from "@/lib/plan";
@@ -10,7 +11,8 @@ import {
   cardContents,
   cheapestChoices,
   FEATURE_HINTS,
-  kindWords,
+  kindNoun,
+  oneEvent,
   packagesThatFit,
   passWords,
   WEBSITE_KINDS,
@@ -19,12 +21,37 @@ import {
   type PricingPackage,
   type PricingPage,
 } from "@/lib/pricing";
-import { askHref, BTN_OUTLINE, CellView, CHECK, CheckIcon, LINK, OneBadge, recommendedReason, yearly, type Matrix } from "./parts";
+import { askHref, BTN_OUTLINE, CellView, CHECK, CheckIcon, LINK, OneBadge, usablePasses, yearly, type Matrix } from "./parts";
 
 const Picked = createContext<{ picked: string[]; setPicked: (p: string[]) => void }>({ picked: [], setPicked: () => {} });
 
+const PICKS_CHANGED = "pricing-picks";
+const KNOWN = new Set(WEBSITE_KINDS.map((k) => k.value));
+const inOrder = (picked: readonly string[]) => WEBSITE_KINDS.filter((k) => picked.includes(k.value)).map((k) => k.value);
+const readPicks = () => new URLSearchParams(window.location.search).get("kinds") ?? "";
+const watchPicks = (on: () => void) => {
+  window.addEventListener("popstate", on);
+  window.addEventListener(PICKS_CHANGED, on);
+  return () => {
+    window.removeEventListener("popstate", on);
+    window.removeEventListener(PICKS_CHANGED, on);
+  };
+};
+
+/** What was picked, read from and written to the address (the page itself is built once for everyone). */
 export function PickedProvider({ children }: { children: ReactNode }) {
-  const [picked, setPicked] = useState<string[]>([]);
+  const raw = useSyncExternalStore(watchPicks, readPicks, () => "");
+  const picked = inOrder(raw.split(",").filter((k) => KNOWN.has(k)));
+  const setPicked = (next: string[]) => {
+    const q = new URLSearchParams(window.location.search);
+    q.delete("kinds");
+    const rest = q.toString();
+    const kinds = inOrder(next);
+    const search = [rest, kinds.length ? `kinds=${kinds.join(",")}` : ""].filter(Boolean).join("&");
+    // Next.js keeps its router in step with replaceState; no new history entry for each tap.
+    window.history.replaceState(null, "", `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`);
+    window.dispatchEvent(new Event(PICKS_CHANGED));
+  };
   return <Picked value={{ picked, setPicked }}>{children}</Picked>;
 }
 
@@ -42,47 +69,61 @@ function usePhone() {
 }
 
 const icon = (t: string) => WEBSITE_KINDS.find((k) => k.value === t)?.icon ?? "sparkle";
-const inOrder = (picked: string[]) => WEBSITE_KINDS.filter((k) => picked.includes(k.value)).map((k) => k.value);
+/** "band contests · festivals": short names, so a list of kinds reads at a glance (Content F3). */
+const kindList = (kinds: readonly string[]) => kinds.map(kindNoun).join(" · ");
+const capFirst = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
-/** "Or Volunteer Command plus a visitor registration and check-in pass: $290 a year". */
+/**
+ * One cheaper way to run what was picked, in honest words (owner decision, built check 1): every pass says it's for
+ * one event, yearly and one-time prices stay apart, and "one at a time" is said where that's all the package covers.
+ */
 function choiceWords(c: Choice, freeName: string) {
-  const passes = listWords(c.passes.map((p) => `a ${passWords(p.event_type)}`));
-  if (c.package.code === "free") return c.passes.length ? `${passes}, with ${freeName}: ${dollars(c.total_cents)}` : `${freeName}, at no cost`;
-  return c.passes.length ? `${c.package.name} plus ${passes}: ${yearly(c.total_cents)}` : `${c.package.name}: ${yearly(c.total_cents)}`;
+  const free = c.package.code === "free";
+  const n = c.passes.length;
+  const plus = n === 0 ? "" : n === 1 ? `, plus a ${passWords(c.passes[0].event_type)} for one event` : `, plus ${n} passes, for one event each`;
+  const title = `${c.package.name}${plus}`;
+  const passPrices = c.passes.map((p) => `${dollars(p.price_cents)} for ${oneEvent(p.event_type)}`);
+  const price = free ? (n ? passPrices.join(", plus ") : "No cost") : [yearly(c.package.price_year_cents), ...passPrices].join(", plus ");
+  const covers = c.covers.length
+    ? `${c.package.name} includes ${listWords(c.covers.map((k) => `${kindNoun(k.event_type)}${k.one ? " (one at a time)" : ""}`))}`
+    : null;
+  return { title: free ? title.replace(c.package.name, freeName) : title, price, covers };
 }
 
-function LowestMark() {
-  return (
-    <span className="ml-1 inline-flex align-middle">
-      <Badge tone="success">Lowest price that includes what you picked</Badge>
-    </span>
-  );
-}
+/** The badge on the lowest-priced way to run what was picked: with passes, it's one of each, not a year of them. */
+const lowestWords = (c: Pick<Choice, "passes">) => (c.passes.length ? "Lowest price for one of each" : "Lowest price that includes what you picked");
 
 /** "What are you running?" (checkboxes), what fits, the cheaper choices, and the cards. */
 export function Chooser({ page, headingId }: { page: PricingPage; headingId: string }) {
-  const { picked: raw, setPicked } = use(Picked);
-  const picked = inOrder(raw);
+  const { picked, setPicked } = use(Picked);
   const phone = usePhone();
   const cards = page.packages;
   const fits = packagesThatFit(picked, cards);
   const fitCodes = new Set(fits.map((f) => f.code));
-  const words = listWords(picked.map(kindWords));
   const freeName = page.free.find((f) => f.code === "free")?.name ?? "Free";
+  const passes = usablePasses(page);
+  const lowestPass = passes.length ? Math.min(...passes.map((p) => p.price_cents)) : null;
 
-  // Cheaper ways than the cheapest package that fits: Free, or a package plus a pass (PM F3). From the data.
-  const choices = cheapestChoices(picked, page);
-  const cheapestFit = choices.find((c) => !c.passes.length && fitCodes.has(c.package.code));
-  const cheaper = choices.filter((c) => c !== cheapestFit && (c.passes.length || c.package.code === "free") && (!cheapestFit || c.total_cents < cheapestFit.total_cents)).slice(0, 2);
-  const lowest = choices[0];
+  // The cheapest card that fits by itself, and up to three cheaper ways (Free, or a package, with passes): from the
+  // data, with any that cost more without running a pick better left out (cheapestChoices).
+  const pricedFits = fits.filter((f) => f.price_year_cents != null).sort((a, b) => a.price_year_cents! - b.price_year_cents!);
+  const cheapestFit = pricedFits[0] ?? null;
+  const options = cheapestChoices(picked, page)
+    .filter((c) => !(c.passes.length === 0 && fitCodes.has(c.package.code)))
+    .filter((c) => !cheapestFit || c.total_cents < cheapestFit.price_year_cents!)
+    .slice(0, 3);
+  const cardIsLowest = Boolean(cheapestFit && !options.length);
 
+  const all = picked.length === 1 ? kindNoun(picked[0]) : picked.length === 2 ? "both" : `all ${picked.length}`;
   const announce = !picked.length
     ? ""
     : fits.length === 0
-      ? `No one package includes ${words}.`
-      : `${fits.length === 1 ? "1 package includes" : `${fits.length} packages include`} ${words}:`;
+      ? picked.length === 1
+        ? `No one package includes ${kindNoun(picked[0])}.`
+        : `No one package includes all ${picked.length} of your picks.`
+      : `${fits.length === 1 ? "1 package includes" : `${fits.length} packages include`} ${all}:`;
 
-  const toggle = (v: string) => setPicked(raw.includes(v) ? raw.filter((x) => x !== v) : [...raw, v]);
+  const toggle = (v: string) => setPicked(picked.includes(v) ? picked.filter((x) => x !== v) : [...picked, v]);
   const card = (p: PricingPackage, i: number) => (
     <PackageCard
       key={p.code}
@@ -90,7 +131,7 @@ export function Chooser({ page, headingId }: { page: PricingPage; headingId: str
       before={i > 0 ? cards[i - 1] : null}
       fit={picked.length ? fitCodes.has(p.code) : null}
       missingKinds={picked.filter((t) => !p.event_types.includes(t))}
-      lowest={Boolean(lowest && !lowest.passes.length && lowest.package.code === p.code)}
+      lowest={cardIsLowest && cheapestFit?.code === p.code}
       picked={picked}
     />
   );
@@ -100,82 +141,76 @@ export function Chooser({ page, headingId }: { page: PricingPage; headingId: str
   return (
     <>
       <fieldset aria-labelledby={headingId} className="mt-4">
-        <p className="text-muted">Pick every kind of event you run. The packages that include all of them are marked.</p>
+        <p className="text-muted">Choose every kind of event you run. The packages that include all of them are marked.</p>
         <div className="mt-4 flex flex-wrap gap-2">
-          {WEBSITE_KINDS.map((k) => {
-            const on = raw.includes(k.value);
-            return (
-              <label
-                key={k.value}
-                className={`inline-flex min-h-11 max-w-full cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold ${on ? "border-brand bg-brand-soft" : "border-field-border bg-surface hover:border-brand"}`}
-              >
-                <input type="checkbox" className={CHECK} checked={on} onChange={() => toggle(k.value)} />
-                <LineIcon name={k.icon} className="size-5 shrink-0" />
-                <span className="min-w-0">{k.label}</span>
-              </label>
-            );
-          })}
+          {WEBSITE_KINDS.map((k) => (
+            <KindChoice key={k.value} k={k} checked={picked.includes(k.value)} onChange={() => toggle(k.value)} />
+          ))}
         </div>
       </fieldset>
+      {/* Passes sit far down the page on phones: say they exist here (consultant 4). */}
+      {lowestPass != null && (
+        <p className="mt-3 text-muted">
+          Running just one event?{" "}
+          <a href="#passes" className={`${LINK} inline-flex min-h-11 items-center`}>
+            Passes start at {dollars(lowestPass)}
+          </a>
+        </p>
+      )}
 
-      {/* Read out as people tick and untick; says the result in words, with the packages as links. */}
-      <div aria-live="polite" className="mt-4 min-h-7 space-y-1 leading-7">
+      {/* Read out as people check and uncheck; says the result in words, with the packages as links. */}
+      <div aria-live="polite" className="mt-4 min-h-7 leading-7">
         {picked.length > 0 && (
-          <>
-            <p className="font-semibold">
-              {announce}{" "}
-              {fits.map((f, i) => (
-                <span key={f.code}>
-                  {i > 0 && (i === fits.length - 1 ? (fits.length > 2 ? ", and " : " and ") : ", ")}
-                  <a href={`#package-${f.code}`} className={LINK}>
-                    {f.name}
-                  </a>
-                </span>
-              ))}
-              {fits.length === 0 && (
-                <>
-                  <a href="#compare" className={LINK}>
-                    Compare every package
-                  </a>
-                  , or{" "}
-                  <a href={askHref(null, picked)} className={LINK}>
-                    ask us
-                  </a>
-                </>
-              )}
-            </p>
-            {cheaper.map((c) => (
-              <p key={c.package.code + c.passes.map((p) => p.code).join()}>
-                {fits.length ? `Or ${choiceWords(c, freeName)}` : choiceWords(c, freeName).replace(/^./, (x) => x.toUpperCase())}
-                {c.package.code === "free" && !c.passes.length ? (
-                  <>
-                    {" "}
-                    (
-                    <a href="#free" className={LINK}>
-                      Free options
-                    </a>
-                    )
-                  </>
-                ) : null}
-                {c === lowest && <LowestMark />}
-              </p>
-            ))}
-            {cheaper.some((c) => c.passes.length) && (
-              <p className="text-muted">
-                A pass covers one event.{" "}
-                <a href="#passes" className={LINK}>
-                  About passes
+          <p className="font-semibold">
+            {announce}{" "}
+            {fits.map((f, i) => (
+              <span key={f.code}>
+                {i > 0 && (i === fits.length - 1 ? (fits.length > 2 ? ", and " : " and ") : ", ")}
+                <a href={`#package-${f.code}`} className={LINK}>
+                  {f.name}
                 </a>
-              </p>
+              </span>
+            ))}
+            {fits.length === 0 && (
+              <>
+                <a href="#compare" className={LINK}>
+                  Compare every package
+                </a>
+                , or{" "}
+                <a href={askHref(null, picked)} className={LINK}>
+                  ask us
+                </a>
+              </>
             )}
-          </>
+          </p>
         )}
       </div>
+
+      {options.length > 0 && (
+        <section aria-labelledby="choices-title" className="mt-4 max-w-4xl">
+          <h3 id="choices-title" className="text-sm font-semibold tracking-wide text-muted uppercase">
+            {fits.length ? "Ways that cost less" : "Ways to run what you picked"}
+          </h3>
+          <ul className="mt-2 space-y-3">
+            {options.map((c, i) => (
+              <ChoiceRow key={c.package.code + c.passes.map((p) => p.code).join()} c={c} freeName={freeName} lowest={i === 0} picked={picked} />
+            ))}
+          </ul>
+          {options.some((c) => c.passes.length) && (
+            <p className="mt-3 text-muted">
+              A pass is paid once and covers one event.{" "}
+              <a href="#passes" className={`${LINK} inline-flex min-h-11 items-center`}>
+                About passes
+              </a>
+            </p>
+          )}
+        </section>
+      )}
 
       {phone && picked.length > 0 ? (
         <div className="mt-8 space-y-8">
           {[
-            { title: fits.length ? `Packages that include ${words}` : null, list: cards.filter((p) => fitCodes.has(p.code)) },
+            { title: fits.length ? "Packages that include everything you picked" : null, list: cards.filter((p) => fitCodes.has(p.code)) },
             { title: fits.length ? "Other packages" : "Every package", list: cards.filter((p) => !fitCodes.has(p.code)) },
           ]
             .filter((g) => g.list.length)
@@ -190,6 +225,64 @@ export function Chooser({ page, headingId }: { page: PricingPage; headingId: str
         <ul className={`mt-8 ${grid}`}>{cards.map(card)}</ul>
       )}
     </>
+  );
+}
+
+/** One kind of event to check: the same shape here and on the request form (UI 9). */
+export function KindChoice({
+  k,
+  checked,
+  onChange,
+  name,
+}: {
+  k: { value: string; label: string; icon: (typeof WEBSITE_KINDS)[number]["icon"] };
+  checked?: boolean;
+  onChange?: () => void;
+  /** On the request form: a plain form field, checked to start with when `checked`. */
+  name?: string;
+}) {
+  return (
+    <label className="inline-flex min-h-11 max-w-full cursor-pointer items-center gap-2 rounded-full border border-field-border bg-surface px-3 py-1.5 text-sm font-semibold hover:border-brand has-[:checked]:border-brand has-[:checked]:bg-brand-soft">
+      {name ? (
+        <input type="checkbox" name={name} value={k.value} defaultChecked={checked} className={CHECK} />
+      ) : (
+        <input type="checkbox" className={CHECK} checked={Boolean(checked)} onChange={onChange} />
+      )}
+      <LineIcon name={k.icon} className="size-5 shrink-0" />
+      <span className="min-w-0">{k.label}</span>
+    </label>
+  );
+}
+
+/** One cheaper way, with its own button to the request form (the pass or package, and the picks, filled in). */
+function ChoiceRow({ c, freeName, lowest, picked }: { c: Choice; freeName: string; lowest: boolean; picked: string[] }) {
+  const w = choiceWords(c, freeName);
+  const id = useId();
+  const free = c.package.code === "free";
+  const [first, ...rest] = c.passes.map((p) => p.code);
+  const button = free
+    ? c.passes.length
+      ? { href: askHref(first, picked, rest), label: c.passes.length === 1 ? "Get this pass" : "Get these passes" }
+      : { href: "#free", label: `About ${freeName}` }
+    : { href: askHref(c.package.code, picked, c.passes.map((p) => p.code)), label: "Ask about this" };
+  return (
+    <li className="grid gap-3 rounded-lg border border-border bg-background p-4 sm:grid-cols-[1fr_auto] sm:items-center">
+      <div className="min-w-0">
+        {lowest && (
+          <p className="mb-1.5">
+            <Badge tone="success">{lowestWords(c)}</Badge>
+          </p>
+        )}
+        <p id={id} className="font-semibold">
+          {w.title}
+        </p>
+        <p className="tabular-nums">{capFirst(w.price)}</p>
+        {w.covers && <p className="text-sm text-muted">{w.covers}</p>}
+      </div>
+      <a href={button.href} aria-describedby={id} className={`${BTN_OUTLINE} w-full sm:w-auto`}>
+        {button.label}
+      </a>
+    </li>
   );
 }
 
@@ -263,24 +356,24 @@ function PackageCard({
       id={`package-${p.code}`}
       className={`row-span-5 grid scroll-mt-20 grid-rows-subgrid gap-y-0 rounded-lg border bg-surface p-5 shadow-card ${fit ? "border-brand ring-2 ring-brand dark:border-foreground dark:ring-foreground" : "border-border"}`}
     >
-      {/* 1. What it says about your picks, and Recommended (the same row on every card, so names line up). */}
-      <div className="space-y-2 pb-3">
+      {/* 1. What it says about your picks, Lowest, and Recommended, on one row (the same row on every card, so names
+          line up). Empty, and no space kept, when nothing is picked and it isn't Recommended (UI 5). */}
+      <div className={fit !== null || lowest || p.recommended ? "flex flex-wrap items-start gap-x-2 gap-y-1.5 pb-3" : ""}>
+        {p.recommended && <Badge tone="info">Recommended</Badge>}
+        {lowest && <Badge tone="success">Lowest price that includes what you picked</Badge>}
         {fit !== null && (
           <p className="flex items-start gap-1.5 text-sm font-semibold">
             {fit ? (
               <>
                 <CheckIcon className="size-5 text-success" /> Includes what you picked
               </>
+            ) : missingKinds.length === 1 ? (
+              <>Doesn&apos;t include {kindNoun(missingKinds[0])}</>
             ) : (
-              <>Doesn&apos;t include {listWords(missingKinds.map(kindWords))}</>
+              <>
+                Doesn&apos;t include {missingKinds.length} of your picks: {kindList(missingKinds)}
+              </>
             )}
-          </p>
-        )}
-        {lowest && <Badge tone="success">Lowest price that includes what you picked</Badge>}
-        {p.recommended && (
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-            <Badge tone="info">Recommended</Badge>
-            <span>{recommendedReason(p)}</span>
           </p>
         )}
       </div>
@@ -299,7 +392,7 @@ function PackageCard({
         {p.teacher_rate && p.teacher_year_cents != null && (
           <p className="mt-1 text-sm text-muted tabular-nums">
             Classroom teachers: {yearly(p.teacher_year_cents)}.{" "}
-            <a href="#teacher-rate" className={LINK}>
+            <a href="#teacher-rate" className={`${LINK} inline-flex min-h-11 items-center`}>
               Who qualifies
             </a>
           </p>
@@ -455,4 +548,13 @@ export function OpenFromLink() {
     return () => window.removeEventListener("hashchange", open);
   }, []);
   return null;
+}
+
+/** "Try again" when prices didn't load: loads the page again. */
+export function TryAgain({ className }: { className?: string }) {
+  return (
+    <button type="button" className={className} onClick={() => window.location.reload()}>
+      Try again
+    </button>
+  );
 }

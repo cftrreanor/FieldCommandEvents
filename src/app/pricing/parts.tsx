@@ -6,8 +6,10 @@ import { dollars, listWords } from "@/lib/plan";
 import { PILOT_END_LABEL } from "@/lib/pilot";
 import {
   FEATURE_HINTS,
+  kindNoun,
   kindWords,
   packageFeatures,
+  weeklyKinds,
   passWords,
   WEBSITE_KINDS,
   type PackageContents,
@@ -32,32 +34,33 @@ export const PILOT_LINE = `Free for organizers through ${PILOT_END_LABEL}. After
 
 export const yearly = (cents: number) => `${dollars(cents)} a year`;
 
-/** The request form, with the package or pass and the kinds picked carried over. */
-export function askHref(plan?: string | null, kinds: readonly string[] = []) {
-  const q = new URLSearchParams();
-  if (plan) q.set("plan", plan);
-  if (kinds.length) q.set("kinds", kinds.join(","));
-  const s = q.toString();
-  return s ? `/pricing/ask?${s}` : "/pricing/ask";
+/** Who gets the teacher rate: the FAQ, and the request form's "Who qualifies" (shown in place there). */
+export const TEACHER_WHO =
+  "Classroom teachers using an account in their own name for their own classes or conferences. School, PTO, booster, and club accounts use the regular price.";
+
+/**
+ * The request form, with the package or pass and the kinds picked carried over. `also`: more passes in the same
+ * choice (the cheapest-option lines), which the form names in its message box.
+ */
+export function askHref(plan?: string | null, kinds: readonly string[] = [], also: readonly string[] = []) {
+  const parts: string[] = [];
+  if (plan) parts.push(`plan=${encodeURIComponent(plan)}`);
+  if (kinds.length) parts.push(`kinds=${kinds.map(encodeURIComponent).join(",")}`);
+  if (also.length) parts.push(`also=${also.map(encodeURIComponent).join(",")}`);
+  return parts.length ? `/pricing/ask?${parts.join("&")}` : "/pricing/ask";
 }
 
 /**
  * Passes someone could actually use: priced, and for a kind Free doesn't include (a pass is only spent on a kind
  * the account's package leaves out, and Free's kinds are never left out: Engineer F4).
  */
-export function usablePasses(page: Pick<PricingPage, "passes" | "free">): PricingPass[] {
+export function usablePasses(page: Pick<PricingPage, "passes" | "free">): (PricingPass & { price_cents: number })[] {
   const free = page.free.find((f) => f.code === "free");
-  return page.passes.filter((p) => p.price_cents != null && !(free?.event_types ?? []).includes(p.event_type));
+  return page.passes.filter((p): p is PricingPass & { price_cents: number } => p.price_cents != null && !(free?.event_types ?? []).includes(p.event_type));
 }
 
 /** "Get a band contest pass". */
 export const passButton = (t: string) => `Get a ${passWords(t)}`;
-
-/** Why the Recommended card is recommended, from what it includes (Marketing F10). */
-export function recommendedReason(p: PackageContents) {
-  const f = packageFeatures(p);
-  return f.allKinds ? "Includes every kind of event" : `Includes ${f.kinds.length} of ${WEBSITE_KINDS.length} kinds of event`;
-}
 
 /** Free and Free Teacher, as one line each. */
 export function freeLine(f: PackageContents) {
@@ -109,7 +112,7 @@ export function OneBadge() {
 // ---------------------------------------------------------------------------------------------------------------
 
 /** One cell, in words (never color alone). */
-export type Cell = { kind: "yes" } | { kind: "one" } | { kind: "no" } | { kind: "text"; text: string };
+export type Cell = { kind: "yes"; note?: string } | { kind: "one" } | { kind: "no" } | { kind: "text"; text: string };
 export type Matrix = {
   cols: { code: string; name: string }[];
   groups: { group: string; rows: { label: string; hint?: string; cells: Record<string, Cell> }[] }[];
@@ -157,7 +160,15 @@ export function compareMatrix(page: Pick<PricingPage, "packages" | "free">): Mat
           row("Team", teamCell, FEATURE_HINTS.team),
           row("Volunteer Leads and Coordinators", (c) => yes(c.event_staff), FEATURE_HINTS.staff),
           row("Volunteer tracking", (c) => yes(c.volunteer_history), FEATURE_HINTS.tracking),
-          row("Weekly hours", (c) => yes(Boolean(packageFeatures(c).weeklyHours)), FEATURE_HINTS.weeklyHours),
+          // Which kinds, in each cell ("For meetings"): weekly hours only apply to the kinds a package includes (Content F4).
+          row(
+            "Weekly hours",
+            (c) => {
+              const kinds = weeklyKinds(c);
+              return kinds.length && c.weekly_hours ? { kind: "yes", note: `For ${listWords(kinds.map(kindNoun))}` } : { kind: "no" };
+            },
+            FEATURE_HINTS.weeklyHoursTable,
+          ),
         ],
       },
     ],
@@ -170,7 +181,10 @@ export function CellView({ cell }: { cell: Cell }) {
   return (
     <span className="inline-flex items-start gap-1.5 text-left">
       {cell.kind === "yes" ? <CheckIcon className="size-5 text-success" /> : cell.kind === "one" ? <OneBadge /> : <DashIcon className="size-5 text-foreground" />}
-      <span className={cell.kind === "no" ? "" : "font-semibold"}>{cell.kind === "yes" ? "Included" : cell.kind === "one" ? "One at a time" : "Not included"}</span>
+      <span className="min-w-0">
+        <span className={`block ${cell.kind === "no" ? "" : "font-semibold"}`}>{cell.kind === "yes" ? "Included" : cell.kind === "one" ? "One at a time" : "Not included"}</span>
+        {cell.kind === "yes" && cell.note && <span className="block text-muted">{cell.note}</span>}
+      </span>
     </span>
   );
 }

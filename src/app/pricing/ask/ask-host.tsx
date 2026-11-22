@@ -1,13 +1,17 @@
 "use client";
 import { useState } from "react";
-import { ActionForm } from "@/components/action-form";
+import { ActionForm, useFieldErrors } from "@/components/action-form";
 import { copyDialog } from "@/components/confirm-dialog";
 import { toast } from "@/components/toaster";
 import { SubmitButton } from "@/components/submit-button";
 import type { ActionState } from "@/lib/action-state";
-import { CheckIcon, LINK } from "../parts";
+import { Field, Textarea } from "@/components/ui";
+import { BTN_OUTLINE, CheckIcon, LINK } from "../parts";
 
-/** "Ask Dana to choose Event Command": the app sends the email, then says "Sent to Dana". Copy email as a fallback. */
+/**
+ * "Ask Dana to choose Event Command", with an optional note: the app sends the email, then says what was sent in the
+ * server's words ("Sent to Dana: a request to choose Event Command…"; consultant 5, UX F6). Copy email as a fallback.
+ */
 export function AskHostButton({
   action,
   plan,
@@ -21,16 +25,22 @@ export function AskHostButton({
   email: string;
   label: string;
 }) {
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<string | null>(null);
+  const send = async (prev: ActionState, data: FormData) => {
+    const r = await action(prev, data);
+    if (r.ok) setSent(r.message ?? `Sent to ${first}. They'll get an email with a link to ask us about it.`);
+    return r;
+  };
   return (
     <div className="space-y-3">
       {sent ? (
-        <p role="status" className="flex items-start gap-2 rounded-md border border-success/40 bg-success-soft px-4 py-3 font-semibold">
-          <CheckIcon className="mt-0.5 size-5 text-success" /> Sent to {first}
+        <p role="status" className="flex items-start gap-2 rounded-md border border-success/40 bg-success-soft px-4 py-3">
+          <CheckIcon className="mt-1 size-5 text-success" /> <span>{sent}</span>
         </p>
       ) : (
-        <ActionForm action={action} onSuccess={() => setSent(true)} noToast>
+        <ActionForm action={send} noToast resetOnSuccess={false} className="space-y-3">
           <input type="hidden" name="plan" value={plan} />
+          <NoteField first={first} />
           <SubmitButton pendingText="Sending…">{label}</SubmitButton>
         </ActionForm>
       )}
@@ -43,7 +53,7 @@ export function AskHostButton({
         </span>
         <button
           type="button"
-          className={`${LINK} inline-flex min-h-11 items-center`}
+          className={BTN_OUTLINE}
           onClick={async () => {
             try {
               await navigator.clipboard.writeText(email);
@@ -57,5 +67,15 @@ export function AskHostButton({
         </button>
       </p>
     </div>
+  );
+}
+
+/** "Add a note for Dana (optional)": up to 500 characters, sent with the email. */
+function NoteField({ first }: { first: string }) {
+  const errors = useFieldErrors();
+  return (
+    <Field label={`Add a note for ${first} (optional)`} error={errors.note} errorId="ask-host-note-error">
+      <Textarea name="note" rows={3} maxLength={500} {...(errors.note ? { "aria-invalid": true, "aria-describedby": "ask-host-note-error" } : {})} />
+    </Field>
   );
 }

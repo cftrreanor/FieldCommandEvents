@@ -85,7 +85,7 @@ test("packageFeatures names each part, from the fields, in the website's order",
 
 test("bestFor: as written in admin, else from the kinds", () => {
   assert.deepEqual(bestFor({ ...schedule, best_for: "  Teachers who run sign-ups " }), { text: "Teachers who run sign-ups", from: "admin" });
-  assert.deepEqual(bestFor(volunteer), { text: "Groups that run volunteers and sign-ups, school fairs and fundraisers, and meetings", from: "generated" });
+  assert.deepEqual(bestFor(volunteer), { text: "Groups that run volunteer sign-ups, school fairs, and meetings", from: "generated" });
   assert.deepEqual(bestFor(event), { text: "Groups that run every kind of event", from: "generated" });
 });
 
@@ -123,6 +123,7 @@ test("cheapestChoices: a package plus passes only for the picked kinds it doesn'
   assert.deepEqual(c[0], {
     package: { code: "free", name: "Free", price_year_cents: 0 },
     passes: [{ code: "pass_school_visit", event_type: "school_visit", price_cents: 5000 }],
+    covers: [{ event_type: "volunteer", one: true }],
     total_cents: 5000,
   });
   const vc = c.find((x) => x.package.code === "volunteer")!;
@@ -138,6 +139,63 @@ test("cheapestChoices: a package plus passes only for the picked kinds it doesn'
   assert.deepEqual(noYearly, [], "a package without a yearly price isn't a priced choice");
   assert.deepEqual(cheapestChoices([], page), []);
   assert.deepEqual(packagesThatFit(["fair", "meeting"], page.packages).map((p) => p.code), ["volunteer", "event"]);
+});
+
+test("cheapestChoices: Free plus passes, one pass for each picked kind Free leaves out", () => {
+  const c = cheapestChoices(["fair", "school_visit"], page);
+  assert.deepEqual(c[0], {
+    package: { code: "free", name: "Free", price_year_cents: 0 },
+    passes: [
+      { code: "pass_fair", event_type: "fair", price_cents: 10000 },
+      { code: "pass_school_visit", event_type: "school_visit", price_cents: 5000 },
+    ],
+    covers: [],
+    total_cents: 15000,
+  });
+  // Schedule Command ($60) plus both passes adds nothing anyone picked over Free plus the same passes.
+  assert.ok(!c.some((x) => x.package.code === "schedule"), "Schedule Command plus the same passes is dropped");
+});
+
+test("cheapestChoices: a package plus a pass, when the package runs a pick better than Free does", () => {
+  const c = cheapestChoices(["volunteer", "band_contest"], page);
+  assert.deepEqual(
+    c.map((x) => [x.package.code, x.passes.map((p) => p.event_type), x.total_cents]),
+    [
+      ["free", ["band_contest"], 15000],
+      ["volunteer", ["band_contest"], 39000],
+      ["event", [], 100000],
+    ],
+  );
+  assert.deepEqual(c[0].covers, [{ event_type: "volunteer", one: true }], "Free runs volunteer sign-ups one at a time");
+  assert.deepEqual(c[1].covers, [{ event_type: "volunteer", one: false }], "Volunteer Command runs as many as you like");
+  assert.ok(!c.some((x) => x.package.code === "schedule"), "Schedule Command (one at a time, like Free) costs more for nothing more");
+  assert.ok(!c.some((x) => x.package.code === "district"), "Competition Command costs more than Event Command and runs nothing better");
+});
+
+test("cheapestChoices: a package that covers everything picked needs no pass, and passes that cost more are dropped", () => {
+  const c = cheapestChoices(["fair", "meeting", "volunteer"], page);
+  assert.deepEqual(c.map((x) => x.package.code), ["free", "schedule", "volunteer"], "Event Command adds nothing over Volunteer Command for these");
+  assert.deepEqual(c[2], {
+    package: { code: "volunteer", name: "Volunteer Command", price_year_cents: 24000 },
+    passes: [],
+    covers: [
+      { event_type: "volunteer", one: false },
+      { event_type: "fair", one: false },
+      { event_type: "meeting", one: false },
+    ],
+    total_cents: 24000,
+  });
+  // Free plus a fair pass ($100) is cheaper: it stays, since it's the lowest price for one of each.
+  const withFree = cheapestChoices(["fair", "meeting"], page);
+  assert.deepEqual(
+    withFree.map((x) => x.package.code),
+    ["free", "schedule", "volunteer"],
+    "Schedule Command runs meetings as many at a time; Event Command adds nothing over Volunteer Command for these",
+  );
+  assert.equal(withFree[0].total_cents, 10000);
+  // Covered by Free alone: nothing else is needed unless it runs them better.
+  const meetings = cheapestChoices(["meeting"], page);
+  assert.deepEqual(meetings.map((x) => [x.package.code, x.passes.length]), [["free", 0], ["schedule", 0]], "Schedule Command runs meetings as many at a time");
 });
 
 test("checkPricingRequest checks every answer at once", () => {

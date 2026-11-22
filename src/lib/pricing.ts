@@ -39,7 +39,8 @@ export type PricingPackage = PackageContents & {
   sort: number;
 };
 
-export type PricingPass = { code: string; name: string; kind: "pass"; event_type: string; price_cents: number; sort: number };
+/** `price_cents` null: no price set (a pass without one isn't offered on the page). */
+export type PricingPass = { code: string; name: string; kind: "pass"; event_type: string; price_cents: number | null; sort: number };
 
 /** Free and Free Teacher: one line each, never a card, never a price. */
 export type PricingFree = PackageContents & { kind: "package"; sort: number };
@@ -101,6 +102,34 @@ const ONE_KIND: Record<string, string> = {
   conference: "parent-teacher conference",
   meeting: "meeting",
 };
+// Short nouns for each kind, for lists inside a sentence ("Doesn't include 2 of your picks: band contests ·
+// festivals", "Groups that run volunteer sign-ups and meetings"): the full website names run together in a list
+// (Content F3).
+const KIND_NOUNS: Record<string, string> = {
+  volunteer: "volunteer sign-ups",
+  band_contest: "band contests",
+  group_event: "festivals",
+  fair: "school fairs",
+  school_visit: "visitor days",
+  conference: "conferences",
+  meeting: "meetings",
+};
+/** "band contests": a kind's short noun, for lists inside a sentence. */
+export const kindNoun = (t: string) => KIND_NOUNS[t] ?? kindWords(t);
+
+// One event of a kind, for what a pass buys: "$150 for one band contest".
+const ONE_EVENT: Record<string, string> = {
+  volunteer: "one volunteer sign-up",
+  band_contest: "one band contest",
+  group_event: "one festival",
+  fair: "one school fair",
+  school_visit: "one visitor day",
+  conference: "one conference day",
+  meeting: "one meeting",
+};
+/** "one band contest". */
+export const oneEvent = (t: string) => ONE_EVENT[t] ?? `one ${kindWords(t)} event`;
+
 /** "band contest pass", inside a sentence. */
 export const passWords = (t: string) => `${ONE_KIND[t] ?? kindWords(t)} pass`;
 /** "Band contest pass", as a label. */
@@ -118,7 +147,10 @@ export const FEATURE_HINTS = {
   team: "The people who can sign in and help run your events",
   staff: "Volunteer Leads run the check-in desk, and Coordinators each run one sign-up",
   tracking: "Kept 2 years after their last event",
-  weeklyHours: "Hours that repeat every week, like office hours or conference days",
+  /** On a card, under "Weekly hours for …", which already names its kinds (Content F4). */
+  weeklyHours: "Hours that repeat every week, like office hours",
+  /** The compare table's row, where each cell names the kinds. */
+  weeklyHoursTable: "Hours that repeat every week, for the kinds each package includes",
 } as const;
 
 export type KindPart = {
@@ -153,6 +185,8 @@ export function teamWords(maxTeam: number | null): string {
 
 /** Weekly hours apply to the kinds booked by the hour: conferences and meetings. */
 const WEEKLY_KINDS = ["conference", "meeting"];
+/** The kinds a package's weekly hours would apply to (whether or not it has weekly hours). */
+export const weeklyKinds = (t: Pick<PackageContents, "event_types">) => sortKinds(WEEKLY_KINDS.filter((k) => t.event_types.includes(k)));
 
 export function packageFeatures(t: PackageContents): PackageFeatures {
   const types = sortKinds(t.event_types);
@@ -173,7 +207,7 @@ export function bestFor(t: PackageContents & { best_for?: string | null }): { te
   const typed = t.best_for?.trim();
   if (typed) return { text: typed, from: "admin" };
   const f = packageFeatures(t);
-  return { text: `Groups that run ${f.allKinds ? "every kind of event" : listWords(f.kinds.map((k) => kindWords(k.value)))}`, from: "generated" };
+  return { text: `Groups that run ${f.allKinds ? "every kind of event" : listWords(f.kinds.map((k) => kindNoun(k.value)))}`, from: "generated" };
 }
 
 /**
@@ -249,37 +283,57 @@ export type Choice = {
   package: { code: string; name: string; price_year_cents: number };
   /** One pass per picked kind the package doesn't include (each pass is one event). */
   passes: { code: string; event_type: string; price_cents: number }[];
+  /** The picked kinds the package itself includes, in the website's order; `one` when only one at a time. */
+  covers: { event_type: string; one: boolean }[];
   total_cents: number;
 };
 
+/** How well a choice runs one picked kind: 0 a pass (one event), 1 one at a time, 2 as many as you like. */
+const level = (c: Choice, t: string) => {
+  const k = c.covers.find((x) => x.event_type === t);
+  return !k ? 0 : k.one ? 1 : 2;
+};
+
 /**
- * Every package (with a yearly price) or Free that, with passes for the picked kinds it doesn't include, covers
- * what was picked, cheapest first; ties go to fewer passes. A pass is never added for a kind the package includes,
- * even "one at a time". Packages without a yearly price ("Ask us") can't be priced, so they aren't choices.
+ * The ways to run what was picked, cheapest first (ties go to fewer passes): every package with a yearly price, and
+ * Free, each with one pass for every picked kind it doesn't include. A pass is never added for a kind the package
+ * includes, even "one at a time". Packages without a yearly price ("Ask us") can't be priced, so they aren't choices.
+ * A choice that costs as much or more than a cheaper one without running any picked kind better (as many at a time
+ * instead of one, or included instead of a pass) is dropped: it adds nothing anyone picked (owner decision, built
+ * check 1).
  */
 export function cheapestChoices(picked: readonly string[], page: Pick<PricingPage, "packages" | "passes" | "free">): Choice[] {
   if (!picked.length) return [];
-  const passFor = new Map<string, PricingPass>();
-  for (const p of [...page.passes].sort((a, b) => a.price_cents - b.price_cents)) if (!passFor.has(p.event_type)) passFor.set(p.event_type, p);
+  const kinds = sortKinds([...new Set(picked)]);
+  const passFor = new Map<string, PricingPass & { price_cents: number }>();
+  const priced = page.passes.filter((p): p is PricingPass & { price_cents: number } => p.price_cents != null);
+  for (const p of priced.sort((a, b) => a.price_cents - b.price_cents)) if (!passFor.has(p.event_type)) passFor.set(p.event_type, p);
   const bases = [
     ...page.free.filter((f) => f.code === "free").map((f) => ({ contents: f as PackageContents, price: 0 })),
     ...page.packages.filter((p) => p.price_year_cents != null).map((p) => ({ contents: p as PackageContents, price: p.price_year_cents! })),
   ];
-  const choices: Choice[] = [];
+  const all: Choice[] = [];
   for (const { contents, price } of bases) {
-    const missingKinds = sortKinds(picked.filter((k) => !contents.event_types.includes(k)));
+    const missingKinds = kinds.filter((k) => !contents.event_types.includes(k));
     if (!missingKinds.every((k) => passFor.has(k))) continue;
     const passes = missingKinds.map((k) => {
       const p = passFor.get(k)!;
       return { code: p.code, event_type: k, price_cents: p.price_cents };
     });
-    choices.push({
+    all.push({
       package: { code: contents.code, name: contents.name, price_year_cents: price },
       passes,
+      covers: kinds.filter((k) => contents.event_types.includes(k)).map((k) => ({ event_type: k, one: contents.one_at_a_time.includes(k) })),
       total_cents: price + passes.reduce((n, p) => n + p.price_cents, 0),
     });
   }
-  return choices.sort((a, b) => a.total_cents - b.total_cents || a.passes.length - b.passes.length);
+  all.sort((a, b) => a.total_cents - b.total_cents || a.passes.length - b.passes.length);
+  const kept: Choice[] = [];
+  for (const c of all) {
+    const dominated = kept.some((k) => k.total_cents <= c.total_cents && kinds.every((t) => level(k, t) >= level(c, t)));
+    if (!dominated) kept.push(c);
+  }
+  return kept;
 }
 
 /** The packages whose kinds cover everything picked, by themselves (the cards that "fit"). */

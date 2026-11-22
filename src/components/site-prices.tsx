@@ -41,7 +41,8 @@ export function HeaderCta({
   label?: string;
 }) {
   const text = afterPilot ? "Get started" : label;
-  const href = afterPilot && live ? "/pricing/ask" : joinHref;
+  // The request form says where it came from: "Get started: ask about a package" (Content F10).
+  const href = afterPilot && live ? "/pricing/ask?start=1" : joinHref;
   if (href.startsWith("#")) {
     return (
       <JumpLink href={href as `#${string}`} className={HEADER_CTA_CLASS}>

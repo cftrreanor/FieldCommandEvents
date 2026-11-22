@@ -10,7 +10,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { brand } from "@/lib/brand";
 import { dollars, listWords } from "@/lib/plan";
 import { PILOT_END_LABEL } from "@/lib/pilot";
-import { FEATURE_HINTS, kindWords, passLabel, WEBSITE_KINDS, type PricingPage } from "@/lib/pricing";
+import { FEATURE_HINTS, kindWords, oneEvent, passLabel, WEBSITE_KINDS, type PricingPage } from "@/lib/pricing";
 import { SPONSOR_KINDS, SPONSOR_PROMISE } from "@/lib/sponsors";
 import { HeaderCta, PRICES } from "@/components/site-prices";
 import {
@@ -26,13 +26,13 @@ import {
   LINK,
   NO_RENEW,
   OneBadge,
-  passButton,
   PILOT_LINE,
   sectionTitle,
+  TEACHER_WHO,
   usablePasses,
   WIDTH,
 } from "./parts";
-import { Chooser, OpenFromLink, PhoneCompare, PickedProvider } from "./pricing-client";
+import { Chooser, OpenFromLink, PhoneCompare, PickedProvider, TryAgain } from "./pricing-client";
 
 const EMAIL = (
   <a href={CONTACT} className={`${LINK} [overflow-wrap:anywhere]`}>
@@ -54,7 +54,7 @@ function PricingHeader({ afterPilot }: { afterPilot: boolean }) {
   return (
     <HeaderBar maxWidth={WIDTH}>
       <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
-        All event types
+        All kinds of events
       </Link>
       <Link href={PRICES.href} aria-current="page" className={`hidden font-semibold text-white underline underline-offset-8 sm:block ${headerLinkClass}`}>
         {PRICES.label}
@@ -63,7 +63,8 @@ function PricingHeader({ afterPilot }: { afterPilot: boolean }) {
         links={[
           { href: "/#organizing", label: "All kinds of events" },
           { href: PRICES.href, label: PRICES.label },
-          { href: "/#pilot", label: "Pilot details" },
+          // The pilot's section is gone from the home page once it ends.
+          ...(afterPilot ? [] : [{ href: "/#pilot", label: "Pilot details" }]),
         ]}
       />
       <Link href="/login" className={headerLinkClass}>
@@ -92,13 +93,17 @@ function Hero({ afterPilot, button }: { afterPilot: boolean; button: boolean }) 
   );
 }
 
-/** "Preview, not public": an admin looking at the page before it's switched on. */
+/** "Preview, not public": an admin looking at the page before it's switched on, with the way to the switch (UX F8). */
 export function PreviewBanner({ children }: { children?: ReactNode }) {
   return (
     <div role="note" className="border-b border-warning/40 bg-warning-soft">
       <div className={`mx-auto ${WIDTH} px-4 py-3 text-sm leading-6 sm:px-6`}>
         <span className="font-semibold">Preview, not public. </span>
-        Visitors can&apos;t see this page until it&apos;s switched on in Admin. {children}
+        Visitors can&apos;t see this page until it&apos;s switched on in{" "}
+        <Link href="/admin/packages" className={LINK}>
+          Admin, Packages
+        </Link>
+        . {children}
       </div>
     </div>
   );
@@ -112,7 +117,7 @@ function faqs(page: PricingPage, afterPilot: boolean) {
   const teacher = page.packages.some((p) => p.teacher_rate && p.teacher_year_cents != null);
   return [
     {
-      q: "What does one at a time mean?",
+      q: "What does “one at a time” mean?",
       a: `${FEATURE_HINTS.oneAtATime}. When the published one ends, you can publish the next.${oneAtATime.length ? ` It applies to some kinds of event on ${listWords(oneAtATime)}.` : ""}`,
     },
     afterPilot
@@ -129,7 +134,7 @@ function faqs(page: PricingPage, afterPilot: boolean) {
           {
             id: "teacher-rate",
             q: "Who gets the teacher rate?",
-            a: "Classroom teachers using an account in their own name for their own classes or conferences. School, PTO, booster, and club accounts use the regular price. Tick “I’m a classroom teacher” when you ask, and a real person checks it.",
+            a: `${TEACHER_WHO} Check “I’m a classroom teacher” when you ask, and a real person checks it.`,
           },
         ]
       : []),
@@ -157,8 +162,15 @@ export function PricingView({ page, afterPilot, banner }: { page: PricingPage | 
           <section className={`mx-auto ${WIDTH} px-4 py-16 sm:px-6`}>
             <h2 className={sectionTitle}>We can&apos;t show prices right now</h2>
             <p className="mt-3 max-w-2xl leading-7">
-              Try again in a few minutes. Or write to us at {EMAIL} with the events you run, and a real person will reply within a day with prices.
+              Try again in a few minutes. Or ask us, or write to us at {EMAIL} with the events you run, and a real person will reply within a day with prices.
             </p>
+            {/* Two ways forward, as buttons (UI 8, consultant 13). The request form works without the prices. */}
+            <div className="mt-6 flex flex-wrap gap-3">
+              <TryAgain className={BTN_OUTLINE} />
+              <Link href={askHref()} className={BTN_OUTLINE}>
+                Ask about prices
+              </Link>
+            </div>
           </section>
         </main>
         <SiteFooter />
@@ -243,18 +255,25 @@ export function PricingView({ page, afterPilot, banner }: { page: PricingPage | 
                 <p className="mt-3 max-w-2xl leading-7 text-muted">
                   A pass publishes one event of a kind your package doesn&apos;t include. Works with Free, no package needed. Use it within 12 months.
                 </p>
-                <ul className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {/* Two or four across, so four passes never leave one alone on a row (UI 12). */}
+                <ul className={`mt-8 grid gap-3 sm:grid-cols-2 ${passes.length % 3 === 0 ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
                   {passes.map((p) => {
                     const icon = WEBSITE_KINDS.find((k) => k.value === p.event_type)?.icon ?? "sparkle";
                     return (
                       <li key={p.code} className="flex flex-col gap-3 rounded-lg border border-border bg-background p-4">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-start gap-3">
                           <IconTile name={icon} />
-                          <span className="min-w-0 flex-1 font-semibold">{passLabel(p.event_type)}</span>
-                          <span className="text-lg font-semibold tabular-nums">{dollars(p.price_cents)}</span>
+                          <span className="min-w-0 flex-1">
+                            <span id={`pass-${p.code}`} className="block font-semibold">
+                              {passLabel(p.event_type)}
+                            </span>
+                            <span className="block text-lg font-semibold tabular-nums">
+                              {dollars(p.price_cents)} <span className="text-sm font-normal text-muted">for {oneEvent(p.event_type)}</span>
+                            </span>
+                          </span>
                         </div>
-                        <a href={askHref(p.code, [p.event_type])} className={`${BTN_OUTLINE} mt-auto`}>
-                          {passButton(p.event_type)}
+                        <a href={askHref(p.code, [p.event_type])} aria-describedby={`pass-${p.code}`} className={`${BTN_OUTLINE} mt-auto`}>
+                          Get this pass
                         </a>
                       </li>
                     );
@@ -271,16 +290,21 @@ export function PricingView({ page, afterPilot, banner }: { page: PricingPage | 
               Compare every package
             </h2>
             <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted">
-              <OneBadge /> <span className="font-semibold text-foreground">One at a time:</span> {FEATURE_HINTS.oneAtATime.toLowerCase()}
+              <OneBadge /> <span className="font-semibold text-foreground">One at a time:</span> one published event of that kind, with as many drafts as you like
             </p>
             <div className="mt-6 hidden md:block">
               <table className="w-full border-collapse text-sm">
                 <caption className="sr-only">Every package compared: price, kinds of event, and team</caption>
                 <thead>
-                  <tr className="border-b-2 border-field-border">
-                    <td className="py-3 pr-3" />
+                  {/* The package names stay in view while the rows scroll by (UI 3). */}
+                  <tr>
+                    <td className="sticky top-0 z-10 bg-background py-3 pr-3 shadow-[inset_0_-2px_0_var(--field-border)]" />
                     {m.cols.map((c) => (
-                      <th key={c.code} scope="col" className="px-2 py-3 text-left align-bottom text-base font-semibold">
+                      <th
+                        key={c.code}
+                        scope="col"
+                        className="sticky top-0 z-10 bg-background px-2 py-3 shadow-[inset_0_-2px_0_var(--field-border)] text-left align-bottom text-base font-semibold"
+                      >
                         {c.name}
                       </th>
                     ))}

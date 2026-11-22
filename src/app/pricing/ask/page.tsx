@@ -6,12 +6,12 @@ import { HeaderBar, headerLinkClass } from "@/components/logo";
 import { getUser } from "@/lib/auth";
 import { brand } from "@/lib/brand";
 import { getMyOrganization } from "@/lib/data";
-import { dollars, loadAccountHost, loadAccountPlan } from "@/lib/plan";
-import { loadPricingPage, passLabel, WEBSITE_KINDS, type PricingPage } from "@/lib/pricing";
+import { dollars, listWords, loadAccountHost, loadAccountPlan } from "@/lib/plan";
+import { kindNoun, loadPricingPage, passLabel, sortKinds, WEBSITE_KINDS, type PricingPage } from "@/lib/pricing";
 import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
 import { requestPricing } from "../../pricing-request-actions";
-import { CONTACT, LINK, usablePasses, yearly } from "../parts";
+import { BTN_OUTLINE, CONTACT, LINK, usablePasses, yearly } from "../parts";
 import { PreviewBanner } from "../pricing-view";
 import { askAccountHost } from "./actions";
 import { AskHostButton } from "./ask-host";
@@ -19,20 +19,20 @@ import { RequestForm, type Identity, type PlanChoice } from "./request-form";
 
 export const metadata: Metadata = { title: "Ask about a package", robots: { index: false, follow: true } };
 
-function Frame({ title, intro, banner, children }: { title: string; intro?: ReactNode; banner?: ReactNode; children: ReactNode }) {
+/** The page around it. `title` null: the request form shows its own heading (it changes with the choice, and once sent). */
+function Frame({ title, banner, back, children }: { title: string | null; banner?: ReactNode; back: string; children: ReactNode }) {
   return (
     <div className="flex flex-1 flex-col">
       <HeaderBar maxWidth="max-w-5xl">
-        <Link href="/pricing" className={headerLinkClass}>
-          <span aria-hidden>← </span>
+        <Link href={back} className={`${headerLinkClass} inline-flex min-h-11 items-center`}>
+          <span aria-hidden>←&nbsp;</span>
           Back to packages
         </Link>
       </HeaderBar>
       {banner}
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
-        <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">{title}</h1>
-        {intro && <div className="mt-2 max-w-2xl leading-7 text-muted">{intro}</div>}
-        <div className="mt-6">{children}</div>
+        {title && <h1 className="mb-6 text-3xl font-medium tracking-tight sm:text-4xl">{title}</h1>}
+        {children}
       </main>
     </div>
   );
@@ -62,14 +62,14 @@ function planChoices(page: PricingPage): PlanChoice[] {
  * "Ask about [package]" and "Get a [kind] pass" lead here (?plan=…&kinds=…). The Account Host, or someone without
  * an account, gets the request form; anyone else on a team gets "Ask your Account Host".
  */
-export default async function AskPage({ searchParams }: { searchParams: Promise<{ plan?: string; kinds?: string }> }) {
+export default async function AskPage({ searchParams }: { searchParams: Promise<{ plan?: string; kinds?: string; also?: string; start?: string }> }) {
   const supabase = await createClient();
   const load = await loadPricingPage(supabase);
   if (load.status === "hidden") notFound();
   if (load.status === "missing") missing();
   if (load.status === "error") {
     return (
-      <Frame title="We can't show prices right now">
+      <Frame title="We can't show prices right now" back="/pricing">
         <p className="max-w-2xl leading-7">
           Try again in a few minutes. Or write to us at{" "}
           <a href={CONTACT} className={`${LINK} [overflow-wrap:anywhere]`}>
@@ -87,6 +87,16 @@ export default async function AskPage({ searchParams }: { searchParams: Promise<
   const chosen = choices.find((c) => c.code === q.plan) ?? null;
   const known = new Set(WEBSITE_KINDS.map((k) => k.value));
   const kinds = (q.kinds ?? "").split(",").filter((k) => known.has(k));
+  // Back to the page with the same picks (UX F3).
+  const back = kinds.length ? `/pricing?kinds=${kinds.join(",")}` : "/pricing";
+  // More passes in the same cheaper choice: named in the message box, since the form asks about one at a time.
+  const also = (q.also ?? "")
+    .split(",")
+    .map((c) => choices.find((x) => x.code === c && x.group === "Passes" && x.code !== chosen?.code))
+    .filter((c): c is PlanChoice => Boolean(c));
+  const message = also.length
+    ? `I'd also like ${also.map((c) => `a ${c.name[0].toLowerCase()}${c.name.slice(1)}`).join(" and ")}, for one event${also.length > 1 ? " each" : ""}.`
+    : "";
 
   const user = await getUser();
   let identity: Identity | null = null;
@@ -103,21 +113,30 @@ export default async function AskPage({ searchParams }: { searchParams: Promise<
         const plan = await loadAccountPlan(supabase, org.id);
         const first = host.name.split(" ")[0] || host.name;
         // Asking for the package they're already on would be an empty ask: then it's about packages in general.
-        const wanted = chosen && chosen.code !== plan?.package ? chosen.name : null;
+        const wanted = chosen && chosen.code !== plan?.package ? chosen : null;
+        // What the account has now that the package asked for leaves out, said before anyone sends (consultant 5).
+        const wantedPkg = wanted?.group === "Packages" ? page.packages.find((p) => p.code === wanted.code) : null;
+        const lost = wantedPkg && plan ? sortKinds(plan.own_event_types.filter((t) => !wantedPkg.event_types.includes(t))) : [];
         return (
-          <Frame title="Ask your Account Host" banner={banner}>
+          <Frame title="Ask your Account Host" banner={banner} back={back}>
             <div className="max-w-2xl space-y-4 leading-7">
               <p>
                 {host.unknown || !host.email ? "Your Account Host" : `${host.name}, the Account Host for ${org.name},`} is the only one who can choose a package for the account.
                 {plan ? ` ${org.name} is on ${plan.package_name} now.` : ""}
               </p>
+              {lost.length > 0 && wantedPkg && plan && (
+                <p className="rounded-md border border-warning/40 bg-warning-soft px-4 py-3">
+                  {wantedPkg.name} doesn&apos;t include {listWords(lost.map(kindNoun))}, which {plan.package_name} has now. Published events stay live, but {org.name} couldn&apos;t
+                  publish new ones of {lost.length === 1 ? "that kind" : "those kinds"}.
+                </p>
+              )}
               {host.email ? (
                 <AskHostButton
                   action={askAccountHost}
-                  plan={wanted && chosen ? chosen.code : ""}
+                  plan={wanted ? wanted.code : ""}
                   first={first}
                   email={host.email}
-                  label={wanted ? `Ask ${first} to choose ${wanted}` : `Ask ${first} about packages`}
+                  label={wanted ? `Ask ${first} to choose ${wanted.name}` : `Ask ${first} about packages`}
                 />
               ) : (
                 <p>
@@ -128,8 +147,8 @@ export default async function AskPage({ searchParams }: { searchParams: Promise<
                   .
                 </p>
               )}
-              <p className="text-sm text-muted">
-                <Link href="/pricing" className={LINK}>
+              <p>
+                <Link href={back} className={BTN_OUTLINE}>
                   Back to packages
                 </Link>
               </p>
@@ -143,14 +162,9 @@ export default async function AskPage({ searchParams }: { searchParams: Promise<
     }
   }
 
-  const title = chosen ? (chosen.group === "Passes" ? `Get a ${chosen.name[0].toLowerCase()}${chosen.name.slice(1)}` : `Ask about ${chosen.name}`) : "Ask about a package";
   return (
-    <Frame
-      title={title}
-      banner={banner}
-      intro="You can't pay online yet. Tell us about your events, and a real person will reply within a day to set it up with you. Nothing is charged until you agree."
-    >
-      <RequestForm action={requestPricing} choices={choices} plan={chosen?.code ?? ""} kinds={kinds} identity={identity} />
+    <Frame title={null} banner={banner} back={back}>
+      <RequestForm action={requestPricing} choices={choices} plan={chosen?.code ?? ""} kinds={kinds} identity={identity} start={q.start === "1"} message={message} back={back} />
     </Frame>
   );
 }
