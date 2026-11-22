@@ -7062,9 +7062,15 @@ values ('70000000-0000-0000-0000-000000000001', 'Package PTA', 'package-pta', 'c
 insert into public.organization_members (organization_id, user_id, role)
 values ('70000000-0000-0000-0000-000000000001', '0000000b-0000-0000-0000-000000000001', 'owner');
 insert into public.platform_admins (user_id) values ('00000000-0000-0000-0000-000000000006');
--- Upgrade suggestions name only packages and passes shown on the website (20270211000000_pricing_page.sql):
--- show the ones on offer, as the owner does on the Packages page.
-update public.plan_tiers set show_on_website = true where code not in ('free', 'free_teacher');
+-- Upgrade suggestions name only packages and passes shown on the website (20270211000000_pricing_page.sql). Its
+-- first run shows every unretired paid package and every pass, so suggestions keep naming them, and leaves the
+-- page itself hidden.
+do $$ begin
+  assert not exists (select 1 from public.plan_tiers
+                      where show_on_website <> (code not in ('free', 'free_teacher') and retired_at is null)),
+         'pricing: the first run shows every unretired paid package and every pass, never Free or Free Teacher';
+  assert not (select pricing_page_live from public.site_settings), 'pricing: the first run leaves the pricing page hidden';
+end $$;
 do $$ begin
   assert (select package from public.organizations where id = '70000000-0000-0000-0000-000000000001') = 'event',
          'accounts start on Event Command';

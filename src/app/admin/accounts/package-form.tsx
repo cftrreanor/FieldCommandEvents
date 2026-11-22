@@ -7,6 +7,10 @@ import { SubmitButton } from "@/components/submit-button";
 import { Field, Input, Select } from "@/components/ui";
 import type { ActionState } from "@/lib/action-state";
 import { dollars, isFreePackage, PACKAGES, PASSES, RATES } from "@/lib/plan";
+import { passLabel, sortKinds } from "@/lib/pricing";
+
+// The passes in the website's order, named by kind of event as on the pricing page.
+const PASS_TYPES = sortKinds(PASSES.map((p) => p.type));
 
 type Action = (prev: ActionState, formData: FormData) => Promise<ActionState>;
 
@@ -47,17 +51,17 @@ export function PackageForm({ action, pkg, rate, packages }: { action: Action; p
 
 /** A one-time pass: one published event of a type the package doesn't include. List prices come from plan_tiers. */
 export function PassForm({ action, prices }: { action: Action; prices: Record<string, number> }) {
-  const [type, setType] = useState<string>(PASSES[0].type);
+  const [type, setType] = useState<string>(PASS_TYPES[0]);
   const listPrice = prices[type];
   return (
     <ActionForm action={action} className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Event pass">
           <Select name="type" value={type} onChange={(e) => setType(e.target.value)}>
-            {PASSES.map((p) => (
-              <option key={p.type} value={p.type}>
-                {p.label}
-                {prices[p.type] != null ? ` (${dollars(prices[p.type])})` : ""}
+            {PASS_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {passLabel(t)}
+                {prices[t] != null ? ` (${dollars(prices[t])})` : ""}
               </option>
             ))}
           </Select>

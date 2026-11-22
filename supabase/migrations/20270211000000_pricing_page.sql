@@ -5,6 +5,8 @@
 --   * plan_tiers gets the website fields: "Show on website" (packages and passes; new ones start hidden, retired
 --     packages never show), a "Best for" line, and at most one "Recommended" package.
 --   * site_settings (one row) holds the site-level switch: the pricing page stays hidden until an admin turns it on.
+--     On the first run only, every unretired paid package and every pass starts shown (upgrade suggestions keep
+--     naming them); the page stays hidden until the owner checks them and switches it on.
 --   * pricing_page(): the only public read of packages. Null unless the page is live (admins get it anyway, for the
 --     preview). Only shown packages and passes and their public fields: never monthly prices, retired or hidden
 --     rows, or anything about accounts.
@@ -47,7 +49,17 @@ create table if not exists public.site_settings (
   updated_at         timestamptz not null default now(),
   updated_by         uuid references auth.users (id) on delete set null
 );
-insert into public.site_settings (id) values (true) on conflict (id) do nothing;
+-- The first time this runs (only then: the settings row doesn't exist yet), show every unretired paid package
+-- and every pass, so in-app upgrade suggestions keep naming packages as before. The page itself stays hidden,
+-- so nothing becomes public; the owner adjusts the switches before going live. A re-run finds the row and
+-- leaves the owner's choices alone.
+with created as (
+  insert into public.site_settings (id) values (true) on conflict (id) do nothing returning id
+)
+update public.plan_tiers set show_on_website = true
+ where exists (select 1 from created)
+   and (kind = 'pass'
+        or (kind = 'package' and retired_at is null and code not in ('free', 'free_teacher') and cardinality(event_types) > 0));
 alter table public.site_settings enable row level security;
 revoke all on public.site_settings from public, anon, authenticated;
 grant select, insert, update on public.site_settings to service_role;

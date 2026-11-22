@@ -18,7 +18,8 @@ import { ClosureForm, NoteActionForm } from "../closure-form";
 import { PlanForm } from "../plan-form";
 import { PackageForm, PassForm, TeacherUpgradeForm } from "../package-form";
 import { loadTiers, packageChoices } from "@/lib/package-names";
-import { dollars, loadAccountPlan, packageLabel, passFor, rateLabel, usageLines } from "@/lib/plan";
+import { dollars, loadAccountPlan, packageLabel, rateLabel, usageLines } from "@/lib/plan";
+import { passLabel } from "@/lib/pricing";
 import { loadSponsorAdminSummary } from "@/lib/sponsors-data";
 
 export const metadata: Metadata = { title: "Account" };
@@ -359,7 +360,7 @@ export default async function AccountPage({ params }: PageProps<"/admin/accounts
                     return (
                       <li key={p.id} className="py-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium">{passFor(p.event_type)?.label ?? p.event_type}</span>
+                          <span className="font-medium">{passLabel(p.event_type)}</span>
                           <Tag tone={p.used_at ? "neutral" : expired ? "warning" : "success"}>{p.used_at ? "Used" : expired ? "Expired" : "Unused"}</Tag>
                           <span className="text-muted">{dollars(p.price_cents)}</span>
                         </div>

@@ -18,9 +18,11 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
   const user = await requirePlatformAdmin();
   const admin = createAdminClient();
   const today = utcToZonedDate(new Date().toISOString(), ADMIN_TZ);
-  const [{ count: newRequests }, { count: due }] = await Promise.all([
+  const [{ count: newRequests }, { count: due }, { count: pricingRequests }] = await Promise.all([
     admin.from("pilot_requests").select("id", { count: "exact", head: true }).eq("status", "new"),
     admin.from("admin_notes").select("id", { count: "exact", head: true }).is("done_at", null).lte("follow_up_on", today),
+    // Null (no count) before 20270211000000_pricing_page.sql runs.
+    admin.from("pricing_requests").select("id", { count: "exact", head: true }).is("handled_at", null),
   ]);
 
   // Grouped by what they're for: working with people and accounts, what the system says to them, and
@@ -32,6 +34,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
       items: [
         { href: "/admin/follow-ups", label: "Follow-ups", count: due ?? 0, alert: true },
         { href: "/admin/pipeline", label: "Pipeline", count: newRequests ?? 0, alert: true },
+        { href: "/admin/pricing-requests", label: "Pricing requests", count: pricingRequests ?? 0, alert: true },
         { href: "/admin/people", label: "People" },
         { href: "/admin/accounts", label: "Accounts" },
         { href: "/admin/packages", label: "Packages" },

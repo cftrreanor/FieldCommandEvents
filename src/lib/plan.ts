@@ -3,6 +3,8 @@
 // summary (account_plan) and says it in plain words.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+// pricing.ts imports this file too; passWords is only called inside functions, so the cycle is safe.
+import { passWords } from "./pricing.ts";
 import { formatDate, utcToZonedDate } from "./time.ts";
 
 export const PACKAGES = [
@@ -30,15 +32,10 @@ export const rateLabel = (code: string) => RATES.find((r) => r.value === code)?.
 
 /**
  * One-time passes: one published event of a type the package doesn't include. Prices aren't kept here: they're
- * in plan_tiers (the admin Packages page sets them), read with loadTiers() or pricing_page().
+ * in plan_tiers (the admin Packages page sets them), read with loadTiers() or pricing_page(). Names come from
+ * passLabel() in pricing.ts, as on the pricing page.
  */
-export const PASSES = [
-  { type: "school_visit", label: "School visitor day" },
-  { type: "volunteer", label: "Volunteers and sign-ups" },
-  { type: "fair", label: "School fair" },
-  { type: "group_event", label: "Group event" },
-  { type: "band_contest", label: "Band contest" },
-] as const;
+export const PASSES = [{ type: "school_visit" }, { type: "volunteer" }, { type: "fair" }, { type: "group_event" }, { type: "band_contest" }] as const;
 export const passFor = (type: string) => PASSES.find((p) => p.type === type);
 
 /** Each kind of event, in the words used in plan messages (event_type_words in the database). */
@@ -202,7 +199,7 @@ export function usageLines(plan: AccountPlan): string[] {
   lines.push(plan.max_team === null ? `Team: ${plan.team}` : `Team: ${plan.team} of ${plan.max_team}`);
   for (const t of sortTypes(Object.keys(plan.passes_unused))) {
     const n = plan.passes_unused[t];
-    if (n > 0) lines.push(`Unused ${passFor(t)?.label.toLowerCase() ?? typeWords(t)} pass${n === 1 ? "" : "es"}: ${n}`);
+    if (n > 0) lines.push(`Unused ${passWords(t)}${n === 1 ? "" : "es"}: ${n}`);
   }
   return lines;
 }

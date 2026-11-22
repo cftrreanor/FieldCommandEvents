@@ -6,33 +6,50 @@ import { NumberInput } from "@/components/number-input";
 import { Field, Input } from "@/components/ui";
 import { EVENT_TYPES } from "@/lib/event-types";
 import type { Tier } from "@/lib/package-names";
-import { dollars, PACKAGES } from "@/lib/plan";
+import { dollars, isFreePackage, PACKAGES } from "@/lib/plan";
+import { bestFor, passLabel, sortKinds } from "@/lib/pricing";
 import {
   createPackage,
   packageImpact,
   savePackage,
   savePackageDetails,
+  savePackageWebsite,
   savePassPrice,
   setPackageRetired,
+  setPassShown,
   type Impact,
   type PackageDetails,
   type PackageValues,
 } from "./actions";
+import { PricingPageSwitch } from "./pricing-switch";
 
 type Setting = "yes" | "one" | "no";
 type Editing =
   | { kind: "type"; code: string; type: string }
-  | { kind: "event_staff" | "volunteer_history"; code: string }
+  | { kind: "event_staff" | "volunteer_history" | "weekly_hours"; code: string }
+  | { kind: "best_for"; code: string }
   | { kind: "team"; code: string }
   | { kind: "details"; code: string }
   | { kind: "pass"; code: string };
 
-const SETTING_LABEL: Record<Setting, string> = { yes: "Included", one: "One at a time", no: "Not included" };
+const SETTING_LABEL: Record<Setting, string> = {
+  yes: "Included",
+  one: "One at a time",
+  no: "Not included",
+};
+const YES_NO_LABEL = {
+  event_staff: "Volunteer Leads and Coordinators",
+  volunteer_history: "Volunteer tracking",
+  weekly_hours: "Weekly hours",
+} as const;
+// "One at a time" is neutral, as on the pricing page: a limit, not a warning.
 const cellClass: Record<Setting, string> = {
   yes: "bg-success-soft text-success",
-  one: "bg-warning-soft text-warning",
+  one: "border border-field-border text-foreground",
   no: "border border-border text-muted",
 };
+type Undo = () => Promise<{ ok: true } | { error: string }>;
+type Toast = { message: string; undo?: Undo; failed?: boolean };
 
 const valuesOf = (p: Tier): PackageValues => ({
   event_types: p.event_types,
@@ -40,9 +57,9 @@ const valuesOf = (p: Tier): PackageValues => ({
   max_team: p.max_team,
   event_staff: p.event_staff,
   volunteer_history: p.volunteer_history,
+  weekly_hours: p.weekly_hours,
 });
-const typeSetting = (p: Tier, type: string): Setting =>
-  p.one_at_a_time.includes(type) ? "one" : p.event_types.includes(type) ? "yes" : "no";
+const typeSetting = (p: Tier, type: string): Setting => (p.one_at_a_time.includes(type) ? "one" : p.event_types.includes(type) ? "yes" : "no");
 const withType = (v: PackageValues, type: string, s: Setting): PackageValues => ({
   ...v,
   event_types: s === "no" ? v.event_types.filter((t) => t !== type) : [...new Set([...v.event_types, type])],
@@ -57,8 +74,35 @@ const BUILT_IN: string[] = PACKAGES.map((p) => p.value);
 const CANT_RETIRE = ["free_teacher", "free", "event"];
 const tagClass = "mx-auto mt-1 block w-fit rounded-sm px-1.5 py-px text-xs font-semibold text-foreground ring-1";
 
+/** A package's website settings as stored, to save one change and undo it. */
+const websiteOf = (p: Tier) => ({
+  show: !!p.show_on_website,
+  bestFor: p.best_for ?? null,
+  recommended: !!p.recommended,
+});
+
+/** An on/off switch with its state in words. */
+function Switch({ on, label, busy, onChange }: { on: boolean; label: string; busy: boolean; onChange: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      disabled={busy}
+      onClick={onChange}
+      className="inline-flex min-h-11 items-center gap-2 rounded-full px-1 text-sm font-semibold disabled:cursor-wait"
+    >
+      <span className={`relative inline-flex h-6 w-10 shrink-0 rounded-full ring-1 ${on ? "bg-brand ring-brand" : "bg-background ring-field-border"}`}>
+        <span className={`absolute top-0.5 size-5 rounded-full shadow transition-[left] ${on ? "left-[1.125rem] bg-white" : "left-0.5 bg-field-border"}`} />
+      </span>
+      {busy ? "Saving…" : on ? "Shown" : "Hidden"}
+    </button>
+  );
+}
+
 /** The packages as a grid: a column each, a row for each thing they include. Selecting a box opens its editor. */
-export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; passes: Tier[]; counts: Record<string, number> }) {
+export function PackagesGrid({ packages, passes, counts, live }: { packages: Tier[]; passes: Tier[]; counts: Record<string, number>; live: boolean }) {
   const [editing, setEditingState] = useState<Editing | null>(null);
   const [creating, setCreating] = useState(false);
   // The box that opened the editor, to put focus back on when it closes.
@@ -68,18 +112,82 @@ export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; p
     setEditingState(e);
     if (!e) requestAnimationFrame(() => opener?.focus());
   };
-  const [saved, setSaved] = useState<{ message: string; undo?: () => Promise<{ ok: true } | { error: string }> } | null>(null);
+  const [saved, setSaved] = useState<Toast | null>(null);
   const router = useRouter();
   const [undoing, startUndo] = useTransition();
+  // The website switch being saved (a package or pass code).
+  const [busy, setBusy] = useState<string | null>(null);
   const pkg = (code: string) => packages.find((p) => p.code === code)!;
+  const recommended = packages.find((p) => p.recommended && !p.retired_at);
+  const orderedPasses = [...passes].sort((a, b) => {
+    const order = sortKinds(passes.map((p) => p.event_types[0] ?? ""));
+    return order.indexOf(a.event_types[0] ?? "") - order.indexOf(b.event_types[0] ?? "") || a.sort - b.sort;
+  });
+  const hiddenNote = live ? "" : " The pricing page is hidden, so visitors don't see it yet.";
 
-  const cell = (label: string, cls: string, onClick: () => void, aria: string) => (
+  /** Save a website switch right away, with Undo in the message. */
+  const saveSwitch = async (code: string, run: () => Promise<{ ok: true } | { error: string }>, message: string, undo: Undo) => {
+    setBusy(code);
+    try {
+      const r = await run();
+      setSaved("error" in r ? { message: `Couldn't save: ${r.error}`, failed: true } : { message, undo });
+    } catch {
+      setSaved({
+        message: "Couldn't save. Check your connection and try again.",
+        failed: true,
+      });
+    } finally {
+      setBusy(null);
+      router.refresh();
+    }
+  };
+  const toggleShow = (p: Tier) => {
+    const was = websiteOf(p);
+    const show = !was.show;
+    const message = show
+      ? `${p.name} is shown on the website.${p.price_year_cents == null ? " No price set. The page will say Ask us." : ""}${hiddenNote}`
+      : `${p.name} is hidden from the website.${was.recommended ? " It's no longer Recommended." : ""}`;
+    return saveSwitch(
+      p.code,
+      () => savePackageWebsite(p.code, { ...was, show, recommended: false }, ""),
+      message,
+      () => savePackageWebsite(p.code, was, "Undo"),
+    );
+  };
+  const setRecommended = (p: Tier, on: boolean) => {
+    const was = websiteOf(p);
+    const from = on && recommended && recommended.code !== p.code ? recommended : null;
+    const message = on
+      ? `${p.name} is Recommended${from ? ` (moved from ${from.name})` : ""}.${hiddenNote}`
+      : `${p.name} is no longer Recommended. No package is.`;
+    const undo: Undo = from
+      ? () => savePackageWebsite(from.code, { ...websiteOf(from), recommended: true }, "Undo")
+      : () => savePackageWebsite(p.code, was, "Undo");
+    return saveSwitch(p.code, () => savePackageWebsite(p.code, { ...was, recommended: on }, ""), message, undo);
+  };
+  const togglePass = (p: Tier) => {
+    const show = !p.show_on_website;
+    const name = passLabel(p.event_types[0] ?? "");
+    return saveSwitch(
+      p.code,
+      () => setPassShown(p.code, show, ""),
+      show ? `${name} is shown on the website.${hiddenNote}` : `${name} is hidden from the website.`,
+      () => setPassShown(p.code, !show, "Undo"),
+    );
+  };
+
+  const cell = (label: string, cls: string, onClick: () => void, aria: string, one = false) => (
     <button
       type="button"
       onClick={onClick}
       aria-label={aria}
-      className={`inline-flex min-h-9 items-center justify-center rounded-full px-3 text-sm font-semibold whitespace-nowrap hover:ring-2 hover:ring-brand/40 ${cls}`}
+      className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-full px-3 text-sm font-semibold whitespace-nowrap hover:ring-2 hover:ring-brand/40 ${cls}`}
     >
+      {one && (
+        <span aria-hidden className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-bold ring-1 ring-brand/30">
+          1
+        </span>
+      )}
       {label}
     </button>
   );
@@ -90,21 +198,27 @@ export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; p
       </td>
     </tr>
   );
-  const row = (title: string, render: (p: Tier) => React.ReactNode) => (
-    <tr className="border-b border-border last:border-0">
+  const row = (title: string, render: (p: Tier) => React.ReactNode, top = false) => (
+    <tr key={title} className="border-b border-border last:border-0">
       <th scope="row" className="sticky left-0 z-10 bg-surface px-3 py-2 text-left text-sm font-semibold">
         {title}
       </th>
       {packages.map((p) => (
-        <td key={p.code} className="px-2 py-2 text-center">
+        <td key={p.code} className={`px-2 py-2 text-center ${top ? "align-top" : ""}`}>
           {render(p)}
         </td>
       ))}
     </tr>
   );
+  const note = (text: string) => <span className="mx-auto block max-w-40 text-sm">{text}</span>;
+  const yesNo = (p: Tier, kind: "event_staff" | "volunteer_history" | "weekly_hours", label: string) => {
+    const s: Setting = p[kind] ? "yes" : "no";
+    return cell(SETTING_LABEL[s], cellClass[s], () => setEditing({ kind, code: p.code }), `${label} on ${p.name}: ${SETTING_LABEL[s]}`);
+  };
 
   return (
     <div className="space-y-4">
+      <PricingPageSwitch packages={packages} passes={passes} live={live} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted lg:hidden">Scroll sideways to see every package →</p>
         <button
@@ -116,7 +230,7 @@ export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; p
         </button>
       </div>
       <div className="overflow-x-auto rounded-md border border-border bg-surface">
-        <table className="w-full min-w-[820px] border-collapse text-sm">
+        <table className="w-full min-w-[980px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-border bg-background">
               <th scope="col" className="sticky left-0 z-10 bg-background px-3 py-2 text-left font-semibold">
@@ -133,7 +247,8 @@ export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; p
                     {p.name}
                   </button>
                   <span className="block text-xs font-normal text-muted">
-                    {counts[p.code] ?? 0} account{(counts[p.code] ?? 0) === 1 ? "" : "s"}
+                    {counts[p.code] ?? 0} account
+                    {(counts[p.code] ?? 0) === 1 ? "" : "s"}
                     {/* "New" until its first account joins; "Retired" while it isn't offered. */}
                     {p.retired_at ? (
                       <span className={`${tagClass} bg-warning-soft ring-warning/50`}>Retired</span>
@@ -146,9 +261,103 @@ export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; p
             </tr>
           </thead>
           <tbody>
+            {sectionRow("On the website")}
+            {row(
+              "Show on website",
+              (p) =>
+                isFreePackage(p.code) ? (
+                  p.retired_at ? (
+                    note("Retired: never shown")
+                  ) : (
+                    note("Always shown as one line")
+                  )
+                ) : p.retired_at ? (
+                  note("Retired: never shown")
+                ) : (
+                  <>
+                    <Switch on={!!p.show_on_website} label={`Show ${p.name} on the website`} busy={busy === p.code} onChange={() => toggleShow(p)} />
+                    {p.show_on_website && p.price_year_cents == null && (
+                      <span className="mx-auto block max-w-40 text-xs">No price set. The page will say Ask us</span>
+                    )}
+                  </>
+                ),
+              true,
+            )}
+            {row(
+              "Best for",
+              (p) => {
+                if (isFreePackage(p.code)) return note("Not used: shown as one line");
+                const bf = bestFor(p);
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setEditing({ kind: "best_for", code: p.code })}
+                    aria-label={`Best for, ${p.name}: ${bf.from === "admin" ? bf.text : `blank. The page says: ${bf.text}`}. Change`}
+                    className="mx-auto block w-full max-w-44 rounded-sm border border-border px-2 py-1.5 text-left text-xs leading-5 hover:ring-2 hover:ring-brand/40"
+                  >
+                    {bf.from === "admin" ? (
+                      <span>{bf.text}</span>
+                    ) : (
+                      <>
+                        <span className="block font-semibold">Blank. The page says:</span>
+                        <span className="italic">{bf.text}</span>
+                      </>
+                    )}
+                  </button>
+                );
+              },
+              true,
+            )}
+            {row(
+              "Recommended",
+              (p) =>
+                isFreePackage(p.code) ? (
+                  note("Not used")
+                ) : p.recommended && !p.retired_at ? (
+                  <span className="flex flex-col items-center gap-1">
+                    <span className="inline-flex min-h-9 items-center rounded-full bg-brand-soft px-3 text-sm font-semibold ring-1 ring-brand/30">
+                      Recommended
+                    </span>
+                    <button
+                      type="button"
+                      disabled={busy === p.code}
+                      onClick={() => setRecommended(p, false)}
+                      className="inline-flex min-h-11 items-center text-sm text-brand underline underline-offset-4 disabled:cursor-wait"
+                    >
+                      {busy === p.code ? "Saving…" : "Remove Recommended"}
+                    </button>
+                  </span>
+                ) : p.show_on_website && !p.retired_at ? (
+                  <button
+                    type="button"
+                    disabled={busy === p.code}
+                    onClick={() => setRecommended(p, true)}
+                    className="mx-auto inline-flex min-h-11 max-w-40 items-center text-sm text-brand underline underline-offset-4 disabled:cursor-wait"
+                  >
+                    {busy === p.code ? "Saving…" : recommended ? `Move Recommended here (from ${recommended.name})` : "Recommend"}
+                  </button>
+                ) : (
+                  note("Show it on the website first")
+                ),
+              true,
+            )}
             {sectionRow("Price")}
-            {row("Monthly", (p) => cell(money(p.price_month_cents), priceClass(p.price_month_cents), () => setEditing({ kind: "details", code: p.code }), `${p.name} monthly price: ${money(p.price_month_cents)}. Change`))}
-            {row("Yearly", (p) => cell(money(p.price_year_cents), priceClass(p.price_year_cents), () => setEditing({ kind: "details", code: p.code }), `${p.name} yearly price: ${money(p.price_year_cents)}. Change`))}
+            {row("Monthly", (p) =>
+              cell(
+                money(p.price_month_cents),
+                priceClass(p.price_month_cents),
+                () => setEditing({ kind: "details", code: p.code }),
+                `${p.name} monthly price: ${money(p.price_month_cents)}. Change`,
+              ),
+            )}
+            {row("Yearly", (p) =>
+              cell(
+                money(p.price_year_cents),
+                priceClass(p.price_year_cents),
+                () => setEditing({ kind: "details", code: p.code }),
+                `${p.name} yearly price: ${money(p.price_year_cents)}. Change`,
+              ),
+            )}
             {row("Teacher rate", (p) =>
               p.teacher_rate ? (
                 cell(
@@ -158,34 +367,41 @@ export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; p
                   `${p.name} teacher prices: ${money(p.teacher_month_cents)} a month, ${money(p.teacher_year_cents)} a year. Change`,
                 )
               ) : (
-                <span className="text-sm text-muted">No teacher price</span>
+                <span className="text-sm text-muted">No teacher rate</span>
               ),
             )}
             {sectionRow("Event types")}
             {EVENT_TYPES.map((t) =>
               row(t.label, (p) => {
                 const s = typeSetting(p, t.value);
-                return cell(SETTING_LABEL[s], cellClass[s], () => setEditing({ kind: "type", code: p.code, type: t.value }), `${t.label} on ${p.name}: ${SETTING_LABEL[s]}`);
+                return cell(
+                  SETTING_LABEL[s],
+                  cellClass[s],
+                  () => setEditing({ kind: "type", code: p.code, type: t.value }),
+                  `${t.label} on ${p.name}: ${SETTING_LABEL[s]}`,
+                  s === "one",
+                );
               }),
             )}
             {sectionRow("Volunteers and team")}
-            {row("Volunteer tracking", (p) => {
-              const s: Setting = p.volunteer_history ? "yes" : "no";
-              return cell(SETTING_LABEL[s], cellClass[s], () => setEditing({ kind: "volunteer_history", code: p.code }), `Volunteer tracking on ${p.name}: ${SETTING_LABEL[s]}`);
-            })}
-            {row("Volunteer Leads and Coordinators", (p) => {
-              const s: Setting = p.event_staff ? "yes" : "no";
-              return cell(SETTING_LABEL[s], cellClass[s], () => setEditing({ kind: "event_staff", code: p.code }), `Volunteer Leads and Coordinators on ${p.name}: ${SETTING_LABEL[s]}`);
-            })}
+            {row("Volunteer tracking", (p) => yesNo(p, "volunteer_history", "Volunteer tracking"))}
+            {row("Volunteer Leads and Coordinators", (p) => yesNo(p, "event_staff", "Volunteer Leads and Coordinators"))}
             {row("Team spots", (p) =>
-              cell(p.max_team == null ? "Unlimited" : String(p.max_team), "border border-border", () => setEditing({ kind: "team", code: p.code }), `Team spots on ${p.name}: ${p.max_team ?? "unlimited"}`),
+              cell(
+                p.max_team == null ? "Unlimited" : String(p.max_team),
+                "border border-border",
+                () => setEditing({ kind: "team", code: p.code }),
+                `Team spots on ${p.name}: ${p.max_team ?? "unlimited"}`,
+              ),
             )}
+            {row("Weekly hours", (p) => yesNo(p, "weekly_hours", "Weekly hours"))}
           </tbody>
         </table>
       </div>
-      <p className="text-sm text-muted">
-        Nothing anyone already has is taken away: published events stay live and nobody is removed from a team. A change only stops new
-        publishing or new invitations. These prices aren&apos;t charged yet; they&apos;re for reference. Every change is in{" "}
+      <p className="max-w-4xl text-sm text-muted">
+        New packages start hidden from the website. Retired packages never show. Only one package can be recommended. While the pricing page is live, a saved
+        change shows there within a minute. Nothing anyone already has is taken away: published events stay live and nobody is removed from a team. A change
+        only stops new publishing or new invitations. Nobody is charged from here: you apply packages and send invoices yourself. Every change is in{" "}
         <a href="/admin/activity" className="font-semibold text-brand underline underline-offset-4">
           Activity
         </a>
@@ -195,24 +411,48 @@ export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; p
       <section className="max-w-xl rounded-md border border-border bg-surface">
         <div className="border-b border-border px-3 py-2">
           <h2 className="text-xs font-semibold tracking-wide text-muted uppercase">Event passes</h2>
-          <p className="text-sm text-muted">One event of a type the package doesn&apos;t include.</p>
+          <p className="text-sm text-muted">One event of a kind the package doesn&apos;t include.</p>
         </div>
         <ul className="divide-y divide-border">
-          {passes.map((p) => (
-            <li key={p.code} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-              <span className="font-semibold">{p.name}</span>
-              {cell(money(p.price_cents), priceClass(p.price_cents), () => setEditing({ kind: "pass", code: p.code }), `${p.name} price: ${money(p.price_cents)}. Change`)}
-            </li>
-          ))}
+          {orderedPasses.map((p) => {
+            const name = passLabel(p.event_types[0] ?? "");
+            return (
+              <li key={p.code} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                <span className="min-w-0 flex-1 basis-48 font-semibold">{name}</span>
+                <span className="flex items-center gap-3">
+                  <Switch
+                    on={!!p.show_on_website}
+                    label={`Show the ${name.toLowerCase()} on the website`}
+                    busy={busy === p.code}
+                    onChange={() => togglePass(p)}
+                  />
+                  {cell(
+                    money(p.price_cents),
+                    priceClass(p.price_cents),
+                    () => setEditing({ kind: "pass", code: p.code }),
+                    `${name} price: ${money(p.price_cents)}. Change`,
+                  )}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       </section>
 
       {/* Saved, with Undo: pinned to the bottom of the screen, so it shows wherever the change was made. */}
       <div aria-live="polite" className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 print:hidden">
         {saved && (
-          <div className="flex flex-wrap items-center gap-3 rounded-md border border-success/40 bg-surface px-4 py-3 text-sm shadow-elevated">
+          <div
+            className={`flex max-w-2xl flex-wrap items-center gap-3 rounded-md border bg-surface px-4 py-3 text-sm shadow-elevated ${saved.failed ? "border-danger/50" : "border-success/40"}`}
+          >
             <span>
-              <span className="font-semibold text-success">✓ Saved.</span> {saved.message}
+              {saved.failed ? (
+                <span className="font-semibold text-danger">{saved.message}</span>
+              ) : (
+                <>
+                  <span className="font-semibold text-success">✓ Saved.</span> {saved.message}
+                </>
+              )}
             </span>
             {saved.undo && (
               <button
@@ -221,16 +461,16 @@ export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; p
                 onClick={() =>
                   startUndo(async () => {
                     const r = await saved.undo!();
-                    setSaved("error" in r ? { message: `Couldn't undo: ${r.error}` } : { message: "Put back as it was." });
+                    setSaved("error" in r ? { message: `Couldn't undo: ${r.error}`, failed: true } : { message: "Put back as it was." });
                     router.refresh();
                   })
                 }
-                className="inline-flex min-h-9 items-center font-semibold text-brand underline underline-offset-4"
+                className="inline-flex min-h-11 items-center font-semibold text-brand underline underline-offset-4"
               >
                 {undoing ? "Undoing…" : "Undo"}
               </button>
             )}
-            <button type="button" onClick={() => setSaved(null)} className="inline-flex min-h-9 items-center text-muted underline underline-offset-4">
+            <button type="button" onClick={() => setSaved(null)} className="inline-flex min-h-11 items-center text-muted underline underline-offset-4">
               Close
             </button>
           </div>
@@ -253,6 +493,7 @@ export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; p
         <Editor
           key={JSON.stringify(editing)}
           editing={editing}
+          live={live}
           pkg={editing.kind === "pass" ? null : pkg(editing.code)}
           pass={editing.kind === "pass" ? passes.find((p) => p.code === editing.code)! : null}
           onClose={() => setEditing(null)}
@@ -270,22 +511,25 @@ export function PackagesGrid({ packages, passes, counts }: { packages: Tier[]; p
 /** The editor for one box, in a window: the choice, who it affects, a note, and Save. */
 function Editor({
   editing,
+  live,
   pkg,
   pass,
   onClose,
   onSaved,
 }: {
   editing: Editing;
+  live: boolean;
   pkg: Tier | null;
   pass: Tier | null;
   onClose: () => void;
-  onSaved: (message: string, undo?: () => Promise<{ ok: true } | { error: string }>) => void;
+  onSaved: (message: string, undo?: Undo) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
   const [note, setNote] = useState("");
+  const yesNoKind = editing.kind === "event_staff" || editing.kind === "volunteer_history" || editing.kind === "weekly_hours";
   const [error, setError] = useState<string | null>(null);
   const [saving, startSave] = useTransition();
   // Who the current choice affects: null while checking; "failed" if the check didn't come back.
@@ -293,11 +537,11 @@ function Editor({
   const [checkKey, setCheckKey] = useState(0);
 
   // The current setting, and the one being picked.
-  const typeLabel = editing.kind === "type" ? EVENT_TYPES.find((t) => t.value === editing.type)?.label ?? editing.type : "";
+  const typeLabel = editing.kind === "type" ? (EVENT_TYPES.find((t) => t.value === editing.type)?.label ?? editing.type) : "";
   const now: Setting | null =
     pkg && editing.kind === "type"
       ? typeSetting(pkg, editing.type)
-      : pkg && (editing.kind === "event_staff" || editing.kind === "volunteer_history")
+      : pkg && (editing.kind === "event_staff" || editing.kind === "volunteer_history" || editing.kind === "weekly_hours")
         ? pkg[editing.kind]
           ? "yes"
           : "no"
@@ -312,11 +556,13 @@ function Editor({
     teacher_year: toDollars(pkg?.teacher_year_cents),
   });
   const [price, setPrice] = useState(toDollars(pass?.price_cents));
+  const [bestForText, setBestForText] = useState(pkg?.best_for ?? "");
+  const typedBestFor = bestForText.trim().replace(/\s+/g, " ");
 
   // Who the change would affect, as the choice changes.
   const row = editing.kind === "type" ? editing.type : editing.kind === "team" ? "max_team" : editing.kind;
   const teamNumber = team.trim() === "" ? null : Number(team);
-  const needsCheck = editing.kind !== "details" && editing.kind !== "pass";
+  const needsCheck = editing.kind !== "details" && editing.kind !== "pass" && editing.kind !== "best_for";
   useEffect(() => {
     if (!pkg || !needsCheck) return;
     let live = true;
@@ -343,7 +589,11 @@ function Editor({
         ? "Give the package a name."
         : editing.kind === "pass" && price.trim() === ""
           ? "Enter a price, or 0."
-          : null;
+          : editing.kind === "best_for" && typedBestFor.length === 1
+            ? "Use 2 or more characters, or leave it blank."
+            : editing.kind === "best_for" && /[.!]$/.test(typedBestFor)
+              ? "Leave off the period or exclamation point at the end."
+              : null;
   const changed =
     editing.kind === "team"
       ? teamNumber !== pkg?.max_team && (teamNumber === null || teamNumber >= 1)
@@ -355,8 +605,12 @@ function Editor({
           details.teacher_year !== toDollars(pkg?.teacher_year_cents)
         : editing.kind === "pass"
           ? price !== toDollars(pass?.price_cents)
-          : choice !== now;
+          : editing.kind === "best_for"
+            ? typedBestFor !== (pkg?.best_for ?? "")
+            : choice !== now;
   const checking = needsCheck && changed && impact === null;
+  // Shown on the live pricing page (Free and Free Teacher are always lines on it).
+  const onPage = live && (pass ? !!pass.show_on_website : !!pkg && !pkg.retired_at && (!!pkg.show_on_website || isFreePackage(pkg.code)));
 
   const save = () =>
     startSave(async () => {
@@ -368,6 +622,15 @@ function Editor({
         return onSaved(`${pass.name} is now ${dollars(Number(price) * 100)}.`, () => savePassPrice(pass.code, Math.round(was / 100), "Undo"));
       }
       if (!pkg) return;
+      if (editing.kind === "best_for") {
+        const was = websiteOf(pkg);
+        const r = await savePackageWebsite(pkg.code, { ...was, bestFor: typedBestFor || null }, note);
+        if ("error" in r) return setError(r.error);
+        return onSaved(
+          typedBestFor ? `${pkg.name}'s "Best for" line is saved.` : `${pkg.name}'s "Best for" line is blank, so the page writes one from what it includes.`,
+          () => savePackageWebsite(pkg.code, was, "Undo"),
+        );
+      }
       if (editing.kind === "details") {
         const num = (v: string) => (v.trim() === "" ? null : Number(v));
         const d: PackageDetails = {
@@ -394,9 +657,9 @@ function Editor({
       if (editing.kind === "type" && choice) {
         next = withType(before, editing.type, choice);
         message = `${typeLabel}: ${SETTING_LABEL[choice].toLowerCase()} on ${pkg.name}.`;
-      } else if ((editing.kind === "event_staff" || editing.kind === "volunteer_history") && choice) {
+      } else if (yesNoKind && choice) {
         next = { ...before, [editing.kind]: choice === "yes" };
-        message = `${editing.kind === "event_staff" ? "Volunteer Leads and Coordinators" : "Volunteer tracking"}: ${SETTING_LABEL[choice].toLowerCase()} on ${pkg.name}.`;
+        message = `${YES_NO_LABEL[editing.kind as keyof typeof YES_NO_LABEL]}: ${SETTING_LABEL[choice].toLowerCase()} on ${pkg.name}.`;
       } else if (editing.kind === "team") {
         next = { ...before, max_team: teamNumber };
         message = `${pkg.name} now has ${teamNumber == null ? "unlimited" : teamNumber} team spots.`;
@@ -413,24 +676,42 @@ function Editor({
         ? `Volunteer Leads and Coordinators on ${pkg?.name}`
         : editing.kind === "volunteer_history"
           ? `Volunteer tracking on ${pkg?.name}`
-          : editing.kind === "team"
-            ? `Team spots on ${pkg?.name}`
-            : editing.kind === "details"
-              ? pkg && !CANT_RETIRE.includes(pkg.code)
-                ? `${pkg.name}: name, prices, and retiring`
-                : `${pkg?.name}: name and prices`
-              : `${pass?.name}: price`;
+          : editing.kind === "weekly_hours"
+            ? `Weekly hours on ${pkg?.name}`
+            : editing.kind === "best_for"
+              ? `Best for: ${pkg?.name}`
+              : editing.kind === "team"
+                ? `Team spots on ${pkg?.name}`
+                : editing.kind === "details"
+                  ? pkg && !CANT_RETIRE.includes(pkg.code)
+                    ? `${pkg.name}: name, prices, and retiring`
+                    : `${pkg?.name}: name and prices`
+                  : `${pass?.name}: price`;
   const options: { value: Setting; hint: string }[] =
     editing.kind === "type"
       ? [
           { value: "yes", hint: "Publish as many as they like" },
           { value: "one", hint: "One published at a time; more can be drafts" },
-          { value: "no", hint: "They can still try it in a draft, or buy a pass" },
+          {
+            value: "no",
+            hint: "They can still try it in a draft, or buy a pass",
+          },
         ]
-      : [
-          { value: "yes", hint: "" },
-          { value: "no", hint: "" },
-        ];
+      : editing.kind === "weekly_hours"
+        ? [
+            {
+              value: "yes",
+              hint: "Conferences and meetings can repeat every week, like office hours",
+            },
+            {
+              value: "no",
+              hint: "Conferences and meetings are on set days only",
+            },
+          ]
+        : [
+            { value: "yes", hint: "" },
+            { value: "no", hint: "" },
+          ];
 
   const affectedNote = () => {
     if (!pkg || !needsCheck) return null;
@@ -447,7 +728,8 @@ function Editor({
     const n = impact.accounts;
     const accounts = `${n} account${n === 1 ? " is" : "s are"} on ${pkg.name}.`;
     if (!impact.affected.length) {
-      if (choice && choice !== "no" && choice !== now && editing.kind !== "team") return <p className="mt-3 text-sm">{accounts} The change applies to them as soon as you save.</p>;
+      if (choice && choice !== "no" && choice !== now && editing.kind !== "team")
+        return <p className="mt-3 text-sm">{accounts} The change applies to them as soon as you save.</p>;
       return <p className="mt-3 text-sm">{accounts}</p>;
     }
     const what =
@@ -455,7 +737,9 @@ function Editor({
         ? `would be over ${teamNumber}. Nobody is removed; they can't invite anyone new until they're under it.`
         : editing.kind === "event_staff"
           ? "have Volunteer Leads or Coordinators on upcoming events. They stay; these accounts can't invite more."
-          : `have a published ${typeLabel.toLowerCase()}. Those stay live and editable; ${choice === "one" ? "they can't publish another while one is up" : "these accounts can't publish another until they upgrade or buy a pass"}.`;
+          : editing.kind === "weekly_hours"
+            ? "have published conferences or meetings on weekly hours. Those stay live and keep their hours; these accounts can't publish another on weekly hours."
+            : `have a published ${typeLabel.toLowerCase()}. Those stay live and editable; ${choice === "one" ? "they can't publish another while one is up" : "these accounts can't publish another until they upgrade or buy a pass"}.`;
     return (
       <div className="mt-3 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm">
         <p className="font-semibold">
@@ -485,7 +769,7 @@ function Editor({
         {title}
       </h2>
 
-      {(editing.kind === "type" || editing.kind === "event_staff" || editing.kind === "volunteer_history") && (
+      {(editing.kind === "type" || yesNoKind) && (
         <fieldset className="mt-3 space-y-2">
           <legend className="sr-only">{title}</legend>
           {options.map((o) => (
@@ -493,7 +777,13 @@ function Editor({
               key={o.value}
               className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 ${choice === o.value ? "border-brand bg-brand-soft" : "border-border"}`}
             >
-              <input type="radio" name="setting" checked={choice === o.value} onChange={() => setChoice(o.value)} className="mt-1 size-4 accent-[var(--brand)]" />
+              <input
+                type="radio"
+                name="setting"
+                checked={choice === o.value}
+                onChange={() => setChoice(o.value)}
+                className="mt-1 size-4 accent-[var(--brand)]"
+              />
               <span className="text-sm">
                 <span className="font-semibold">{SETTING_LABEL[o.value]}</span>
                 {o.value === now && <span className="text-muted"> (now)</span>}
@@ -537,6 +827,26 @@ function Editor({
         </div>
       )}
 
+      {editing.kind === "best_for" && pkg && (
+        <div className="mt-3 space-y-3">
+          <Field
+            label="Who it's for, in a few words (optional)"
+            hint={
+              <>
+                Name the people and what they run, like <i>PTOs and booster clubs that run volunteer events and fairs</i>. No period, no exclamation points, and
+                no &ldquo;most popular&rdquo;. 2 to 120 characters
+              </>
+            }
+          >
+            <Input value={bestForText} maxLength={120} onChange={(e) => setBestForText(e.target.value)} autoFocus />
+          </Field>
+          <p className="rounded-md bg-background p-3 text-sm">
+            <span className="font-semibold">{typedBestFor ? "The page will say: " : "Left blank, the page says: "}</span>
+            {typedBestFor || bestFor({ ...pkg, best_for: null }).text}
+          </p>
+        </div>
+      )}
+
       {editing.kind === "pass" && pass && (
         <Field label="Price ($)" hint={`Now ${money(pass.price_cents)}. Passes already added keep the price they were added at.`} className="mt-3 max-w-xs">
           <NumberInput value={price} onChange={(e) => setPrice(e.target.value)} />
@@ -544,6 +854,8 @@ function Editor({
       )}
 
       <div aria-live="polite">{affectedNote()}</div>
+
+      {onPage && <p className="mt-3 text-sm font-semibold">This changes the public pricing page now.</p>}
 
       <Field label="Note for the activity log (optional)" className="mt-3">
         <Input value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} />
@@ -579,15 +891,7 @@ function Editor({
 }
 
 /** Retire a package, or bring it back: at the bottom of its name-and-prices window. */
-function RetireSection({
-  pkg,
-  note,
-  onSaved,
-}: {
-  pkg: Tier;
-  note: string;
-  onSaved: (message: string, undo?: () => Promise<{ ok: true } | { error: string }>) => void;
-}) {
+function RetireSection({ pkg, note, onSaved }: { pkg: Tier; note: string; onSaved: (message: string, undo?: Undo) => void }) {
   const [busy, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const retired = !!pkg.retired_at;
@@ -596,9 +900,8 @@ function RetireSection({
       setError(null);
       const r = await setPackageRetired(pkg.code, !retired, note);
       if ("error" in r) return setError(r.error);
-      onSaved(
-        retired ? `${pkg.name} can be picked again.` : `${pkg.name} is retired. Accounts on it keep it.`,
-        () => setPackageRetired(pkg.code, retired, "Undo"),
+      onSaved(retired ? `${pkg.name} can be picked again.` : `${pkg.name} is retired. Accounts on it keep it.`, () =>
+        setPackageRetired(pkg.code, retired, "Undo"),
       );
     });
   return (
@@ -627,15 +930,7 @@ function RetireSection({
 }
 
 /** A new package: a name, and the package it copies. Prices start "Not set"; no account is moved onto it. */
-function NewPackage({
-  packages,
-  onClose,
-  onCreated,
-}: {
-  packages: Tier[];
-  onClose: () => void;
-  onCreated: (message: string) => void;
-}) {
+function NewPackage({ packages, onClose, onCreated }: { packages: Tier[]; onClose: () => void; onCreated: (message: string) => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     dialog.current?.showModal();
@@ -681,7 +976,9 @@ function NewPackage({
             ))}
           </select>
         </Field>
-        <p className="text-sm text-muted">Prices start as &ldquo;Not set&rdquo;. No accounts are moved onto it: you still choose each account&apos;s package yourself.</p>
+        <p className="text-sm text-muted">
+          Prices start as &ldquo;Not set&rdquo;. No accounts are moved onto it: you still choose each account&apos;s package yourself.
+        </p>
         <Field label="Note for the activity log (optional)">
           <Input value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} />
         </Field>

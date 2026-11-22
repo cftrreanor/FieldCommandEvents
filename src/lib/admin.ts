@@ -5,7 +5,8 @@ import { requireUser } from "@/lib/auth";
 import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, utcToZonedDate } from "@/lib/time";
-import { dollars, packageLabel, passFor, rateLabel } from "@/lib/plan";
+import { dollars, packageLabel, rateLabel } from "@/lib/plan";
+import { passLabel, passWords } from "@/lib/pricing";
 import { invitePackageLabel, inviteStatusLabel } from "@/lib/invitation-plan";
 import { systemEmail } from "@/lib/system-emails";
 
@@ -113,7 +114,7 @@ export function describeAdminLog(r: AdminLogRow, names?: Record<string, string>)
     return `Package: ${words(fromObj)} → ${words(toObj)}${r.details.source === "payment" ? " (by payment)" : ""}`;
   }
   if (r.action === "pass_added")
-    return `Added a ${passFor(r.details.event_type ?? "")?.label.toLowerCase() ?? "event"} pass (${dollars(r.details.price_cents ?? 0)})${r.details.source === "payment" ? " by payment" : ""}`;
+    return `Added a ${r.details.event_type ? passWords(r.details.event_type) : "event pass"} (${dollars(r.details.price_cents ?? 0)})${r.details.source === "payment" ? " by payment" : ""}`;
   if (r.action === "account_suspended")
     return `Suspended the account${r.details.unpublished ? ` (${r.details.unpublished} event${r.details.unpublished === 1 ? "" : "s"} taken offline)` : ""}`;
   if (r.action === "account_unsuspended") return "Lifted the suspension";
@@ -131,6 +132,23 @@ export function describeAdminLog(r: AdminLogRow, names?: Record<string, string>)
   }
   if (r.action === "pass_price_changed")
     return `${packageLabel(r.details.code ?? "?", names)}: ${dollars(Number(r.details.from ?? 0))} → ${dollars(Number(r.details.to ?? 0))}`;
+  if (r.action === "package_website_changed") {
+    const from = r.details.from as { show?: boolean; best_for?: string | null; recommended?: boolean } | undefined;
+    const to = r.details.to as { show?: boolean; best_for?: string | null; recommended?: boolean } | undefined;
+    const name = r.details.name ?? packageLabel(r.details.code ?? "?", names);
+    const parts = [
+      from?.show !== to?.show ? (to?.show ? "shown on the website" : "hidden from the website") : null,
+      from?.recommended !== to?.recommended ? (to?.recommended ? "marked Recommended" : "no longer Recommended") : null,
+      from?.best_for !== to?.best_for ? (to?.best_for ? `"Best for" set to "${to.best_for}"` : `"Best for" left blank`) : null,
+    ].filter(Boolean);
+    return `${name}: ${parts.join(", ") || "website settings saved"}`;
+  }
+  if (r.action === "pass_shown" || r.action === "pass_hidden")
+    return `${r.details.event_type ? passLabel(r.details.event_type) : packageLabel(r.details.code ?? "?", names)}: ${r.action === "pass_shown" ? "shown on" : "hidden from"} the website`;
+  if (r.action === "pricing_page_live") return "Put the pricing page live";
+  if (r.action === "pricing_page_hidden") return "Hid the pricing page";
+  if (r.action === "pricing_request_handled") return `Marked ${r.details.email ?? "a"} pricing request handled`;
+  if (r.action === "pricing_request_reopened") return `Moved ${r.details.email ?? "a"} pricing request back to To handle`;
   if (r.action === "system_email_changed") return `Changed the wording of the “${systemEmail(r.details.key ?? "")?.name ?? r.details.key}” email`;
   if (r.action === "system_email_reset") return `Reset the “${systemEmail(r.details.key ?? "")?.name ?? r.details.key}” email to its original wording`;
   return r.action.replaceAll("_", " ");

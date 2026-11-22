@@ -96,6 +96,14 @@ public event and organization page has one footer line: the product name and tag
   Free Teacher, Volunteer Command, Event Command, Schedule Command, and District Command, plus one-time event
   passes. Each package says which kinds of event it includes, team spots, and whether Volunteer tracking is in it.
   During the pilot every account gets Schedule Command.
+- **Pricing page, admin side** (admin Packages page): a site-level "Pricing page: Hidden / Live" switch with
+  "Preview the page" (going live confirms and lists what changes across the site; it can't go live with no package
+  card); per package "Show on website", "Best for" (blank means the page writes one), and one "Recommended"; "Show
+  on website" per pass; an editable "Weekly hours" row. Website switches save at once with Undo. Passes are named by
+  kind of event ("Band contest pass") everywhere in admin. Requests from the page's buttons are listed at
+  /admin/pricing-requests (count in the admin menu) to mark handled; the owner applies the package from the
+  account's page and sends the invoice by hand (net 30, starts when sent). Decisions:
+  `docs/design-decisions/2026-11-22-pricing-page.md`
 - **Sponsors add-on** (an admin switches it on per account): band contests, festivals, and fairs thank their own
   sponsors on the main public event page only (a "Presented by" line, a thank-you section by level, and one line on
   the day). Never on sign-up, registration, or director pages, or in emails. Decisions:
@@ -148,6 +156,7 @@ Sample people are never emailed, and "Back to me" or "Remove demo people" takes 
 
 Keep the last ten or so; older ones are in git history and `docs/design-decisions/`.
 
+- 2026-11-22 (PR pending): Pricing page, admin side: the Pricing page Hidden / Live switch with a confirm that lists what changes, Show on website, Best for, and Recommended for packages, Show on website for passes, an editable Weekly hours row, Undo on each website switch, passes named by kind of event, "One at a time" no longer amber, and a Pricing requests list to mark handled
 - 2026-11-21 (PR pending): Organization page, public side: the page at /o/[address], "More ways to help" on volunteer sign-up pages (below the form, at the top when full or closed, "More from [Org]" after signing up), and a confirm step that carries remembered details over; "Sign up for more" is now "Add another shift here"
 - 2026-11-21 (PR pending): Organization page, fixes from the built-page check: the confirm step asks "I'm 18 or older"; the group's color reaches 4.5:1 in dark mode on every event page; the turn-on preview is the real page; search engines are asked not to list the page or sign-up pages showing "More ways to help"; details carry over only within one group; started shifts are left out; "Take off the page now" with Undo; one card per account; clearer wording throughout
 - 2026-11-21 (PR pending): Organization page, organizer screens: a new Organization page (from Account and My events) to turn the page on with a group name, contact email, and the events to show (with a preview), then manage each event's "Show on organization page" switch, new events to review, Help anytime, and turning it off; the same switch in Event settings and on the Publish step, where "When you publish" now says people find the event from your organization page when it's shown
