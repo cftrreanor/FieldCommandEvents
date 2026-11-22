@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { PublicMenu } from "@/components/public-menu";
+import { HeaderCta, PricesHeaderLink, pricesLinks } from "@/components/site-prices";
+import { sitePricing } from "@/lib/site-pricing";
 import Link from "next/link";
 import { requestPilot } from "@/app/pilot-actions";
 import { PilotForm } from "@/app/pilot-form";
@@ -14,6 +16,9 @@ import { brand } from "@/lib/brand";
 import { PILOT_END_LABEL } from "@/lib/pilot";
 import { LineIcon } from "@/components/line-icon";
 import { SPONSOR_PROMISE } from "@/lib/sponsors";
+
+// The header, menu, and footer link to Prices once the owner switches that page on (src/lib/site-pricing.ts).
+export const revalidate = 60;
 
 // For principals and district staff. Brand voice: reassuring and concrete,
 // about reliability, support, and less strain on staff; "facilitator" when
@@ -158,7 +163,8 @@ const faqs = [
 ];
 
 /** For principals and district administrators: reliability, support, and less staff strain. */
-export default function AdministratorsPage() {
+export default async function AdministratorsPage() {
+  const site = await sitePricing();
   const eventPages = [...AUDIENCES, CONFERENCES_PAGE];
   return (
     <div className="flex flex-1 flex-col">
@@ -166,23 +172,20 @@ export default function AdministratorsPage() {
         <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
           All event types
         </Link>
+        <PricesHeaderLink live={site.live} />
         <PublicMenu
           links={[
             { href: "/#organizing", label: "All kinds of events" },
             { href: "#how", label: "How it works" },
             { href: "#faq", label: "Questions" },
             { href: "/#pilot", label: "Pilot details" },
+            ...pricesLinks(site.live),
           ]}
         />
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>
-        <JumpLink
-          href="#join"
-          className="inline-flex min-h-11 items-center whitespace-nowrap rounded-full bg-violet px-3 text-[13px] font-semibold text-header transition hover:brightness-90 sm:px-5 sm:text-sm"
-        >
-          {CTA}
-        </JumpLink>
+        <HeaderCta afterPilot={site.afterPilot} live={site.live} joinHref="#join" />
       </HeaderBar>
 
       <main className="flex-1">

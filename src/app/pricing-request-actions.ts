@@ -57,7 +57,7 @@ export async function requestPricing(_prev: ActionState, formData: FormData): Pr
   }
   const result = data as PricingRequestResult;
   // Sent twice (double tap, back button): we already have it.
-  if (result.status === "duplicate") return { ok: true };
+  if (result.status === "duplicate") return { ok: true, message: "We already had this request, so we didn't send it twice." };
   if (result.status === "busy") {
     return { error: `We're getting a lot of requests right now. Please email us at ${brand.supportEmail} instead.` };
   }

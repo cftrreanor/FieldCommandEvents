@@ -15,6 +15,8 @@ import { PILOT_END_LABEL, PILOT_NOTE } from "@/lib/pilot";
 import { SUPPORT_POINTS } from "@/lib/support";
 import { LineIcon } from "@/components/line-icon";
 import { PublicMenu } from "@/components/public-menu";
+import { HeaderCta, PricesHeaderLink, pricesLinks } from "@/components/site-prices";
+import { sitePricing } from "@/lib/site-pricing";
 
 const CTA = "Join the pilot";
 
@@ -40,7 +42,8 @@ export function audienceMetadata(a: Audience): Metadata {
 }
 
 /** One kind of event, for the people who run it, with its own FAQ and the pilot form. */
-export function AudiencePage({ audience: a }: { audience: Audience }) {
+export async function AudiencePage({ audience: a }: { audience: Audience }) {
+  const site = await sitePricing();
   const url = `${SITE_URL}${a.path}`;
   const jsonLd = {
     "@context": "https://schema.org",
@@ -74,23 +77,20 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
         <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
           All event types
         </Link>
+        <PricesHeaderLink live={site.live} />
         <PublicMenu
           links={[
             { href: "/#organizing", label: "All kinds of events" },
             { href: "#how", label: "How it works" },
             { href: "#faq", label: "Questions" },
             { href: "/#pilot", label: "Pilot details" },
+            ...pricesLinks(site.live),
           ]}
         />
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>
-        <JumpLink
-          href="#join"
-          className="inline-flex min-h-11 items-center whitespace-nowrap rounded-full bg-violet px-3 text-[13px] font-semibold text-header transition hover:brightness-90 sm:px-5 sm:text-sm"
-        >
-          {CTA}
-        </JumpLink>
+        <HeaderCta afterPilot={site.afterPilot} live={site.live} joinHref="#join" />
       </HeaderBar>
 
       <main className="flex-1">

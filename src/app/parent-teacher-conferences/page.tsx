@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { PublicMenu } from "@/components/public-menu";
+import { HeaderCta, PricesHeaderLink, pricesLinks } from "@/components/site-prices";
+import { sitePricing } from "@/lib/site-pricing";
 import Link from "next/link";
 import { HeaderBar, headerLinkClass } from "@/components/logo";
 import { FeatureSections, infoBox, SupportSection } from "@/components/audience-page";
@@ -26,8 +28,12 @@ async function freeTeacher(): Promise<Tier | null> {
   }
 }
 
-/** What a free teacher account includes, in words, from the Free Teacher package. */
-function freeOffer(t: Tier | null) {
+/**
+ * What a free teacher account includes, in words, from the Free Teacher package. Once the pricing page is live it
+ * says what that page's Free options line says (Free Teacher: for classroom teachers, just you on the team), not
+ * "during the pilot".
+ */
+function freeOffer(t: Tier | null, live = false) {
   const level = (type: string) =>
     !t ? (type === "conference" ? "one" : "none") : !t.event_types.includes(type) ? "none" : t.one_at_a_time.includes(type) ? "one" : "all";
   const conf = level("conference");
@@ -36,18 +42,35 @@ function freeOffer(t: Tier | null) {
   const part = (what: string, l: string) => (l === "one" ? `${what}, one published at a time` : what);
   const runs = [conf !== "none" && part("parent-teacher conference days", conf), meet !== "none" && part("meetings like office hours", meet)].filter(Boolean);
   const runsText = runs.join(conf === "one" ? ", and " : " and ");
+  const weeklyWords = weekly ? "Weekly hours are included." : "Weekly hours come with a paid package.";
+  if (live) {
+    const name = t?.name ?? "Free Teacher";
+    return {
+      included: conf !== "none",
+      weekly,
+      faq:
+        conf === "none"
+          ? "Conference scheduling comes with a paid package. Our Prices page lists them, with a teacher rate for classroom teachers on some."
+          : `Yes. ${name} is free for classroom teachers using an account in their own name: it runs ${runsText}, with just you on the team, and there's no credit card. ${weekly ? "Weekly hours are included." : "Weekly hours come with a paid package, listed on our Prices page."}`,
+      whatsFree:
+        conf === "none"
+          ? "Conference scheduling comes with a paid package."
+          : `${name}, for classroom teachers, runs ${runsText}, with just you on the team.`,
+      description: weekly ? "Weekly hours for calls included." : "Weekly hours for calls with a paid package.",
+    };
+  }
   return {
     included: conf !== "none",
     weekly,
     faq:
       conf === "none"
         ? "During the pilot, conference scheduling comes with a paid package. Join the pilot, and we'll find the right fit for your class."
-        : `Yes, during the pilot. Join the pilot, and we set up your free teacher account. It runs ${runsText}, and there's no credit card. ${weekly ? "Weekly hours are included." : "Weekly hours are a premium feature."}`,
+        : `Yes, during the pilot. Join the pilot, and we set up your free teacher account. It runs ${runsText}, and there's no credit card. ${weeklyWords}`,
     whatsFree:
       conf === "none"
         ? "During the pilot, conference scheduling comes with a paid package."
         : `A free teacher account runs ${runsText} while we're in the pilot.`,
-    description: weekly ? "Weekly hours for calls included." : "Weekly hours for calls with premium.",
+    description: weekly ? "Weekly hours for calls included." : "Weekly hours for calls with a paid package.",
   };
 }
 
@@ -66,7 +89,7 @@ const START = "#join" as const;
 const steps: HowStep[] = [
   {
     title: "Set your day and hours",
-    body: "Pick the meeting length and a few minutes between meetings. Add breaks if you need them. With premium, set the same hours every week instead.",
+    body: "Pick the meeting length and a few minutes between meetings. Add breaks if you need them. With weekly hours, set the same hours every week instead.",
     screen: "/screens/conference-meeting-times.webp",
     alt: "Conference Setup: the day and hours, 15-minute meetings with 5 minutes between them, and breaks.",
   },
@@ -111,7 +134,7 @@ const sections: Audience["sections"] = [
   },
   {
     title: "Weekly hours and phone calls",
-    body: "With premium, offer the same times every week, like calls on Tuesday afternoons. Families pick a day, then a time, and you call them.",
+    body: "With weekly hours, offer the same times every week, like calls on Tuesday afternoons. Families pick a day, then a time, and you call them.",
     points: [
       "Weekly hours on any days, with days off for holidays and field trips",
       "You choose how much notice families give and how far ahead they can book",
@@ -161,7 +184,7 @@ const faqs = (freeAnswer: string) => [
   },
   {
     q: "Can I offer the same times every week?",
-    a: `Yes, with premium. Set weekly hours, like Tuesday and Thursday afternoons, add days off, and choose how much notice families give and how far ahead they can book. Write to us at ${brand.supportEmail} to add premium to your account.`,
+    a: `Yes, with weekly hours, which come with a paid package. Set hours like Tuesday and Thursday afternoons, add days off, and choose how much notice families give and how far ahead they can book. Write to us at ${brand.supportEmail} to add weekly hours to your account.`,
   },
   {
     q: "Do families need to make an account?",
@@ -191,30 +214,28 @@ const faqs = (freeAnswer: string) => [
 
 /** Parent-teacher conferences: what they do, and a free teacher account to run them. */
 export default async function ConferencesPage() {
-  const offer = freeOffer(await freeTeacher());
+  const site = await sitePricing();
+  const offer = freeOffer(await freeTeacher(), site.live);
   return (
     <div className="flex flex-1 flex-col">
       <HeaderBar maxWidth="max-w-6xl">
         <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
           All event types
         </Link>
+        <PricesHeaderLink live={site.live} />
         <PublicMenu
           links={[
             { href: "/#organizing", label: "All kinds of events" },
             { href: "#how", label: "How it works" },
             { href: "#faq", label: "Questions" },
             { href: "/#pilot", label: "Pilot details" },
+            ...pricesLinks(site.live),
           ]}
         />
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>
-        <JumpLink
-          href={START}
-          className="inline-flex min-h-11 items-center whitespace-nowrap rounded-full bg-violet px-3 text-[13px] font-semibold text-header transition hover:brightness-90 sm:px-5 sm:text-sm"
-        >
-          Free during the pilot
-        </JumpLink>
+        <HeaderCta afterPilot={site.afterPilot} live={site.live} joinHref="#join" label="Free during the pilot" />
       </HeaderBar>
 
       <main className="flex-1">
