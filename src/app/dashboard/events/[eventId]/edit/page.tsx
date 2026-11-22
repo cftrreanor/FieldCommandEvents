@@ -55,6 +55,7 @@ import { loadBrand } from "@/lib/badges";
 import { OrgPageEventControl } from "@/components/org-page-switch";
 import { loadEventOrgPage } from "@/lib/org-page-summary";
 import { possessive } from "@/lib/org-page-words";
+import { pilotOver } from "@/lib/site-pricing";
 
 export const metadata: Metadata = { title: "Event settings" };
 
@@ -65,6 +66,10 @@ const TYPE_SUMMARY = {
   school_visit: "Parents register their children ahead and are checked in at the door with a photo ID, alongside your volunteers. Children's details are seen only by your team and permanently deleted 30 days after the event.",
   conference: "Families book a meeting time with you, in person, on video, or by phone. Free during the pilot, with one published conference at a time.",
   meeting: "People book a time with you, in person, on video, or by phone, and can bring up to three others.",
+};
+// Once the pilot ends, the conference line loses its pilot promise (docs/design-decisions/2026-11-22-pricing-page.md).
+const AFTER_PILOT_SUMMARY: Partial<Record<keyof typeof TYPE_SUMMARY, string>> = {
+  conference: "Families book a meeting time with you, in person, on video, or by phone.",
 };
 
 // What switching to each kind adds or removes.
@@ -731,7 +736,7 @@ export default async function EditEventPage({ params, searchParams }: PageProps<
                 <div className="space-y-3">
                   <p>
                     This is {isMeeting(event.event_type) ? "for " : "a "}<strong>{event.event_type === "conference" ? "parent-teacher conference" : event.event_type === "volunteer" ? "volunteer event" : eventTypeLabel(event.event_type).toLowerCase()}</strong>.{" "}
-                    <span className="text-muted">{TYPE_SUMMARY[event.event_type as keyof typeof TYPE_SUMMARY] ?? TYPE_SUMMARY.band_contest}</span>
+                    <span className="text-muted">{(pilotOver() && AFTER_PILOT_SUMMARY[event.event_type as keyof typeof TYPE_SUMMARY]) || (TYPE_SUMMARY[event.event_type as keyof typeof TYPE_SUMMARY] ?? TYPE_SUMMARY.band_contest)}</span>
                   </p>
                   {hasConferences(event.event_type) ? (
                     <p className="text-sm text-muted">

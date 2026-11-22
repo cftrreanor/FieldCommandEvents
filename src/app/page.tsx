@@ -14,7 +14,7 @@ import { ADMINISTRATORS_PAGE, audiences, CONFERENCES_PAGE, MEETINGS_PAGE, STUDEN
 import { SiteFooter } from "@/components/site-footer";
 import { requestPilot } from "./pilot-actions";
 import { PilotForm } from "./pilot-form";
-import { PILOT_END_LABEL, PILOT_NOTE } from "@/lib/pilot";
+import { AFTER_PILOT_CLOSING, AFTER_PILOT_NOTE, PILOT_CLOSING, PILOT_END_LABEL, PILOT_NOTE, pilotCta } from "@/lib/pilot";
 import { IconTile } from "@/components/line-icon";
 import { PublicMenu } from "@/components/public-menu";
 import { HeaderCta, PRICES, PricesHeaderLink, pricesLinks } from "@/components/site-prices";
@@ -290,10 +290,6 @@ const pilot = [
 ];
 
 const JOIN = "#join" as const;
-// Every button to the form says the same thing: "Join the pilot", then "Get started" once the pilot ends.
-const ctaFor = (afterPilot: boolean) => (afterPilot ? "Get started" : "Join the pilot");
-/** Under the hero's button once the pilot ends (Content F1). */
-const AFTER_PILOT_NOTE = "A person on our team replies within a day to help you get set up.";
 
 export const metadata: Metadata = { alternates: { canonical: "/" } };
 
@@ -365,7 +361,7 @@ export default async function Home() {
   const faqs = faqsFor(site.live, site.afterPilot, await lowestPrice(site.live));
   const jsonLd = jsonLdFor(site.live, site.afterPilot, faqs);
   const after = site.afterPilot;
-  const CTA = ctaFor(after);
+  const CTA = pilotCta(after);
   return (
     <div className="flex flex-1 flex-col">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
@@ -590,7 +586,7 @@ export default async function Home() {
           <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-24">
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">{TAGLINE}</h2>
             <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">
-              {after ? "Choose the package that fits the events you run. A real person replies within a day." : `Free for organizers through ${PILOT_END_LABEL}. Spots are limited.`}
+              {after ? AFTER_PILOT_CLOSING : PILOT_CLOSING}
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <JumpLink href={JOIN} className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">

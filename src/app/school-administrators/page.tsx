@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { PublicMenu } from "@/components/public-menu";
-import { HeaderCta, PricesHeaderLink, pricesLinks } from "@/components/site-prices";
+import { HeaderCta, PRICES_LINK, PricesHeaderLink, pricesLinks } from "@/components/site-prices";
 import { sitePricing } from "@/lib/site-pricing";
 import Link from "next/link";
 import { requestPilot } from "@/app/pilot-actions";
@@ -13,7 +13,7 @@ import { HeaderBar, headerLinkClass } from "@/components/logo";
 import { SiteFooter } from "@/components/site-footer";
 import { ADMINISTRATORS_PAGE, AUDIENCES, CONFERENCES_PAGE, STUDENT_PRIVACY_PAGE, type Audience } from "@/lib/audiences";
 import { brand } from "@/lib/brand";
-import { PILOT_END_LABEL } from "@/lib/pilot";
+import { AFTER_PILOT_CLOSING, PILOT_CLOSING, PILOT_END_LABEL, pilotCta } from "@/lib/pilot";
 import { LineIcon } from "@/components/line-icon";
 import { SPONSOR_PROMISE } from "@/lib/sponsors";
 
@@ -23,8 +23,6 @@ export const revalidate = 60;
 // For principals and district staff. Brand voice: reassuring and concrete,
 // about reliability, support, and less strain on staff; "facilitator" when
 // naming the role (docs/brand-voice.md). Every claim must match the product.
-
-const CTA = "Join the pilot";
 
 export const metadata: Metadata = {
   title: "School Event Software for Principals and District Administrators",
@@ -162,9 +160,15 @@ const faqs = [
   },
 ];
 
-/** For principals and district administrators: reliability, support, and less staff strain. */
+/**
+ * For principals and district administrators: reliability, support, and less staff strain. Once the pilot ends
+ * (whether or not the pricing page is on) its pilot words switch, and the packages page is linked only while it's
+ * live (docs/design-decisions/2026-11-22-pricing-page.md, built check, decision 2).
+ */
 export default async function AdministratorsPage() {
   const site = await sitePricing();
+  const after = site.afterPilot;
+  const CTA = pilotCta(after);
   const eventPages = [...AUDIENCES, CONFERENCES_PAGE];
   return (
     <div className="flex flex-1 flex-col">
@@ -178,14 +182,14 @@ export default async function AdministratorsPage() {
             { href: "/#organizing", label: "All kinds of events" },
             { href: "#how", label: "How it works" },
             { href: "#faq", label: "Questions" },
-            { href: "/#pilot", label: "Pilot details" },
+            ...(after ? [] : [{ href: "/#pilot", label: "Pilot details" }]),
             ...pricesLinks(site.live),
           ]}
         />
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>
-        <HeaderCta afterPilot={site.afterPilot} live={site.live} joinHref="#join" />
+        <HeaderCta afterPilot={after} live={site.live} joinHref="#join" />
       </HeaderBar>
 
       <main className="flex-1">
@@ -272,17 +276,36 @@ export default async function AdministratorsPage() {
 
         <section id="join" tabIndex={-1} className="scroll-mt-20 border-t border-border bg-surface outline-none">
           <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
-            <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
-            <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{CTA}</h2>
-            <p className="mt-3 leading-7 text-muted">
-              It&apos;s free through {PILOT_END_LABEL}, when the pilot ends. Tick the kinds of events your campus runs.{" "}
-              <Link href="/#pilot" className="text-brand underline">
-                See the pilot details
-              </Link>
-              .
-            </p>
+            {after ? (
+              <>
+                <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{CTA}</h2>
+                <p className="mt-3 leading-7 text-muted">
+                  Tick the kinds of events your campus runs, and a person on our team replies within a day to help you get set up.
+                  {site.live && (
+                    <>
+                      {" "}
+                      <Link href={PRICES_LINK.href} className="text-brand underline dark:text-foreground">
+                        {PRICES_LINK.label}
+                      </Link>
+                    </>
+                  )}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
+                <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{CTA}</h2>
+                <p className="mt-3 leading-7 text-muted">
+                  It&apos;s free through {PILOT_END_LABEL}, when the pilot ends. Tick the kinds of events your campus runs.{" "}
+                  <Link href="/#pilot" className="text-brand underline">
+                    See the pilot details
+                  </Link>
+                  .
+                </p>
+              </>
+            )}
             <div className="mt-8">
-              <PilotForm action={requestPilot} />
+              <PilotForm action={requestPilot} submitLabel={CTA} />
             </div>
           </div>
         </section>
@@ -290,7 +313,7 @@ export default async function AdministratorsPage() {
         <section className="bg-teal-deep text-white">
           <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-20">
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">Every detail organized. Every organizer supported.</h2>
-            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free for organizers through {PILOT_END_LABEL}. Spots are limited.</p>
+            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">{after ? AFTER_PILOT_CLOSING : PILOT_CLOSING}</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <JumpLink href="#join" className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
                 {CTA}

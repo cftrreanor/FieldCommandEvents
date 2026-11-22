@@ -9,6 +9,18 @@ export const PILOT_END_LABEL = "January 1, 2027";
 /** Under the first "Join the pilot" button on the website: what joining means, said gently (owner, 2026-11-10). */
 export const PILOT_NOTE = `Free for organizers through ${PILOT_END_LABEL}. A person on our team replies within a day to help you get set up.`;
 
+// Once the pilot ends (src/lib/site-pricing.ts pilotOver()), whether or not the pricing page is on, the website's pilot
+// words switch to these (docs/design-decisions/2026-11-22-pricing-page.md, built check, decision 2).
+
+/** Every button to the request form: "Join the pilot", then "Get started" once the pilot ends. */
+export const pilotCta = (afterPilot: boolean) => (afterPilot ? "Get started" : "Join the pilot");
+/** Under a hero's button once the pilot ends, in place of PILOT_NOTE (Content F1). */
+export const AFTER_PILOT_NOTE = "A person on our team replies within a day to help you get set up.";
+/** The closing band's line once the pilot ends, in place of "Free for organizers through …". */
+export const AFTER_PILOT_CLOSING = "Choose the package that fits the events you run. A real person replies within a day.";
+/** The closing band's line during the pilot. */
+export const PILOT_CLOSING = `Free for organizers through ${PILOT_END_LABEL}. Spots are limited.`;
+
 // The order of the event-type cards on the home page, so the form matches them; conferences and meetings last.
 const HOME_ORDER = ["volunteer", "band_contest", "group_event", "fair", "school_visit", "conference", "meeting"];
 

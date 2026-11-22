@@ -33,6 +33,8 @@ import type { IconName } from "@/lib/icons";
 import { signupDay, signupDayShort, signupOpensLaterOn } from "@/lib/volunteer-signup";
 import { loadOrgPageAccounts } from "@/lib/org-page-summary";
 import { OrgPageCards } from "@/components/org-page-cards";
+import { pilotOver } from "@/lib/site-pricing";
+import { pilotCta } from "@/lib/pilot";
 
 export const metadata: Metadata = { title: "My events" };
 
@@ -390,7 +392,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           title={teacher ? "Your conferences" : "Hosting"}
           description={
             teacher
-              ? "Parent-teacher conferences you're running. Free during the pilot."
+              ? `Parent-teacher conferences you're running.${pilotOver() ? "" : " Free during the pilot."}`
               : `Events ${orgs.length > 1 ? orgs.map((o) => o.name).join(" and ") : org.name} ${orgs.length > 1 ? "are" : "is"} putting on.`
           }
           action={newEvent}
@@ -480,7 +482,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         />
       )}
 
-      {!org && <HostYourOwn invited={mayHost} />}
+      {!org && <HostYourOwn invited={mayHost} afterPilot={pilotOver()} />}
     </div>
   );
 }
@@ -959,7 +961,7 @@ function HelpingCard({ row: r, showType }: { row: StaffEvent & { events: EventSu
 }
 
 /** For directors and team members who don't host yet: a way to start (or ask to). */
-function HostYourOwn({ invited }: { invited: boolean }) {
+function HostYourOwn({ invited, afterPilot }: { invited: boolean; afterPilot: boolean }) {
   const button = "inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover";
   return (
     <section aria-labelledby="host-your-own" className="rounded-lg border border-brand/25 bg-brand-soft p-5 sm:p-6">
@@ -968,7 +970,7 @@ function HostYourOwn({ invited }: { invited: boolean }) {
       </h2>
       <p className="mt-1 leading-7 text-muted">
         Set up and run your contest, festival, or school event in one place.
-        {!invited && " Organizer accounts are by invitation while we're in the pilot."}
+        {!invited && (afterPilot ? " Our team sets up each organizer account." : " Organizer accounts are by invitation while we're in the pilot.")}
       </p>
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
         {invited ? (
@@ -977,7 +979,7 @@ function HostYourOwn({ invited }: { invited: boolean }) {
           </Link>
         ) : (
           <Link href="/#join" className={button}>
-            Join the pilot
+            {pilotCta(afterPilot)}
           </Link>
         )}
       </div>

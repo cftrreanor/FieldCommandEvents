@@ -518,10 +518,11 @@ export function PhoneCompare({ m, packages }: { m: Matrix; packages: PricingPack
                   {r.label}
                   {r.hint && <span className="mt-0.5 block text-xs font-normal text-muted">{r.hint}</span>}
                 </th>
-                <td className="py-2 pr-2">
+                {/* A cell's note ("For conferences and meetings") hyphenates inside its column below 360 px instead of pushing the page sideways. */}
+                <td className="py-2 pr-2 max-[359px]:[&_.text-muted]:hyphens-auto">
                   <CellView cell={r.cells[left]} />
                 </td>
-                <td className="py-2">
+                <td className="py-2 max-[359px]:[&_.text-muted]:hyphens-auto">
                   <CellView cell={r.cells[right]} />
                 </td>
               </tr>

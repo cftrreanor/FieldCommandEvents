@@ -6,6 +6,8 @@ import { headerLinkClass } from "@/components/logo";
 // src/lib/site-pricing.ts), and the header's main button, which follows the pilot's end (src/lib/pilot.ts).
 
 export const PRICES = { href: "/pricing", label: "Prices" } as const;
+/** An answer's or paragraph's link to the pricing page, only while it's live. */
+export const PRICES_LINK = { href: PRICES.href, label: "See packages and prices" } as const;
 
 /** For a page's Menu (phones): "Prices" next to "Pilot details", only while the page is live. */
 export const pricesLinks = (live: boolean) => (live ? [PRICES] : []);

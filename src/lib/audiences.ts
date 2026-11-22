@@ -32,8 +32,19 @@ export type Audience = {
   sections: { title: string; body: string; points: string[]; screen?: { src: string; alt: string } }[];
   /** The "Who sees what" box: a short title and a sentence each, like the home page's. */
   privacy: { title: string; body: string }[];
-  faqs: { q: string; a: string }[];
+  /** `afterPilot` replaces an answer that promises the pilot once it ends: `live` while the pricing page is on, else `hidden`. */
+  faqs: { q: string; a: string; afterPilot?: { live: string; hidden: string } }[];
 };
+
+/**
+ * An audience page's FAQ for today: once the pilot ends, its pilot answers switch (whether or not the pricing page is
+ * on), and the packages page is linked only while it's live (docs/design-decisions/2026-11-22-pricing-page.md).
+ */
+export function audienceFaqs(a: Audience, afterPilot: boolean, live: boolean): { q: string; a: string; pricing: boolean }[] {
+  return a.faqs.map((f) =>
+    afterPilot && f.afterPilot ? { q: f.q, a: live ? f.afterPilot.live : f.afterPilot.hidden, pricing: live } : { q: f.q, a: f.a, pricing: false },
+  );
+}
 
 export const audiences = {
   bands: {
@@ -554,12 +565,16 @@ export const audiences = {
       { title: "Your team", body: "Your organizers and Volunteer Leads (who run the check-in desk) see volunteers' names, emails, and phone numbers. Coordinators (who each run one sign-up) see them only on event day." },
       { title: "Things to bring", body: "Other people signing up see what each person is bringing and the first names of adults, never the names of volunteers under 18." },
       { title: "Under 18", body: "Volunteers under 18 are stored by first name and last initial, with a guardian's contact details. A record of the guardian's OK is kept." },
-      { title: "Gone when it's over", body: "Volunteers' details are deleted 10 days after the event. With volunteer tracking (available in the pilot), adults' names, emails, and shift counts are kept until 2 years after their last event, so you can invite them back." },
+      { title: "Gone when it's over", body: "Volunteers' details are deleted 10 days after the event. With volunteer tracking (when your account includes it), adults' names, emails, and shift counts are kept until 2 years after their last event, so you can invite them back." },
     ],
     faqs: [
       {
         q: "Who needs an account, and what does it cost?",
         a: `Only the organizer. Your events live in your account, free during the pilot until ${PILOT_END_LABEL}. After the pilot, organizers pay to use ${brand.name}, and we'll talk with you before anything changes. Nothing renews or charges on its own. Everyone signing up uses your link at no charge, and is never asked to make an account.`,
+        afterPilot: {
+          live: "Only the organizer. Your events live in your account, and organizers choose the package that fits the events they run. Nothing renews or charges on its own. Everyone signing up uses your link at no charge, and is never asked to make an account.",
+          hidden: "Only the organizer. Your events live in your account, and organizers choose the package that fits the events they run. A person on our team sends prices for yours. Nothing renews or charges on its own. Everyone signing up uses your link at no charge, and is never asked to make an account.",
+        },
       },
       {
         q: "Do volunteers need to create an account?",
@@ -743,7 +758,7 @@ export const audiences = {
 } satisfies Record<string, Audience>;
 
 /** In the order of the home page's event-type cards. */
-/** Parent-teacher conferences have their own page (free for teachers during the pilot, so no pilot form). */
+/** Parent-teacher conferences have their own page (free for classroom teachers, with its own form). */
 /** For principals and district staff (not an event type, so it has its own page). */
 export const ADMINISTRATORS_PAGE = { path: "/school-administrators", name: "For administrators", icon: "building" } as const;
 

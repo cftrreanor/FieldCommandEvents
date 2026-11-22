@@ -23,7 +23,7 @@ export async function requestPilot(_prev: ActionState, formData: FormData): Prom
   const touched = formData.get("touched") === "1";
   if (String(formData.get("website") ?? "") || !touched || !startedAt || Date.now() - startedAt < 2500) {
     // A real person who autofills and sends very fast can land here too; trying again works.
-    return { error: "Please wait a moment, then press Join the pilot again." };
+    return { error: "Please wait a moment, then send it again." };
   }
 
   // The browser checks these first; this is the backstop. Every problem comes back at once.
