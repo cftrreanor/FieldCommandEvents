@@ -4,6 +4,7 @@ import { brand } from "@/lib/brand";
 import { loadPricingPage } from "@/lib/pricing";
 import { missing } from "@/lib/schema-check";
 import { createAnonClient, pilotOver } from "@/lib/site-pricing";
+import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { PricingView } from "./pricing-view";
 
 // Built for everyone at once and refreshed every minute (ISR): read as a visitor, with no cookies. Admins preview
@@ -17,6 +18,8 @@ export const metadata: Metadata = {
 };
 
 export default async function PricingPage() {
+  // Built without the database keys (a check build): treat it as switched off.
+  if (!isSupabaseConfigured) notFound();
   const load = await loadPricingPage(createAnonClient());
   // Not switched on: visitors get "not found" (a deliberate 404, not a missing database update).
   if (load.status === "hidden") notFound();
