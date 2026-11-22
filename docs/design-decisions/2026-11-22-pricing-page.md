@@ -19,3 +19,13 @@ Review: docs/design-reviews/2026-11-22-pricing-mockups.md (full panel). Owner de
 | 2 | What's built first | Owner: **request form first** | The page, the admin switches, "Ask about [package]" and "Get a [kind] pass" going to a short request form listed in admin, and "Ask your Account Host". The owner applies the package and sends the invoice. Card checkout and invoicing (Stripe) are their own later project. Every other review fix as recommended |
 | 3 | Teacher rate | Owner: **classroom teachers** | A teacher using an account in their own name for their own classes or conferences; school, PTO, booster, and club accounts pay the regular price. They choose "I'm a classroom teacher" and a real person checks it |
 | 4 | Invoice terms | Owner: **net 30, starts now** | Due within 30 days; the package starts when the invoice is sent; a reminder at 30 days; after 60 days unpaid the account moves to Free (nothing published is taken down); a quote and a W-9 available before ordering; yearly only |
+
+## Built pages checked before the PR (2026-11-22)
+
+Review: docs/design-reviews/2026-11-22-pricing-built.md (light check: UX, UI, Content, Engineer, consultant). Owner decisions:
+
+| # | Question | Decision | Notes |
+|---|---|---|---|
+| 1 | The cheapest-option line under the chooser (severity 3) | Owner: **honest wording** | Every pass option says "for one event"; yearly and one-time prices stay apart ("$60 a year, plus $150 for one contest"); "one at a time" where that's all a package covers; the badge reads "Lowest price for one of each" when passes are used, and "Lowest price that includes what you picked" only for a package that covers everything; options that cost more without adding a pick are dropped; up to three options; the line gets its own button |
+| 2 | Pilot wording after January 1 (severity 3) | Owner: **switch on January 1** | Home and conferences pages change after the pilot ends, whether or not the pricing page is on ("Get started", "Start free", no "pilot" in titles); links to the packages page appear only when it's live; the go-live dialog promises only what really changes |
+| 3 | Every other finding | Owner: **all as recommended** | Including: hidden prices readable by admins only; limits on "Ask your Account Host" and request emails; requests from someone who isn't the Account Host are marked; the account's current package on each request |
