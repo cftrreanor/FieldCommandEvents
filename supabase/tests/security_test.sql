@@ -13865,6 +13865,46 @@ begin
   r := public.submit_pricing_request('Bo Baker', 'bo@example.com', 'Lakeside PTO', '{volunteer}', 'schedule', false, false, null);
   assert r ->> 'status' = 'limit' and r ->> 'id' is null, 'pricing requests: three an hour from one email, then a limit';
 end $$;
+-- Two passes in one request (a cheaper option on the page): every pass is kept, and each must be one the page shows.
+reset role;
+update public.plan_tiers set show_on_website = true where code = 'pass_fair';
+set role anon;
+set request.jwt.claims = '{}';
+do $$
+declare
+  ok boolean := false;
+  msg text;
+  r jsonb;
+begin
+  begin
+    perform public.submit_pricing_request('Tess Two', 'tess@example.com', 'Lakeside PTO', '{fair,band_contest}', 'pass_fair', false, false, null,
+                                          null, '{pass_group_event}');
+  exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg like 'That pass isn''t offered%', 'pricing requests: a hidden pass can''t ride along with another';
+  ok := false;
+  begin
+    perform public.submit_pricing_request('Tess Two', 'tess@example.com', 'Lakeside PTO', '{fair}', null, false, false, null, null, '{pass_fair}');
+  exception when sqlstate 'P0001' then ok := true; msg := sqlerrm;
+  end;
+  assert ok and msg like 'That pass isn''t offered%', 'pricing requests: extra passes only alongside a first choice';
+  r := public.submit_pricing_request('Tess Two', 'tess@example.com', 'Lakeside PTO', '{fair,band_contest}', 'pass_fair', false, false, null,
+                                     null, '{pass_band_contest,pass_band_contest,pass_fair}');
+  assert r ->> 'status' = 'saved', 'pricing requests: two passes in one request';
+  r := public.submit_pricing_request('Tess Two', 'tess@example.com', 'Lakeside PTO', '{fair,band_contest}', 'pass_fair', false, false, null,
+                                     null, '{pass_band_contest}');
+  assert r ->> 'status' = 'duplicate', 'pricing requests: the same two passes again within an hour aren''t saved twice';
+  r := public.submit_pricing_request('Tess Two', 'tess@example.com', 'Lakeside PTO', '{fair}', 'pass_fair', false, false, null);
+  assert r ->> 'status' = 'saved', 'pricing requests: one of those passes alone is a different request';
+end $$;
+reset role;
+do $$ begin
+  assert (select also_plan_codes = '{pass_band_contest}' from public.pricing_requests
+           where email = 'tess@example.com' and cardinality(also_plan_codes) > 0),
+         'pricing requests: the second pass is stored once, without repeating the first';
+end $$;
+delete from public.pricing_requests where email = 'tess@example.com';
+update public.plan_tiers set show_on_website = false where code = 'pass_fair';
 reset role;
 do $$ begin
   assert (select count(*) from public.pricing_requests) = 3, 'pricing requests: three saved';

@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import { PublicMenu } from "@/components/public-menu";
-import { HeaderCta, PRICES, PricesHeaderLink, pricesLinks } from "@/components/site-prices";
+import { CtaLink, HeaderCta, PRICES, PricesHeaderLink, pricesLinks, startHref, startsOnPricingForm } from "@/components/site-prices";
 import { pilotOver, sitePricing } from "@/lib/site-pricing";
 import Link from "next/link";
 import { HeaderBar, headerLinkClass } from "@/components/logo";
 import { FeatureSections, infoBox, SupportSection } from "@/components/audience-page";
 import { FaqList, type Faq } from "@/components/faq-list";
 import { HowItWorks, type HowStep } from "@/components/how-it-works";
-import { JumpLink } from "@/components/jump-link";
 import { SiteFooter } from "@/components/site-footer";
 import { PilotForm } from "@/app/pilot-form";
 import { requestPilot } from "@/app/pilot-actions";
@@ -85,8 +84,10 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-/** "Free during the pilot", then "Start free": the form at the bottom of this page (we set up each account). */
-const START = "#join" as const;
+/**
+ * "Free during the pilot", then "Start free": the form at the bottom of this page (we set up each account), or once the
+ * pricing page is live after the pilot, the pricing request form with conferences filled in (owner decision, follow-up 2).
+ */
 const startLabel = (afterPilot: boolean) => (afterPilot ? "Start free" : "Free during the pilot");
 
 const steps: HowStep[] = [
@@ -231,6 +232,8 @@ export default async function ConferencesPage() {
   const after = site.afterPilot;
   const offer = freeOffer(await freeTeacher(), after);
   const START_LABEL = startLabel(after);
+  const START = startHref(site, "#join", ["conference"]);
+  const oneForm = startsOnPricingForm(site);
   return (
     <div className="flex flex-1 flex-col">
       <HeaderBar maxWidth="max-w-6xl">
@@ -250,7 +253,7 @@ export default async function ConferencesPage() {
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>
-        <HeaderCta afterPilot={site.afterPilot} live={site.live} joinHref="#join" label="Free during the pilot" />
+        <HeaderCta afterPilot={site.afterPilot} live={site.live} joinHref="#join" label="Free during the pilot" kinds={["conference"]} />
       </HeaderBar>
 
       <main className="flex-1">
@@ -268,11 +271,25 @@ export default async function ConferencesPage() {
               sheets, no reply-all emails, and no double bookings.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <JumpLink href={START} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
+              <CtaLink href={START} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
                 {START_LABEL}
-              </JumpLink>
+              </CtaLink>
             </div>
-            <p className="mt-4 text-sm text-on-dark-mute">Tell us about your school, and we&apos;ll set up your account. No credit card.</p>
+            {after ? (
+              // Who it's free for, and where a whole school goes (consultant r2 F3).
+              <p className="mt-4 text-sm text-on-dark-mute">
+                Free for classroom teachers on their own account. Running conferences for a whole school?{" "}
+                {site.live ? (
+                  <Link href={PRICES.href} className="font-semibold text-white underline underline-offset-4">
+                    See packages and prices
+                  </Link>
+                ) : (
+                  "Tell us on the form, and we'll send prices."
+                )}
+              </p>
+            ) : (
+              <p className="mt-4 text-sm text-on-dark-mute">Tell us about your school, and we&apos;ll set up your account. No credit card.</p>
+            )}
           </div>
         </section>
 
@@ -306,8 +323,10 @@ export default async function ConferencesPage() {
           <div className="mx-auto max-w-3xl px-4 py-14 sm:px-6">
             <h2 className="text-2xl font-semibold">What&apos;s free</h2>
             <p className="mt-3 leading-7 text-muted">
-              {offer.whatsFree} Planning a band contest,
-              school fair, volunteer sign-ups, or visitor registration and check-in too? Pick those on the form, and we&apos;ll set up {brand.name} for your school.
+              {offer.whatsFree} Planning a band contest, school fair, volunteer sign-ups, or visitor registration and check-in too?{" "}
+              {after
+                ? "Those come with a paid package. Pick them on the form, and we'll send prices for your school."
+                : `Pick those on the form, and we'll set up ${brand.name} for your school.`}
             </p>
             {site.live && (
               <p className="mt-3 leading-7 text-muted">
@@ -326,10 +345,18 @@ export default async function ConferencesPage() {
             <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">{after ? "Free for classroom teachers" : "Free during the pilot"}</p>
             <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{after ? "Start free" : "Join the pilot"}</h2>
             <p className="mt-3 leading-7 text-muted">
-              Tell us about your school, and we&apos;ll set up your account and email you when it&apos;s ready.{after ? "" : ` The pilot ends ${PILOT_END_LABEL}.`}
+              {after ? "Tell us about your class" : "Tell us about your school"}, and we&apos;ll set up your account and email you when it&apos;s ready.
+              {after ? "" : ` The pilot ends ${PILOT_END_LABEL}.`}
             </p>
             <div className="mt-8">
-              <PilotForm action={requestPilot} defaultEventTypes={["conference"]} submitLabel={after ? "Start free" : undefined} />
+              {oneForm ? (
+                // One form for everyone once the pricing page is live (owner decision, follow-up check 2).
+                <CtaLink href={START} className="inline-flex min-h-11 items-center rounded-full bg-violet px-6 font-semibold text-header hover:brightness-90">
+                  {START_LABEL}
+                </CtaLink>
+              ) : (
+                <PilotForm action={requestPilot} defaultEventTypes={["conference"]} submitLabel={after ? "Start free" : undefined} />
+              )}
             </div>
           </div>
         </section>
@@ -337,9 +364,9 @@ export default async function ConferencesPage() {
         <section className="bg-teal-deep text-white">
           <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-20">
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">Every detail organized. Every organizer supported.</h2>
-            <JumpLink href={START} className="mt-8 inline-flex rounded-md bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
+            <CtaLink href={START} className="mt-8 inline-flex rounded-md bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
               {START_LABEL}
-            </JumpLink>
+            </CtaLink>
           </div>
         </section>
       </main>

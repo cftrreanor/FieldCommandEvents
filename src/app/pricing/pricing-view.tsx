@@ -10,7 +10,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { brand } from "@/lib/brand";
 import { dollars, listWords } from "@/lib/plan";
 import { PILOT_END_LABEL } from "@/lib/pilot";
-import { FEATURE_HINTS, kindWords, oneEvent, passLabel, WEBSITE_KINDS, type PricingPage } from "@/lib/pricing";
+import { FEATURE_HINTS, kindWords, oneEvent, passLabel, passTeamLine, WEBSITE_KINDS, type PricingPage } from "@/lib/pricing";
 import { SPONSOR_KINDS, SPONSOR_PROMISE } from "@/lib/sponsors";
 import { HeaderCta, PRICES } from "@/components/site-prices";
 import {
@@ -45,7 +45,7 @@ const EVERY = [
   { title: "Check-in on any phone", body: "Volunteers, bands, groups, and visitors, for each kind of event your package includes" },
   { title: "Badges and printable lists", body: "Name badges and sheets to work from on the day" },
   { title: "Reminders", body: "Emails before the event, so people remember to come" },
-  { title: "Your organization page", body: "One link to every public event you're running" },
+  { title: "Your organization page", body: "One link to every public event you're running", notOnFreeTeacher: true },
   { title: "No account needed to sign up or register", body: "Volunteers, families, and directors join from your link, with no ads and no spam" },
 ];
 
@@ -126,8 +126,8 @@ function faqs(page: PricingPage, afterPilot: boolean) {
           a: "Events you've published stay live, and your team stays as it is. New events publish under the Free package until you choose a package. Nothing is charged unless you choose one.",
         }
       : {
-          q: `What happens on ${PILOT_END_LABEL}?`,
-          a: "The free pilot ends. Events you've published stay live, and your team stays as it is. Until you choose a package, new events publish under the Free package. Nothing is charged unless you choose a package.",
+          q: `What happens after ${PILOT_END_LABEL}?`,
+          a: "The free pilot is over. Events you've published stay live, and your team stays as it is. Until you choose a package, new events publish under the Free package. Nothing is charged unless you choose a package.",
         },
     ...(teacher
       ? [
@@ -162,7 +162,7 @@ export function PricingView({ page, afterPilot, banner }: { page: PricingPage | 
           <section className={`mx-auto ${WIDTH} px-4 py-16 sm:px-6`}>
             <h2 className={sectionTitle}>We can&apos;t show prices right now</h2>
             <p className="mt-3 max-w-2xl leading-7">
-              Try again in a few minutes. Or ask us, or write to us at {EMAIL} with the events you run, and a real person will reply within a day with prices.
+              Try again in a few minutes, or ask us about prices. A real person replies within a day. You can also write to us at {EMAIL}.
             </p>
             {/* Two ways forward, as buttons (UI 8, consultant 13). The request form works without the prices. */}
             <div className="mt-6 flex flex-wrap gap-3">
@@ -180,6 +180,10 @@ export function PricingView({ page, afterPilot, banner }: { page: PricingPage | 
 
   const m = compareMatrix(page);
   const passes = usablePasses(page);
+  // Passes work with Free: what a pass doesn't change, from Free's data (owner decision, follow-up check 1).
+  const freePkg = page.free.find((f) => f.code === "free");
+  const passTeam = freePkg ? passTeamLine(freePkg, page.packages) : null;
+  const freeTeacher = page.free.find((f) => f.code === "free_teacher");
   const sponsorWords = listWords(SPONSOR_KINDS.map(kindWords));
   const freeLines = page.free;
 
@@ -211,6 +215,8 @@ export function PricingView({ page, afterPilot, banner }: { page: PricingPage | 
                   <span className="min-w-0">
                     <span className="block font-semibold">{e.title}</span>
                     <span className="block leading-7 text-muted">{e.body}</span>
+                    {/* Free Teacher is one of the free options, and has no organization page (Content r2 F13). */}
+                    {"notOnFreeTeacher" in e && freeTeacher && <span className="block text-sm text-muted">Not on {freeTeacher.name}</span>}
                   </span>
                 </li>
               ))}
@@ -255,6 +261,7 @@ export function PricingView({ page, afterPilot, banner }: { page: PricingPage | 
                 <p className="mt-3 max-w-2xl leading-7 text-muted">
                   A pass publishes one event of a kind your package doesn&apos;t include. Works with Free, no package needed. Use it within 12 months.
                 </p>
+                {passTeam && <p className="mt-2 max-w-2xl leading-7 text-muted">{passTeam}</p>}
                 {/* Two or four across, so four passes never leave one alone on a row (UI 12). */}
                 <ul className={`mt-8 grid gap-3 sm:grid-cols-2 ${passes.length % 3 === 0 ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
                   {passes.map((p) => {

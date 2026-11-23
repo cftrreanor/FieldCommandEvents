@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { JumpLink } from "@/components/jump-link";
 import { headerLinkClass } from "@/components/logo";
 
@@ -22,6 +23,35 @@ export function PricesHeaderLink({ live }: { live: boolean }) {
   );
 }
 
+/**
+ * Where every "Get started" (and "Start free") goes: once the pilot is over and the pricing page is live, the pricing
+ * request form, with the page's kind of event filled in; otherwise the form on the page (`joinHref`). One form, not two
+ * (owner decision, follow-up check 2).
+ */
+export function startHref(site: { live: boolean; afterPilot: boolean }, joinHref: string, kinds: readonly string[] = []): string {
+  if (!(site.afterPilot && site.live)) return joinHref;
+  return `/pricing/ask?start=1${kinds.length ? `&kinds=${kinds.map(encodeURIComponent).join(",")}` : ""}`;
+}
+
+/** Whether "Get started" goes to the pricing request form, so the page's own form gives way to a button. */
+export const startsOnPricingForm = (site: { live: boolean; afterPilot: boolean }) => site.afterPilot && site.live;
+
+/** A call-to-action link: a jump down the page for "#join", else a page link. */
+export function CtaLink({ href, className, children }: { href: string; className?: string; children: ReactNode }) {
+  if (href.startsWith("#")) {
+    return (
+      <JumpLink href={href as `#${string}`} className={className}>
+        {children}
+      </JumpLink>
+    );
+  }
+  return (
+    <Link href={href} className={className}>
+      {children}
+    </Link>
+  );
+}
+
 export const HEADER_CTA_CLASS =
   "inline-flex min-h-11 items-center whitespace-nowrap rounded-full bg-violet px-3 text-[13px] font-semibold text-header transition hover:brightness-90 sm:px-5 sm:text-sm";
 
@@ -35,26 +65,21 @@ export function HeaderCta({
   live,
   joinHref,
   label = "Join the pilot",
+  kinds = [],
 }: {
   afterPilot: boolean;
   live: boolean;
   /** The pilot form: "#join" on its own page, "/#join" elsewhere. */
   joinHref: string;
   label?: string;
+  /** The page's kind of event, filled in on the request form. */
+  kinds?: readonly string[];
 }) {
   const text = afterPilot ? "Get started" : label;
   // The request form says where it came from: "Get started: ask about a package" (Content F10).
-  const href = afterPilot && live ? "/pricing/ask?start=1" : joinHref;
-  if (href.startsWith("#")) {
-    return (
-      <JumpLink href={href as `#${string}`} className={HEADER_CTA_CLASS}>
-        {text}
-      </JumpLink>
-    );
-  }
   return (
-    <Link href={href} className={HEADER_CTA_CLASS}>
+    <CtaLink href={startHref({ live, afterPilot }, joinHref, kinds)} className={HEADER_CTA_CLASS}>
       {text}
-    </Link>
+    </CtaLink>
   );
 }

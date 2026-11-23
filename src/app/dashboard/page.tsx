@@ -33,7 +33,8 @@ import type { IconName } from "@/lib/icons";
 import { signupDay, signupDayShort, signupOpensLaterOn } from "@/lib/volunteer-signup";
 import { loadOrgPageAccounts } from "@/lib/org-page-summary";
 import { OrgPageCards } from "@/components/org-page-cards";
-import { pilotOver } from "@/lib/site-pricing";
+import { pilotOver, pricingPageLive } from "@/lib/site-pricing";
+import { startHref } from "@/components/site-prices";
 import { pilotCta } from "@/lib/pilot";
 
 export const metadata: Metadata = { title: "My events" };
@@ -482,7 +483,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         />
       )}
 
-      {!org && <HostYourOwn invited={mayHost} afterPilot={pilotOver()} />}
+      {!org && <HostYourOwn invited={mayHost} afterPilot={pilotOver()} live={await pricingPageLive()} />}
     </div>
   );
 }
@@ -961,7 +962,7 @@ function HelpingCard({ row: r, showType }: { row: StaffEvent & { events: EventSu
 }
 
 /** For directors and team members who don't host yet: a way to start (or ask to). */
-function HostYourOwn({ invited, afterPilot }: { invited: boolean; afterPilot: boolean }) {
+function HostYourOwn({ invited, afterPilot, live }: { invited: boolean; afterPilot: boolean; live: boolean }) {
   const button = "inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-hover";
   return (
     <section aria-labelledby="host-your-own" className="rounded-lg border border-brand/25 bg-brand-soft p-5 sm:p-6">
@@ -978,7 +979,8 @@ function HostYourOwn({ invited, afterPilot }: { invited: boolean; afterPilot: bo
             Set up your account
           </Link>
         ) : (
-          <Link href="/#join" className={button}>
+          // "Get started" opens the pricing request form once it's live after the pilot (owner decision, follow-up 2).
+          <Link href={startHref({ live, afterPilot }, "/#join")} className={button}>
             {pilotCta(afterPilot)}
           </Link>
         )}

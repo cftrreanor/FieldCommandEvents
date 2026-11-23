@@ -6,7 +6,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PILOT_EVENT_TYPES } from "./pilot.ts";
-import { isFreePackage, listWords } from "./plan.ts";
+import { dollars, isFreePackage, listWords } from "./plan.ts";
 
 // ---------------------------------------------------------------------------------------------------------------
 // What pricing_page() returns
@@ -110,7 +110,7 @@ const KIND_NOUNS: Record<string, string> = {
   band_contest: "band contests",
   group_event: "festivals",
   fair: "school fairs",
-  school_visit: "visitor days",
+  school_visit: "visitor check-in",
   conference: "conferences",
   meeting: "meetings",
 };
@@ -123,12 +123,20 @@ const ONE_EVENT: Record<string, string> = {
   band_contest: "one band contest",
   group_event: "one festival",
   fair: "one school fair",
-  school_visit: "one visitor day",
+  school_visit: "one visitor check-in day",
   conference: "one conference day",
   meeting: "one meeting",
 };
 /** "one band contest". */
 export const oneEvent = (t: string) => ONE_EVENT[t] ?? `one ${kindWords(t)} event`;
+/** "band contest": one event of a kind without "one", for "Every school fair and volunteer sign-up all year". */
+export const eventNoun = (t: string) => oneEvent(t).replace(/^one /, "");
+
+/** "school fairs or visitor check-in": a list that ends in "or" (what a card doesn't include). */
+export function orWords(words: string[]) {
+  if (words.length <= 2) return words.join(" or ");
+  return `${words.slice(0, -1).join(", ")}, or ${words.at(-1)}`;
+}
 
 /** "band contest pass", inside a sentence. */
 export const passWords = (t: string) => `${ONE_KIND[t] ?? kindWords(t)} pass`;
@@ -340,6 +348,79 @@ export function cheapestChoices(picked: readonly string[], page: Pick<PricingPag
 export const packagesThatFit = (picked: readonly string[], packages: PricingPackage[]) =>
   picked.length ? packages.filter((p) => picked.every((k) => p.event_types.includes(k))) : [];
 
+/**
+ * What a pass doesn't change, said under pass options and in the passes section (owner decision, follow-up check 1):
+ * an event on a pass keeps the package's team, and Volunteer Leads still need a package that has them. From the
+ * package data: "Your team stays at 2: you and one helper. Volunteer Leads need Volunteer Command or above." Null when
+ * the base package's team is any size and it has Volunteer Leads (nothing to say). Changes when passes add team spots.
+ */
+export function passTeamLine(base: Pick<PackageContents, "max_team" | "event_staff">, packages: readonly PricingPackage[]): string | null {
+  const team =
+    base.max_team === null
+      ? null
+      : base.max_team === 1
+        ? "Your team stays at 1: just you."
+        : base.max_team === 2
+          ? "Your team stays at 2: you and one helper."
+          : `Your team stays at ${base.max_team} people.`;
+  let leads: string | null = null;
+  if (!base.event_staff) {
+    const priced = packages.filter((p) => p.price_year_cents != null).sort((a, b) => a.price_year_cents! - b.price_year_cents!);
+    const first = priced.find((p) => p.event_staff);
+    if (first) {
+      // "or above" only when every package priced above it has them too.
+      const above = priced.filter((p) => p.price_year_cents! > first.price_year_cents!).every((p) => p.event_staff);
+      leads = `Volunteer Leads need ${first.name}${above ? " or above" : ""}.`;
+    }
+  }
+  return team || leads ? [team, leads].filter(Boolean).join(" ") : null;
+}
+
+/**
+ * What a free package publishes, in a sentence: "volunteer sign-ups and meetings, one at a time", or "volunteer
+ * sign-ups (one at a time) and meetings" when only some are one at a time. Null when it has no kinds.
+ */
+export function freeKindsWords(free: Pick<PackageContents, "event_types" | "one_at_a_time">): string | null {
+  if (!free.event_types.length) return null;
+  const kinds = sortKinds(free.event_types);
+  if (kinds.every((k) => free.one_at_a_time.includes(k))) return `${listWords(kinds.map(kindNoun))}, one at a time`;
+  return listWords(kinds.map((k) => `${kindNoun(k)}${free.one_at_a_time.includes(k) ? " (one at a time)" : ""}`));
+}
+
+/**
+ * The website's one-line answer to "How much does it cost?", from the live page's data: "Free for volunteer sign-ups
+ * and meetings, one at a time, packages from $60 a year, and one-event passes from $50" (consultant r2 F12). Null
+ * when there's nothing priced to say.
+ */
+export function costSummary(page: Pick<PricingPage, "packages" | "passes" | "free">): string | null {
+  const parts: string[] = [];
+  const free = page.free.find((f) => f.code === "free");
+  const freeWords = free ? freeKindsWords(free) : null;
+  if (freeWords) parts.push(`Free for ${freeWords}`);
+  const prices = page.packages.map((p) => p.price_year_cents).filter((c): c is number => c != null && c > 0);
+  if (prices.length) parts.push(`packages from ${dollars(Math.min(...prices))} a year`);
+  const freeKinds = free?.event_types ?? [];
+  const passPrices = page.passes
+    .filter((p) => p.price_cents != null && p.price_cents > 0 && !freeKinds.includes(p.event_type))
+    .map((p) => p.price_cents!);
+  if (passPrices.length) parts.push(`one-event passes from ${dollars(Math.min(...passPrices))}`);
+  if (!prices.length && !passPrices.length) return null;
+  return listWords(parts);
+}
+
+/**
+ * A website page's line about its kind's pass, from the live page's data: "Running one band contest a year? A band
+ * contest pass is $150 for one band contest." (consultant r2 F13). Null when that kind has no pass the page shows (no
+ * price, or Free already includes the kind).
+ */
+export function passLine(page: Pick<PricingPage, "passes" | "free">, kind: string): string | null {
+  const freeKinds = page.free.find((f) => f.code === "free")?.event_types ?? [];
+  if (freeKinds.includes(kind)) return null;
+  const prices = page.passes.filter((p) => p.event_type === kind && p.price_cents != null && p.price_cents > 0).map((p) => p.price_cents!);
+  if (!prices.length) return null;
+  return `Running ${oneEvent(kind)} a year? A ${passWords(kind)} is ${dollars(Math.min(...prices))} for ${oneEvent(kind)}.`;
+}
+
 /** Not a card: Free and Free Teacher show as lines (pricing_page() never returns them as cards either). */
 export const isCard = (t: { code: string }) => !isFreePackage(t.code);
 
@@ -354,6 +435,8 @@ export type PricingRequest = {
   eventTypes: string[];
   /** A package or pass code from the page, or null for a general question. */
   plan: string | null;
+  /** More passes in the same request (a cheaper option with two passes, or a package and a pass). */
+  also: string[];
   teacherRate: boolean;
   payByInvoice: boolean;
   message: string;
@@ -388,6 +471,8 @@ export function checkPricingRequest(form: FormData): { request?: PricingRequest;
   else if (organization.length > 200) fieldErrors.organization = "Please keep this under 200 characters.";
   if (message.length > 2000) fieldErrors.message = "Please keep your message under 2,000 characters.";
   if (plan && !PLAN_CODE.test(plan)) fieldErrors.plan = "Pick a package or pass from the list.";
+  // Extra passes ride along with a first choice only, never the same one twice.
+  const also = plan ? [...new Set(form.getAll("also").map(String))].filter((c) => PLAN_CODE.test(c) && c !== plan).slice(0, 6) : [];
 
   if (Object.keys(fieldErrors).length) return { fieldErrors };
   return {
@@ -397,6 +482,7 @@ export function checkPricingRequest(form: FormData): { request?: PricingRequest;
       organization,
       eventTypes,
       plan: plan || null,
+      also,
       teacherRate: form.get("teacherRate") === "1",
       payByInvoice: form.get("payByInvoice") === "1",
       message,

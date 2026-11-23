@@ -1,3 +1,5 @@
+import { requestWord } from "@/lib/pilot";
+import { pilotOver } from "@/lib/site-pricing";
 import type { Metadata } from "next";
 import { DEFAULT_PILOT_END, requirePlatformAdmin } from "@/lib/admin";
 import { ADMIN_TZ, ago, STAGES } from "@/lib/admin-crm";
@@ -75,7 +77,7 @@ export default async function PipelinePage() {
     <div>
       <PageHeader
         title="Pipeline"
-        sub={`${requests.length} pilot request${requests.length === 1 ? "" : "s"} · ${open} in progress. Inviting a host, their setting up, and their first published event move cards along on their own.`}
+        sub={`${requests.length} ${requestWord(pilotOver()).toLowerCase()}${requests.length === 1 ? "" : "s"} · ${open} in progress. Inviting a host, their setting up, and their first published event move cards along on their own.`}
         actions={
           <InviteHostPanel
             names={names}

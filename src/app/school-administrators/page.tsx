@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { PublicMenu } from "@/components/public-menu";
-import { HeaderCta, PRICES_LINK, PricesHeaderLink, pricesLinks } from "@/components/site-prices";
+import { CtaLink, HeaderCta, PRICES_LINK, PricesHeaderLink, pricesLinks, startHref, startsOnPricingForm } from "@/components/site-prices";
 import { sitePricing } from "@/lib/site-pricing";
 import Link from "next/link";
 import { requestPilot } from "@/app/pilot-actions";
@@ -8,7 +8,6 @@ import { PilotForm } from "@/app/pilot-form";
 import { FeatureSections, infoBox, SupportSection } from "@/components/audience-page";
 import { FaqList } from "@/components/faq-list";
 import { HowItWorks, type HowStep } from "@/components/how-it-works";
-import { JumpLink } from "@/components/jump-link";
 import { HeaderBar, headerLinkClass } from "@/components/logo";
 import { SiteFooter } from "@/components/site-footer";
 import { ADMINISTRATORS_PAGE, AUDIENCES, CONFERENCES_PAGE, STUDENT_PRIVACY_PAGE, type Audience } from "@/lib/audiences";
@@ -169,6 +168,9 @@ export default async function AdministratorsPage() {
   const site = await sitePricing();
   const after = site.afterPilot;
   const CTA = pilotCta(after);
+  // Every "Get started" opens the pricing request form once it's live after the pilot (owner decision, follow-up 2).
+  const START = startHref(site, "#join");
+  const oneForm = startsOnPricingForm(site);
   const eventPages = [...AUDIENCES, CONFERENCES_PAGE];
   return (
     <div className="flex flex-1 flex-col">
@@ -205,9 +207,9 @@ export default async function AdministratorsPage() {
               you&apos;ll reach a real person, not a bot.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <JumpLink href="#join" className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
+              <CtaLink href={START} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
                 {CTA}
-              </JumpLink>
+              </CtaLink>
               <a href={`mailto:${brand.supportEmail}`} className="rounded-full px-5 py-3 font-medium text-white ring-1 ring-white/50 hover:bg-white/10">
                 Talk with us
               </a>
@@ -305,7 +307,13 @@ export default async function AdministratorsPage() {
               </>
             )}
             <div className="mt-8">
-              <PilotForm action={requestPilot} submitLabel={CTA} />
+              {oneForm ? (
+                <CtaLink href={START} className="inline-flex min-h-11 items-center rounded-full bg-violet px-6 font-semibold text-header hover:brightness-90">
+                  {CTA}
+                </CtaLink>
+              ) : (
+                <PilotForm action={requestPilot} submitLabel={CTA} />
+              )}
             </div>
           </div>
         </section>
@@ -315,9 +323,9 @@ export default async function AdministratorsPage() {
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">Every detail organized. Every organizer supported.</h2>
             <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">{after ? AFTER_PILOT_CLOSING : PILOT_CLOSING}</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <JumpLink href="#join" className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
+              <CtaLink href={START} className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
                 {CTA}
-              </JumpLink>
+              </CtaLink>
               <a
                 href={`mailto:${brand.supportEmail}`}
                 className="inline-flex rounded-full px-6 py-3 font-semibold text-white ring-1 ring-white/60 hover:bg-white/10"

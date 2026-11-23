@@ -7,7 +7,7 @@ import { getUser } from "@/lib/auth";
 import { brand } from "@/lib/brand";
 import { getMyOrganization } from "@/lib/data";
 import { dollars, listWords, loadAccountHost, loadAccountPlan } from "@/lib/plan";
-import { kindNoun, loadPricingPage, passLabel, sortKinds, WEBSITE_KINDS, type PricingPage } from "@/lib/pricing";
+import { kindNoun, loadPricingPage, passLabel, passWords, sortKinds, WEBSITE_KINDS, type PricingPage } from "@/lib/pricing";
 import { missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
 import { requestPricing } from "../../pricing-request-actions";
@@ -47,6 +47,8 @@ function planChoices(page: PricingPage): PlanChoice[] {
       label: `${p.name}: ${p.price_year_cents != null ? yearly(p.price_year_cents) : "ask us"}`,
       group: "Packages" as const,
       teacher: p.teacher_rate && p.teacher_year_cents != null ? yearly(p.teacher_year_cents) : null,
+      price: p.price_year_cents != null ? yearly(p.price_year_cents) : null,
+      eventTypes: p.event_types,
     })),
     ...usablePasses(page).map((p) => ({
       code: p.code,
@@ -54,6 +56,8 @@ function planChoices(page: PricingPage): PlanChoice[] {
       label: `${passLabel(p.event_type)}: ${dollars(p.price_cents)}`,
       group: "Passes" as const,
       teacher: null,
+      price: dollars(p.price_cents),
+      eventTypes: [p.event_type],
     })),
   ];
 }
@@ -71,11 +75,11 @@ export default async function AskPage({ searchParams }: { searchParams: Promise<
     return (
       <Frame title="We can't show prices right now" back="/pricing">
         <p className="max-w-2xl leading-7">
-          Try again in a few minutes. Or write to us at{" "}
+          Try again in a few minutes, or write to us at{" "}
           <a href={CONTACT} className={`${LINK} [overflow-wrap:anywhere]`}>
             {brand.supportEmail}
           </a>{" "}
-          with the events you run, and a real person will reply within a day with prices.
+          with the events you run. A real person replies within a day.
         </p>
       </Frame>
     );
@@ -89,14 +93,14 @@ export default async function AskPage({ searchParams }: { searchParams: Promise<
   const kinds = (q.kinds ?? "").split(",").filter((k) => known.has(k));
   // Back to the page with the same picks (UX F3).
   const back = kinds.length ? `/pricing?kinds=${kinds.join(",")}` : "/pricing";
-  // More passes in the same cheaper choice: named in the message box, since the form asks about one at a time.
-  const also = (q.also ?? "")
-    .split(",")
-    .map((c) => choices.find((x) => x.code === c && x.group === "Passes" && x.code !== chosen?.code))
-    .filter((c): c is PlanChoice => Boolean(c));
-  const message = also.length
-    ? `I'd also like ${also.map((c) => `a ${c.name[0].toLowerCase()}${c.name.slice(1)}`).join(" and ")}, for one event${also.length > 1 ? " each" : ""}.`
-    : "";
+  // More passes in the same cheaper choice: sent and stored with the request, and named on the form ("You're asking
+  // about: …"; consultant r2 F5). Only alongside a first choice, as the database checks.
+  const also = chosen
+    ? [...new Set((q.also ?? "").split(","))]
+        .map((c) => choices.find((x) => x.code === c && x.group === "Passes" && x.code !== chosen.code))
+        .filter((c): c is PlanChoice => Boolean(c))
+        .map((c) => c.code)
+    : [];
 
   const user = await getUser();
   let identity: Identity | null = null;
@@ -114,6 +118,8 @@ export default async function AskPage({ searchParams }: { searchParams: Promise<
         const first = host.name.split(" ")[0] || host.name;
         // Asking for the package they're already on would be an empty ask: then it's about packages in general.
         const wanted = chosen && chosen.code !== plan?.package ? chosen : null;
+        // A pass is "got", a package is "chosen" (Content r2 F1).
+        const wantedWords = wanted ? (wanted.group === "Passes" ? `get a ${passWords(page.passes.find((p) => p.code === wanted.code)?.event_type ?? "")}` : `choose ${wanted.name}`) : null;
         // What the account has now that the package asked for leaves out, said before anyone sends (consultant 5).
         const wantedPkg = wanted?.group === "Packages" ? page.packages.find((p) => p.code === wanted.code) : null;
         const lost = wantedPkg && plan ? sortKinds(plan.own_event_types.filter((t) => !wantedPkg.event_types.includes(t))) : [];
@@ -121,7 +127,7 @@ export default async function AskPage({ searchParams }: { searchParams: Promise<
           <Frame title="Ask your Account Host" banner={banner} back={back}>
             <div className="max-w-2xl space-y-4 leading-7">
               <p>
-                {host.unknown || !host.email ? "Your Account Host" : `${host.name}, the Account Host for ${org.name},`} is the only one who can choose a package for the account.
+                {host.unknown || !host.email ? "Your Account Host" : `${host.name}, the Account Host for ${org.name},`} is the only one who can choose a package or pass for the account.
                 {plan ? ` ${org.name} is on ${plan.package_name} now.` : ""}
               </p>
               {lost.length > 0 && wantedPkg && plan && (
@@ -136,7 +142,7 @@ export default async function AskPage({ searchParams }: { searchParams: Promise<
                   plan={wanted ? wanted.code : ""}
                   first={first}
                   email={host.email}
-                  label={wanted ? `Ask ${first} to choose ${wanted.name}` : `Ask ${first} about packages`}
+                  label={wantedWords ? `Ask ${first} to ${wantedWords}` : `Ask ${first} about packages`}
                 />
               ) : (
                 <p>
@@ -156,15 +162,23 @@ export default async function AskPage({ searchParams }: { searchParams: Promise<
           </Frame>
         );
       }
-      identity = { name: name || user.email, email: user.email, organization: org.name, organizationId: org.id };
+      // The account's package now: what a choice would leave out (UX r2 2), and whether it's a teacher's own account.
+      const plan = await loadAccountPlan(supabase, org.id);
+      identity = {
+        name: name || user.email,
+        email: user.email,
+        organization: org.name,
+        organizationId: org.id,
+        current: plan ? { name: plan.package_name, eventTypes: plan.own_event_types, teacher: plan.package === "free_teacher" } : null,
+      };
     } else {
-      identity = { name: name || user.email, email: user.email, organization: null, organizationId: null };
+      identity = { name: name || user.email, email: user.email, organization: null, organizationId: null, current: null };
     }
   }
 
   return (
     <Frame title={null} banner={banner} back={back}>
-      <RequestForm action={requestPricing} choices={choices} plan={chosen?.code ?? ""} kinds={kinds} identity={identity} start={q.start === "1"} message={message} back={back} />
+      <RequestForm action={requestPricing} choices={choices} plan={chosen?.code ?? ""} kinds={kinds} identity={identity} start={q.start === "1"} also={also} back={back} />
     </Frame>
   );
 }

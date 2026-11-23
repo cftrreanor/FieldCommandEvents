@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import { PublicMenu } from "@/components/public-menu";
-import { HeaderCta, PRICES_LINK, PricesHeaderLink, pricesLinks } from "@/components/site-prices";
+import { CtaLink, HeaderCta, PRICES_LINK, PricesHeaderLink, pricesLinks, startHref, startsOnPricingForm } from "@/components/site-prices";
 import { sitePricing } from "@/lib/site-pricing";
 import Link from "next/link";
 import { HeaderBar, headerLinkClass } from "@/components/logo";
 import { FeatureSections, infoBox, SupportSection } from "@/components/audience-page";
 import { FaqList } from "@/components/faq-list";
 import { HowItWorks, type HowStep } from "@/components/how-it-works";
-import { JumpLink } from "@/components/jump-link";
 import { SiteFooter } from "@/components/site-footer";
 import { PilotForm } from "@/app/pilot-form";
 import { requestPilot } from "@/app/pilot-actions";
@@ -28,8 +27,6 @@ export const metadata: Metadata = {
   alternates: { canonical: MEETINGS_PAGE.path },
 };
 
-/** The request form at the bottom of this page. */
-const START = "#join" as const;
 
 const steps: HowStep[] = [
   {
@@ -137,6 +134,10 @@ export default async function MeetingsPage() {
   const site = await sitePricing();
   const after = site.afterPilot;
   const CTA = pilotCta(after);
+  // The request form at the bottom of this page, or once the pricing page is live after the pilot, the pricing request
+  // form with meetings filled in (owner decision, follow-up check 2).
+  const START = startHref(site, "#join", ["meeting"]);
+  const oneForm = startsOnPricingForm(site);
   return (
     <div className="flex flex-1 flex-col">
       <HeaderBar maxWidth="max-w-6xl">
@@ -156,7 +157,7 @@ export default async function MeetingsPage() {
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>
-        <HeaderCta afterPilot={after} live={site.live} joinHref="#join" />
+        <HeaderCta afterPilot={after} live={site.live} joinHref="#join" kinds={["meeting"]} />
       </HeaderBar>
 
       <main className="flex-1">
@@ -172,9 +173,9 @@ export default async function MeetingsPage() {
               back-and-forth emails, and no double bookings.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <JumpLink href={START} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
+              <CtaLink href={START} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
                 {CTA}
-              </JumpLink>
+              </CtaLink>
             </div>
             <p className="mt-4 text-sm text-on-dark-mute">{after ? AFTER_PILOT_NOTE : `${PILOT_NOTE} No credit card.`}</p>
           </div>
@@ -223,7 +224,13 @@ export default async function MeetingsPage() {
               )}
             </p>
             <div className="mt-8">
-              <PilotForm action={requestPilot} defaultEventTypes={["meeting"]} submitLabel={CTA} />
+              {oneForm ? (
+                <CtaLink href={START} className="inline-flex min-h-11 items-center rounded-full bg-violet px-6 font-semibold text-header hover:brightness-90">
+                  {CTA}
+                </CtaLink>
+              ) : (
+                <PilotForm action={requestPilot} defaultEventTypes={["meeting"]} submitLabel={CTA} />
+              )}
             </div>
           </div>
         </section>
@@ -231,9 +238,9 @@ export default async function MeetingsPage() {
         <section className="bg-teal-deep text-white">
           <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-20">
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">Every detail organized. Every organizer supported.</h2>
-            <JumpLink href={START} className="mt-8 inline-flex rounded-md bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
+            <CtaLink href={START} className="mt-8 inline-flex rounded-md bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
               {CTA}
-            </JumpLink>
+            </CtaLink>
           </div>
         </section>
       </main>

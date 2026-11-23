@@ -7,7 +7,7 @@ import { getMyOrganization, getOrigin } from "@/lib/data";
 import { emailLayout, sendEmail } from "@/lib/email";
 import { loadTiers } from "@/lib/package-names";
 import { loadAccountHost } from "@/lib/plan";
-import { passLabel } from "@/lib/pricing";
+import { passWords } from "@/lib/pricing";
 import { createClient } from "@/lib/supabase/server";
 
 const PLAN_CODE = /^[a-z0-9_]{1,60}$/;
@@ -45,10 +45,11 @@ export async function askAccountHost(_prev: ActionState, formData: FormData): Pr
   if (!host.email) return { error: `We couldn't find your Account Host's email. Please ask them, or email us at ${brand.supportEmail}.` };
   const first = host.name.split(" ")[0] || host.name;
 
-  // The package's name as the pricing page says it (a pass by its kind of event).
+  // The package's name as the pricing page says it; a pass by its kind of event, and "got", not "chosen" (Content r2 F1).
   const tier = code ? (await loadTiers()).find((t) => t.code === code) : undefined;
-  const planName = tier ? (tier.kind === "pass" ? passLabel(tier.event_types[0] ?? "") : tier.name) : null;
-  const what = planName ? `choose ${planName}` : "look at packages";
+  const isPass = tier?.kind === "pass";
+  const planName = tier ? (isPass ? `a ${passWords(tier.event_types[0] ?? "")}` : tier.name) : null;
+  const what = planName ? `${isPass ? "get" : "choose"} ${planName}` : "look at packages";
 
   // Checked and counted before anything is sent: only while the page is live, only shown packages, once a day.
   const { data: recorded, error: recordError } = await supabase.rpc("record_account_host_ask", { p_plan_code: code || null });
@@ -68,16 +69,16 @@ export async function askAccountHost(_prev: ActionState, formData: FormData): Pr
   const { data: me } = await supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle<{ full_name: string | null }>();
   const myName = me?.full_name?.trim() || user.email;
   const origin = await getOrigin();
-  const subject = planName ? `${myName} asked you to choose ${planName}` : `${myName} asked you to look at packages`;
+  const subject = `${myName} asked you to ${what}`;
   const { html, text } = emailLayout({
     heading: subject,
     paragraphs: [
-      `${myName} (${user.email}), on your ${org.name} team, asked you to ${what} for the account on the ${brand.name} packages and prices page. Only the Account Host can choose a package.`,
+      `${myName} (${user.email}), on your ${org.name} team, asked you to ${what} for the account on the ${brand.name} packages and prices page. Only the Account Host can choose a package or pass.`,
       `Ask us about it from the packages and prices page, and a real person will reply within a day. Nothing is charged unless you choose a package. Reply to this email to reach ${myName}.`,
     ],
     // What they typed, escaped by emailLayout like every row.
     rows: note ? [{ title: "Their note", detail: note }] : undefined,
-    button: { label: planName ? `Ask about ${planName}` : "See packages and prices", url: `${origin}/pricing${planName ? `/ask?plan=${code}` : ""}` },
+    button: { label: planName ? (isPass ? `Get ${planName}` : `Ask about ${planName}`) : "See packages and prices", url: `${origin}/pricing${planName ? `/ask?plan=${code}` : ""}` },
   });
   const ok = await sendEmail({ to: host.email, subject, html, text, replyTo: user.email, fromApp: true });
   if (!ok) {

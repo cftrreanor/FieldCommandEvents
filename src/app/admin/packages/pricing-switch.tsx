@@ -156,22 +156,28 @@ function Confirm({
       <p className="mt-2 text-sm">What changes across the site:</p>
       {toLive ? (
         <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">
-          <li>Anyone can open /pricing and see {contents}, with their prices</li>
-          <li>The menus, footer, and sitemap link to it, and so do the pricing lines and questions on the home and conferences pages</li>
-          <li>{afterPilot ? "The header's “Get started” button opens the request form" : `From ${PILOT_END_LABEL}, the header's “Get started” button opens the request form`}</li>
+          <li>Anyone can open the Packages and prices page and see {contents}, with their prices</li>
+          <li>
+            The menus, footer, and sitemap link to it, and so do the pricing lines and questions on the home and conferences pages. Pages for a kind of event with
+            a pass say what the pass costs
+          </li>
+          <li>
+            {afterPilot ? "Every" : `After ${PILOT_END_LABEL}, every`} &ldquo;Get started&rdquo; button (in the header, the hero, the sections, and the closing band,
+            and &ldquo;Start free&rdquo; on the conferences page) opens the request form in place of the form on each page
+          </li>
           <li>You can hide it again at any time</li>
         </ul>
       ) : (
         <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">
           <li>Visitors to /pricing get &ldquo;We can&apos;t find that page,&rdquo; and you can still preview it</li>
-          <li>The links to it come off the menus, footer, sitemap, and the home and conferences pages</li>
-          {afterPilot && <li>The header&apos;s &ldquo;Get started&rdquo; button goes back to the form on each page</li>}
+          <li>The links to it come off the menus, footer, sitemap, and the home, conferences, and event pages</li>
+          {afterPilot && <li>Every &ldquo;Get started&rdquo; and &ldquo;Start free&rdquo; button goes back to the form on its own page</li>}
         </ul>
       )}
       {toLive && !botCheck && (
         <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm">
           <span className="font-semibold">The request form&apos;s robot check isn&apos;t set up yet.</span> Requests still come in, with the form&apos;s other checks
-          against bots. Add the Turnstile keys to turn it on.
+          against bots. Ask whoever set up the site to turn on the robot check (Turnstile).
         </p>
       )}
       {toLive && noPrice.length > 0 && (

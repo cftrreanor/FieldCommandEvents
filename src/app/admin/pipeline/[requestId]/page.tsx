@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { pilotEventTypeLabels } from "@/lib/pilot";
+import { PILOT_END, pilotEventTypeLabels, requestWord } from "@/lib/pilot";
+import { pilotOver } from "@/lib/site-pricing";
 import Link from "next/link";
 import { DEFAULT_PILOT_END, requirePlatformAdmin } from "@/lib/admin";
 import { invitePackageLabel, inviteStatusLabel } from "@/lib/invitation-plan";
@@ -19,7 +20,7 @@ import { invitePackageChoices, loadTiers, tierNames } from "@/lib/package-names"
 import { InviteHostPanel } from "../invite-host-panel";
 import { StageSelect } from "../stage-select";
 
-export const metadata: Metadata = { title: "Pilot request" };
+export const generateMetadata = (): Metadata => ({ title: requestWord(pilotOver()) });
 
 type Invitation = {
   invited_at: string;
@@ -69,7 +70,7 @@ export default async function PilotRequestPage({ params }: PageProps<"/admin/pip
         : `Sent ${formatDate(utcToZonedDate(inv.invited_at, ADMIN_TZ), { weekday: undefined })}, open until ${formatDate(utcToZonedDate(inv.expires_at, ADMIN_TZ), { weekday: undefined, year: undefined })}`;
 
   const items: TimelineItem[] = [
-    { at: r.created_at, kind: "pipeline", title: `${r.name} asked to join the pilot` },
+    { at: r.created_at, kind: "pipeline", title: `${r.name} ${r.created_at.slice(0, 10) > PILOT_END ? "asked to get started" : "asked to join the pilot"}` },
     ...(inv ? [{ at: inv.invited_at, kind: "pipeline" as const, title: "Host invitation sent" }] : []),
     ...(inv?.used_at ? [{ at: inv.used_at, kind: "account" as const, title: "Set up their organization", href: account ? `/admin/accounts/${account.id}` : undefined }] : []),
     ...noteItems((noteData ?? []) as unknown as NoteRow[]),

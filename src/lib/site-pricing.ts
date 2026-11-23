@@ -2,6 +2,7 @@ import "server-only";
 import { createClient as createPlainClient } from "@supabase/supabase-js";
 import { unstable_cache } from "next/cache";
 import { PILOT_END } from "@/lib/pilot";
+import { loadPricingPage, type PricingPage } from "@/lib/pricing";
 import { schemaAwareFetch } from "@/lib/schema-check";
 import { createAdminClient } from "@/lib/supabase/server";
 import { requireSupabaseEnv } from "@/lib/supabase/env";
@@ -46,4 +47,18 @@ export async function sitePricing(): Promise<{ live: boolean; afterPilot: boolea
 export function createAnonClient() {
   const { url, key } = requireSupabaseEnv();
   return createPlainClient(url, key, { auth: { persistSession: false }, global: { fetch: schemaAwareFetch } });
+}
+
+/**
+ * The live pricing page's data, for the website's lines drawn from it (the home page's cost answer, a pass line on
+ * the page for its kind of event). Null while the page is hidden or when it can't be read.
+ */
+export async function livePricingPage(live: boolean): Promise<PricingPage | null> {
+  if (!live) return null;
+  try {
+    const load = await loadPricingPage(createAnonClient());
+    return load.status === "ok" ? load.page : null;
+  } catch {
+    return null;
+  }
 }

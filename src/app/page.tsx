@@ -17,10 +17,10 @@ import { PilotForm } from "./pilot-form";
 import { AFTER_PILOT_CLOSING, AFTER_PILOT_NOTE, PILOT_CLOSING, PILOT_END_LABEL, PILOT_NOTE, pilotCta } from "@/lib/pilot";
 import { IconTile } from "@/components/line-icon";
 import { PublicMenu } from "@/components/public-menu";
-import { HeaderCta, PRICES, PricesHeaderLink, pricesLinks } from "@/components/site-prices";
-import { createAnonClient, sitePricing } from "@/lib/site-pricing";
-import { dollars } from "@/lib/plan";
-import { loadPricingPage } from "@/lib/pricing";
+import { CtaLink, HeaderCta, PRICES, PricesHeaderLink, pricesLinks, startHref, startsOnPricingForm } from "@/components/site-prices";
+import { livePricingPage, sitePricing } from "@/lib/site-pricing";
+import { loadTiers } from "@/lib/package-names";
+import { costSummary, freeKindsWords, type PricingPage } from "@/lib/pricing";
 import type { ReactNode } from "react";
 import { SPONSOR_PROMISE } from "@/lib/sponsors";
 
@@ -121,12 +121,15 @@ const SPONSOR_PILOT_ANSWER = `Yes, on band contests, festivals, and school fairs
  * the packages page shows only while that page is live, with the starting price from it (owner decision 2 of the
  * built check; Content F1, F9).
  */
-function faqsFor(live: boolean, afterPilot: boolean, lowest: number | null): Faq[] {
+function faqsFor(live: boolean, afterPilot: boolean, page: PricingPage | null): Faq[] {
   if (!live && !afterPilot) return baseFaqs;
+  // From the live page's data: "Free for volunteer sign-ups and meetings, one at a time, packages from $60 a year, and
+  // one-event passes from $50" (consultant r2 F12).
+  const summary = page ? costSummary(page) : null;
   const cost: Faq = live
     ? {
         q: "How much does it cost?",
-        a: `${lowest != null ? `Packages start at ${dollars(lowest)} a year, per account, and our packages and prices page lists each one.` : "Prices are per account, and our packages and prices page lists each package."} Volunteers, families, and visiting directors never pay. Nothing renews or charges on its own.`,
+        a: `${summary ? `${summary[0].toUpperCase()}${summary.slice(1)}, per account. Our packages and prices page lists each one.` : "Prices are per account, and our packages and prices page lists each package."} Volunteers, families, and visiting directors never pay. Nothing renews or charges on its own.`,
         link: { href: PRICES.href, label: "See packages and prices" },
       }
     : {
@@ -141,14 +144,13 @@ function faqsFor(live: boolean, afterPilot: boolean, lowest: number | null): Faq
   ];
 }
 
-/** The lowest yearly package price on the live pricing page, or null when it can't be read. */
-async function lowestPrice(live: boolean): Promise<number | null> {
-  if (!live) return null;
+/** What Free publishes, from the package data (read with the server key, so it works while the pricing page is hidden). */
+async function freeWords(page: PricingPage | null): Promise<string | null> {
+  const fromPage = page?.free.find((f) => f.code === "free");
+  if (fromPage) return freeKindsWords(fromPage);
   try {
-    const load = await loadPricingPage(createAnonClient());
-    if (load.status !== "ok") return null;
-    const prices = load.page.packages.map((p) => p.price_year_cents).filter((c): c is number => c != null);
-    return prices.length ? Math.min(...prices) : null;
+    const free = (await loadTiers()).find((t) => t.code === "free");
+    return free ? freeKindsWords(free) : null;
   } catch {
     return null;
   }
@@ -221,8 +223,11 @@ const pilotColumns = (live: boolean): Column[] =>
     ),
   }));
 
-/** After the pilot: getting started, how paying works, and what pilot organizers keep (no pilot promises left). */
-const afterPilotColumns = (live: boolean): Column[] => [
+/**
+ * After the pilot: getting started, how paying works, and what pilot organizers keep (no pilot promises left).
+ * `freeWords`: what Free publishes, from the package data ("volunteer sign-ups and meetings, one at a time"; UX r2 5).
+ */
+const afterPilotColumns = (live: boolean, freeWords: string | null): Column[] => [
   {
     title: "What you get",
     items: [
@@ -245,15 +250,25 @@ const afterPilotColumns = (live: boolean): Column[] => [
         ),
       },
       { key: "renew", body: "Nothing renews or charges on its own" },
-      { key: "fee", body: "No platform fee for anyone you invite: volunteers, families, and visiting groups use it free" },
+      { key: "fee", body: "No platform fee for anyone you invite: volunteers, families, and visiting directors use it free" },
     ],
   },
   {
-    title: "In the pilot?",
+    title: "Were you in the pilot?",
     items: [
       { key: "live", body: "Events published during the pilot stay live" },
       { key: "team", body: "Your team stays as it is" },
-      { key: "free", body: "New events publish under the Free package until you choose a package" },
+      {
+        key: "free",
+        body: freeWords ? (
+          <>
+            New events publish under Free: {freeWords}. For other kinds, choose a package or get a pass
+            {live && <>. {pricesLink}</>}
+          </>
+        ) : (
+          "New events publish under the Free package until you choose a package"
+        ),
+      },
     ],
   },
 ];
@@ -284,7 +299,7 @@ const pilot = [
     items: [
       "Nothing renews or charges automatically",
       TALK_PRICING,
-      "No platform fee for anyone you invite: volunteers, families, and visiting groups use it free",
+      "No platform fee for anyone you invite: volunteers, families, and visiting directors use it free",
     ],
   },
 ];
@@ -323,16 +338,16 @@ const jsonLdFor = (live: boolean, afterPilot: boolean, faqs: Faq[]) => ({
         ? {
             "@type": "Offer",
             url: `${SITE_URL}/pricing`,
-            description: `Packages for organizers, priced per account. No fee for volunteers, families, or visiting groups. Nothing renews or charges on its own.`,
+            description: `Packages for organizers, priced per account. No fee for volunteers, families, or visiting directors. Nothing renews or charges on its own.`,
           }
         : afterPilot
           ? {
               "@type": "Offer",
-              description: `Packages for organizers, priced per account. No fee for volunteers, families, or visiting groups. Nothing renews or charges on its own.`,
+              description: `Packages for organizers, priced per account. No fee for volunteers, families, or visiting directors. Nothing renews or charges on its own.`,
             }
           : {
               "@type": "Offer",
-              description: `Free for organizers during the pilot, which ends ${PILOT_END_LABEL}. After the pilot, organizers pay to use ${brand.name}. No fee for volunteers, families, or visiting groups.`,
+              description: `Free for organizers during the pilot, which ends ${PILOT_END_LABEL}. After the pilot, organizers pay to use ${brand.name}. No fee for volunteers, families, or visiting directors.`,
             },
     },
     {
@@ -358,10 +373,15 @@ const sectionTitle = "text-3xl font-normal leading-[1.02] tracking-tight sm:text
 
 export default async function Home() {
   const [banners, site] = await Promise.all([homeBanners(), sitePricing()]);
-  const faqs = faqsFor(site.live, site.afterPilot, await lowestPrice(site.live));
+  const priced = await livePricingPage(site.live);
+  const faqs = faqsFor(site.live, site.afterPilot, priced);
   const jsonLd = jsonLdFor(site.live, site.afterPilot, faqs);
   const after = site.afterPilot;
   const CTA = pilotCta(after);
+  // Every "Get started" opens the pricing request form once it's live after the pilot (owner decision, follow-up 2).
+  const START = startHref(site, JOIN);
+  const oneForm = startsOnPricingForm(site);
+  const free = after ? await freeWords(priced) : null;
   return (
     <div className="flex flex-1 flex-col">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
@@ -404,9 +424,9 @@ export default async function Home() {
                 Volunteer and meeting <span className="whitespace-nowrap">sign-ups</span>, contest registration, and community events, on public links, with no account needed <span className="whitespace-nowrap">to sign up</span>
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
-                <JumpLink href={JOIN} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
+                <CtaLink href={START} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
                   {CTA}
-                </JumpLink>
+                </CtaLink>
               </div>
               <p className="mt-4 text-sm text-on-dark-mute">{after ? AFTER_PILOT_NOTE : PILOT_NOTE}</p>
             </div>
@@ -554,7 +574,7 @@ export default async function Home() {
               </>
             )}
             <div className="mt-10 grid gap-6 md:grid-cols-3">
-              {(after ? afterPilotColumns(site.live) : pilotColumns(site.live)).map((col) => (
+              {(after ? afterPilotColumns(site.live, free) : pilotColumns(site.live)).map((col) => (
                 <div key={col.title} className="rounded-lg border border-border bg-background p-6">
                   <h3 className="font-semibold">{col.title}</h3>
                   <ul className="mt-3 space-y-2 leading-7 text-muted">
@@ -573,9 +593,18 @@ export default async function Home() {
 
             <div id="join" tabIndex={-1} className="mt-12 max-w-3xl scroll-mt-20 outline-none">
               <h3 className="text-xl font-semibold">Tell us about your events</h3>
-              <p className="mt-1 text-muted">It takes a minute, and a person on our team will reply by email.</p>
+              <p className="mt-1 text-muted">
+                {oneForm ? "It takes a minute on our request form" : "It takes a minute"}, and a person on our team will reply by email.
+              </p>
               <div className="mt-6">
-                <PilotForm action={requestPilot} submitLabel={CTA} />
+                {oneForm ? (
+                  // One form for everyone once the pricing page is live (owner decision, follow-up check 2).
+                  <CtaLink href={START} className="inline-flex min-h-11 items-center rounded-full bg-violet px-6 font-semibold text-header hover:brightness-90">
+                    {CTA}
+                  </CtaLink>
+                ) : (
+                  <PilotForm action={requestPilot} submitLabel={CTA} />
+                )}
               </div>
             </div>
           </div>
@@ -589,9 +618,9 @@ export default async function Home() {
               {after ? AFTER_PILOT_CLOSING : PILOT_CLOSING}
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <JumpLink href={JOIN} className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
+              <CtaLink href={START} className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
                 {CTA}
-              </JumpLink>
+              </CtaLink>
               <a
                 href={CONTACT}
                 className="inline-flex rounded-full px-6 py-3 font-semibold text-white ring-1 ring-white/60 hover:bg-white/10"

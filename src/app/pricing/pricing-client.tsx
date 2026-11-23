@@ -11,9 +11,12 @@ import {
   cardContents,
   cheapestChoices,
   FEATURE_HINTS,
+  eventNoun,
   kindNoun,
   oneEvent,
+  orWords,
   packagesThatFit,
+  passTeamLine,
   passWords,
   WEBSITE_KINDS,
   type Choice,
@@ -69,8 +72,8 @@ function usePhone() {
 }
 
 const icon = (t: string) => WEBSITE_KINDS.find((k) => k.value === t)?.icon ?? "sparkle";
-/** "band contests · festivals": short names, so a list of kinds reads at a glance (Content F3). */
-const kindList = (kinds: readonly string[]) => kinds.map(kindNoun).join(" · ");
+/** "school fairs or visitor check-in": short names, so a list of kinds reads at a glance (Content F3, r2 F7). */
+const kindList = (kinds: readonly string[]) => orWords(kinds.map(kindNoun));
 const capFirst = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 /**
@@ -90,8 +93,25 @@ function choiceWords(c: Choice, freeName: string) {
   return { title: free ? title.replace(c.package.name, freeName) : title, price, covers };
 }
 
-/** The badge on the lowest-priced way to run what was picked: with passes, it's one of each, not a year of them. */
-const lowestWords = (c: Pick<Choice, "passes">) => (c.passes.length ? "Lowest price for one of each" : "Lowest price that includes what you picked");
+/**
+ * The badge on the lowest-priced way to run what was picked: with passes, it's one of each, not a year of them ("Lowest
+ * price for one band contest" when one kind was picked; Content r2 F6).
+ */
+const lowestWords = (c: Pick<Choice, "passes">, picked: readonly string[]) =>
+  !c.passes.length ? "Lowest price that includes what you picked" : picked.length === 1 ? `Lowest price for ${oneEvent(picked[0])}` : "Lowest price for one of each";
+
+/**
+ * Why a dearer option is worth a look, from what it includes: "Every school fair and volunteer sign-up all year, plus
+ * one visitor check-in day" (consultant r2 F7).
+ */
+function reasonWords(c: Choice) {
+  const every = c.covers.filter((k) => !k.one).map((k) => eventNoun(k.event_type));
+  const one = c.covers.filter((k) => k.one).map((k) => kindNoun(k.event_type));
+  const parts = [every.length ? `Every ${listWords(every)} all year` : null, one.length ? `${capFirst(listWords(one))}, one at a time` : null].filter(Boolean);
+  const passes = c.passes.map((p) => oneEvent(p.event_type));
+  const head = parts.join(", and ");
+  return passes.length ? `${head || capFirst(listWords(passes))}${head ? `, plus ${listWords(passes)}` : ""}` : head;
+}
 
 /** "What are you running?" (checkboxes), what fits, the cheaper choices, and the cards. */
 export function Chooser({ page, headingId }: { page: PricingPage; headingId: string }) {
@@ -192,9 +212,20 @@ export function Chooser({ page, headingId }: { page: PricingPage; headingId: str
             {fits.length ? "Ways that cost less" : "Ways to run what you picked"}
           </h3>
           <ul className="mt-2 space-y-3">
-            {options.map((c, i) => (
-              <ChoiceRow key={c.package.code + c.passes.map((p) => p.code).join()} c={c} freeName={freeName} lowest={i === 0} picked={picked} />
-            ))}
+            {options.map((c, i) => {
+              const base = [...page.free, ...cards].find((t) => t.code === c.package.code);
+              return (
+                <ChoiceRow
+                  key={c.package.code + c.passes.map((p) => p.code).join()}
+                  c={c}
+                  freeName={freeName}
+                  lowest={i === 0}
+                  picked={picked}
+                  // What a pass doesn't change, from the package it's used with (owner decision, follow-up check 1).
+                  team={c.passes.length && base ? passTeamLine(base, cards) : null}
+                />
+              );
+            })}
           </ul>
           {options.some((c) => c.passes.length) && (
             <p className="mt-3 text-muted">
@@ -255,29 +286,36 @@ export function KindChoice({
 }
 
 /** One cheaper way, with its own button to the request form (the pass or package, and the picks, filled in). */
-function ChoiceRow({ c, freeName, lowest, picked }: { c: Choice; freeName: string; lowest: boolean; picked: string[] }) {
+function ChoiceRow({ c, freeName, lowest, picked, team }: { c: Choice; freeName: string; lowest: boolean; picked: string[]; team: string | null }) {
   const w = choiceWords(c, freeName);
   const id = useId();
   const free = c.package.code === "free";
   const [first, ...rest] = c.passes.map((p) => p.code);
+  const n = c.passes.length;
   const button = free
-    ? c.passes.length
-      ? { href: askHref(first, picked, rest), label: c.passes.length === 1 ? "Get this pass" : "Get these passes" }
+    ? n
+      ? { href: askHref(first, picked, rest), label: n === 1 ? "Get this pass" : "Get these passes" }
       : { href: "#free", label: `About ${freeName}` }
-    : { href: askHref(c.package.code, picked, c.passes.map((p) => p.code)), label: "Ask about this" };
+    : {
+        href: askHref(c.package.code, picked, c.passes.map((p) => p.code)),
+        label: `Ask about ${c.package.name}${n === 0 ? "" : n === 1 ? " and a pass" : " and passes"}`,
+      };
+  // A dearer option says why it's worth a look, in place of what it includes (consultant r2 F7).
+  const detail = !lowest && !free ? reasonWords(c) : w.covers;
   return (
     <li className="grid gap-3 rounded-lg border border-border bg-background p-4 sm:grid-cols-[1fr_auto] sm:items-center">
       <div className="min-w-0">
         {lowest && (
           <p className="mb-1.5">
-            <Badge tone="success">{lowestWords(c)}</Badge>
+            <Badge tone="success">{lowestWords(c, picked)}</Badge>
           </p>
         )}
         <p id={id} className="font-semibold">
           {w.title}
         </p>
         <p className="tabular-nums">{capFirst(w.price)}</p>
-        {w.covers && <p className="text-sm text-muted">{w.covers}</p>}
+        {detail && <p className="text-sm text-muted">{detail}</p>}
+        {team && <p className="text-sm text-muted">{team}</p>}
       </div>
       <a href={button.href} aria-describedby={id} className={`${BTN_OUTLINE} w-full sm:w-auto`}>
         {button.label}
@@ -367,12 +405,8 @@ function PackageCard({
               <>
                 <CheckIcon className="size-5 text-success" /> Includes what you picked
               </>
-            ) : missingKinds.length === 1 ? (
-              <>Doesn&apos;t include {kindNoun(missingKinds[0])}</>
             ) : (
-              <>
-                Doesn&apos;t include {missingKinds.length} of your picks: {kindList(missingKinds)}
-              </>
+              <>Doesn&apos;t include {kindList(missingKinds)}</>
             )}
           </p>
         )}
@@ -391,10 +425,14 @@ function PackageCard({
         )}
         {p.teacher_rate && p.teacher_year_cents != null && (
           <p className="mt-1 text-sm text-muted tabular-nums">
-            Classroom teachers: {yearly(p.teacher_year_cents)}.{" "}
-            <a href="#teacher-rate" className={`${LINK} inline-flex min-h-11 items-center`}>
-              Who qualifies
-            </a>
+            Classroom teachers: {yearly(p.teacher_year_cents)}{" "}
+            {/* The dot stays with its link when the line wraps (Content r2 F9). */}
+            <span className="inline-flex items-center whitespace-nowrap">
+              <span aria-hidden>·&nbsp;</span>
+              <a href="#teacher-rate" className={`${LINK} inline-flex min-h-11 items-center`}>
+                Who qualifies
+              </a>
+            </span>
           </p>
         )}
         <div className="mt-3">

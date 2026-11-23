@@ -12,6 +12,12 @@ export const PILOT_NOTE = `Free for organizers through ${PILOT_END_LABEL}. A per
 // Once the pilot ends (src/lib/site-pricing.ts pilotOver()), whether or not the pricing page is on, the website's pilot
 // words switch to these (docs/design-decisions/2026-11-22-pricing-page.md, built check, decision 2).
 
+/**
+ * What the owner's emails and admin lists call a request from the website's form: "Pilot request", then "Get started
+ * request" once the pilot ends (owner decision, follow-up check 2). Only the words change; it's the same list.
+ */
+export const requestWord = (afterPilot: boolean) => (afterPilot ? "Get started request" : "Pilot request");
+
 /** Every button to the request form: "Join the pilot", then "Get started" once the pilot ends. */
 export const pilotCta = (afterPilot: boolean) => (afterPilot ? "Get started" : "Join the pilot");
 /** Under a hero's button once the pilot ends, in place of PILOT_NOTE (Content F1). */

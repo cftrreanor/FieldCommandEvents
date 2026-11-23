@@ -7,6 +7,7 @@ import { getOrigin } from "@/lib/data";
 import { notifyAdmins } from "@/lib/admin-alerts";
 import { emailLayout } from "@/lib/email";
 import { tierNames } from "@/lib/package-names";
+import { listWords } from "@/lib/plan";
 import { checkPricingRequest } from "@/lib/pricing";
 import { pilotEventTypeLabels } from "@/lib/pilot";
 import { createClient } from "@/lib/supabase/server";
@@ -18,7 +19,7 @@ import { createClient } from "@/lib/supabase/server";
  * admin (replies go to the person who asked).
  *
  * The form sends: name, email, organization, eventTypes (any number), plan (a package or pass code, or empty),
- * teacherRate ("1"), payByInvoice ("1"), message, organizationId (the signed-in person's account, optional), and
+ * also (more pass codes, any number), teacherRate ("1"), payByInvoice ("1"), message, organizationId (the signed-in person's account, optional), and
  * the same bot traps as the pilot form: website (hidden, left empty), startedAt, touched, and the Turnstile token.
  */
 /** What submit_pricing_request() returns (see the migration for each status). */
@@ -50,6 +51,7 @@ export async function requestPricing(_prev: ActionState, formData: FormData): Pr
     p_pay_by_invoice: d.payByInvoice,
     p_message: d.message || null,
     p_organization_id: d.organizationId,
+    p_also_codes: d.also,
   });
   if (error) {
     // The database's own checks (a package no longer offered, the page switched off) come back in plain words.
@@ -81,7 +83,8 @@ export async function requestPricing(_prev: ActionState, formData: FormData): Pr
   }
 
   const names = await tierNames();
-  const planName = d.plan ? (names[d.plan] ?? d.plan) : "No package picked";
+  // Every package and pass asked about, the first and any more passes with it.
+  const planName = d.plan ? listWords([d.plan, ...d.also].map((c) => names[c] ?? c)) : "No package picked";
   const rows = [
     { title: "Name", detail: d.name },
     { title: "Email", detail: d.email },

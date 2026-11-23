@@ -625,6 +625,15 @@ do $$ begin
     check (account_role is null or (account_role in ('owner', 'admin') and organization_id is not null));
 exception when duplicate_object then null;
 end $$;
+-- More passes asked about in the same request: a cheaper option on the page can be a package and a pass, or two
+-- passes ("You're asking about: a school fair pass and a band contest pass"). plan_code holds the first; these hold
+-- the rest, each a pass the page shows, never the same one twice.
+alter table public.pricing_requests add column if not exists also_plan_codes text[] not null default '{}';
+do $$ begin
+  alter table public.pricing_requests add constraint pricing_requests_also_plan_codes_check
+    check (cardinality(also_plan_codes) <= 6 and (cardinality(also_plan_codes) = 0 or plan_code is not null));
+exception when duplicate_object then null;
+end $$;
 create index if not exists pricing_requests_created_at_idx on public.pricing_requests (created_at desc);
 create index if not exists pricing_requests_email_idx on public.pricing_requests (lower(email), created_at desc);
 
@@ -639,14 +648,18 @@ create policy "Platform admins read pricing requests" on public.pricing_requests
 -- Send a request. The only way in for visitors and signed-in people (the server action checks the bot traps and
 -- the form first). Returns {"id", "status", "alert"}:
 --   'saved'      saved; the server action emails it to the admins.
---   'duplicate'  the same email asked about the same package or pass (or both about nothing) in the last hour: a
---                double tap or the back button. Nothing new is saved or emailed. A package and then a pass both go in.
+--   'duplicate'  the same email asked about the same package or pass and the same extra passes (or both about
+--                nothing) in the last hour: a double tap or the back button. Nothing new is saved or emailed. A
+--                package and then a pass both go in.
 --   'limit'      3 requests from this email in the last hour already: nothing saved; the person is asked to wait or
 --                email us. One address can't flood the list.
 --   'quiet'      saved, but more than 30 came in from everyone in the last hour: no email for this one, so a script
 --                can't flood the admins' inboxes, and real requests are never lost. "alert" is true for the first one
 --                past the limit, so the server action sends the admins one warning instead.
 -- An account is attached only when the signed-in person is on it, with their role there (account_role).
+-- p_also_codes: more passes in the same request (also_plan_codes), each one the page shows.
+-- The earlier version had no p_also_codes; drop it so the two can't both exist.
+drop function if exists public.submit_pricing_request(text, text, text, text[], text, boolean, boolean, text, uuid);
 create or replace function public.submit_pricing_request(
   p_name text,
   p_email text,
@@ -656,7 +669,8 @@ create or replace function public.submit_pricing_request(
   p_teacher_rate boolean,
   p_pay_by_invoice boolean,
   p_message text,
-  p_organization_id uuid default null
+  p_organization_id uuid default null,
+  p_also_codes text[] default '{}'
 )
 returns jsonb
 language plpgsql security definer set search_path = public
@@ -668,6 +682,7 @@ declare
   v_message text := nullif(btrim(coalesce(p_message, '')), '');
   known text[] := (select array_agg(t::text) from unnest(enum_range(null::public.event_type)) t) || '{other}'::text[];
   v_types text[];
+  v_also text[];
   plan plan_tiers;
   existing uuid;
   v_role text;
@@ -702,6 +717,15 @@ begin
       raise exception 'That package isn''t offered. Pick another, or ask without one.' using errcode = 'P0001';
     end if;
   end if;
+  -- More passes: each a pass the page shows, once, and never the first one again.
+  select coalesce(array_agg(distinct c order by c), '{}') into v_also
+    from unnest(coalesce(p_also_codes, '{}')) c where c is distinct from plan.code;
+  if cardinality(v_also) > 0 then
+    if plan.code is null or cardinality(v_also) > 6
+       or (select count(*) from plan_tiers where code = any (v_also) and kind = 'pass' and show_on_website) <> cardinality(v_also) then
+      raise exception 'That pass isn''t offered. Pick another, or ask without one.' using errcode = 'P0001';
+    end if;
+  end if;
   if auth.uid() is not null and p_organization_id is not null then
     select m.role::text into v_role from organization_members m
      where m.organization_id = p_organization_id and m.user_id = auth.uid();
@@ -710,7 +734,8 @@ begin
   -- One at a time, so two requests at once can't both slip under the limits.
   perform pg_advisory_xact_lock(hashtext('pricing_requests'));
   select id into existing from pricing_requests
-   where lower(email) = v_email and plan_code is not distinct from plan.code and created_at > now() - interval '1 hour'
+   where lower(email) = v_email and plan_code is not distinct from plan.code and also_plan_codes = v_also
+     and created_at > now() - interval '1 hour'
    order by created_at desc limit 1;
   if existing is not null then
     return jsonb_build_object('id', existing, 'status', 'duplicate', 'alert', false);
@@ -720,9 +745,9 @@ begin
   end if;
   hour_count := (select count(*) from pricing_requests where created_at > now() - interval '1 hour');
 
-  insert into pricing_requests (name, email, organization, event_types, plan_code, teacher_rate, pay_by_invoice, message,
-                                user_id, organization_id, account_role)
-  values (v_name, v_email, v_org, v_types, plan.code,
+  insert into pricing_requests (name, email, organization, event_types, plan_code, also_plan_codes, teacher_rate, pay_by_invoice,
+                                message, user_id, organization_id, account_role)
+  values (v_name, v_email, v_org, v_types, plan.code, v_also,
           -- The teacher rate is for packages; a pass has one price.
           coalesce(p_teacher_rate, false) and coalesce(plan.kind, 'package') = 'package', coalesce(p_pay_by_invoice, false), v_message,
           auth.uid(),
@@ -734,8 +759,8 @@ begin
                             'alert', hour_count = 30);
 end;
 $$;
-revoke execute on function public.submit_pricing_request(text, text, text, text[], text, boolean, boolean, text, uuid) from public;
-grant execute on function public.submit_pricing_request(text, text, text, text[], text, boolean, boolean, text, uuid)
+revoke execute on function public.submit_pricing_request(text, text, text, text[], text, boolean, boolean, text, uuid, text[]) from public;
+grant execute on function public.submit_pricing_request(text, text, text, text[], text, boolean, boolean, text, uuid, text[])
   to anon, authenticated, service_role;
 
 -- Mark a request handled (or not). Admins only; logged.

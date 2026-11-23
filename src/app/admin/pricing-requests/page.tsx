@@ -5,7 +5,8 @@ import { SubmitButton } from "@/components/submit-button";
 import { freeStatus, requirePlatformAdmin } from "@/lib/admin";
 import { stamp } from "@/lib/admin-crm";
 import { loadTiers, type Tier } from "@/lib/package-names";
-import { kindLabel, passLabel, sortKinds } from "@/lib/pricing";
+import { listWords } from "@/lib/plan";
+import { kindLabel, kindNoun, passLabel, sortKinds } from "@/lib/pricing";
 import { isSchemaError, missing } from "@/lib/schema-check";
 import { createAdminClient } from "@/lib/supabase/server";
 import { PageHeader, Tag } from "../kit";
@@ -20,6 +21,8 @@ type Row = {
   organization: string;
   event_types: string[];
   plan_code: string | null;
+  /** More passes asked about in the same request. */
+  also_plan_codes: string[] | null;
   teacher_rate: boolean;
   pay_by_invoice: boolean;
   message: string | null;
@@ -58,20 +61,34 @@ function onNow(a: Account, tiers: Tier[]) {
   return until ? `${name} · ${until.text}` : name;
 }
 
-/** What they asked about, in the words the pricing page uses. */
-function planWords(code: string | null, tiers: Tier[]) {
-  if (!code) return null;
+/** One package or pass, in the words the pricing page uses. */
+function planWord(code: string, tiers: Tier[]) {
   const t = tiers.find((x) => x.code === code);
   if (!t) return code;
   return t.kind === "pass" ? passLabel(t.event_types[0] ?? "") : t.name;
+}
+
+/** Everything they asked about: the first choice and any more passes with it (consultant r2 F5). */
+function planWords(r: Pick<Row, "plan_code" | "also_plan_codes">, tiers: Tier[]) {
+  if (!r.plan_code) return null;
+  return [r.plan_code, ...(r.also_plan_codes ?? [])].map((c) => planWord(c, tiers));
+}
+
+/** The kinds the account has now that the package asked about leaves out (UX r2 2). */
+function leavesOut(r: Row, tiers: Tier[]) {
+  const asked = tiers.find((x) => x.code === r.plan_code);
+  const now = r.account ? tiers.find((x) => x.code === r.account!.package) : undefined;
+  if (!asked || asked.kind !== "package" || !now) return [];
+  return sortKinds(now.event_types.filter((t) => !asked.event_types.includes(t)));
 }
 
 /** The next step, in full sentences (owner decisions 2 and 4: apply by hand, invoice net 30, starts when sent). */
 function nextStep(r: Row, tiers: Tier[]) {
   const t = tiers.find((x) => x.code === r.plan_code);
   if (!t) return "Reply by email. They asked without picking a package or pass.";
-  if (t.kind === "pass") return "Add the pass from the account's page, then send the invoice. It's due in 30 days.";
-  return "Apply the package from the account's page, then send the invoice. It's due in 30 days, and the package starts when the invoice is sent.";
+  const passes = r.also_plan_codes?.length ?? 0;
+  if (t.kind === "pass") return `Add the ${passes ? "passes" : "pass"} from the account's page, then send the invoice. It's due in 30 days.`;
+  return `Apply the package${passes ? ` and add the ${passes === 1 ? "pass" : "passes"}` : ""} from the account's page, then send the invoice. It's due in 30 days, and the package starts when the invoice is sent.`;
 }
 
 /** Not the Account Host: they can ask, but only the Account Host chooses a package (Engineer F4). */
@@ -88,7 +105,7 @@ export default async function PricingRequestsPage() {
     createAdminClient()
       .from("pricing_requests")
       .select(
-        "id, name, email, organization, event_types, plan_code, teacher_rate, pay_by_invoice, message, user_id, organization_id, account_role, created_at, handled_at, account:organizations!pricing_requests_organization_id_fkey(id, name, package, subscription_status, free_until, default_timezone)",
+        "id, name, email, organization, event_types, plan_code, also_plan_codes, teacher_rate, pay_by_invoice, message, user_id, organization_id, account_role, created_at, handled_at, account:organizations!pricing_requests_organization_id_fkey(id, name, package, subscription_status, free_until, default_timezone)",
       )
       .order("created_at", { ascending: false })
       .limit(500),
@@ -138,8 +155,9 @@ export default async function PricingRequestsPage() {
 }
 
 function Request({ r, tiers }: { r: Row; tiers: Tier[] }) {
-  const plan = planWords(r.plan_code, tiers);
+  const plan = planWords(r, tiers);
   const kinds = sortKinds(r.event_types);
+  const lost = leavesOut(r, tiers);
   return (
     <li id={r.id} className="scroll-mt-16 rounded-md border border-border bg-surface p-3 target:ring-2 target:ring-brand">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -179,11 +197,31 @@ function Request({ r, tiers }: { r: Row; tiers: Tier[] }) {
       </p>
       <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
         <dt className="text-muted">Asked about</dt>
-        <dd>{plan ?? "No package or pass picked"}</dd>
+        <dd>
+          {!plan ? (
+            "No package or pass picked"
+          ) : plan.length === 1 ? (
+            plan[0]
+          ) : (
+            <ul>
+              {plan.map((p, i) => (
+                <li key={`${p}-${i}`}>{p}</li>
+              ))}
+            </ul>
+          )}
+        </dd>
         {r.account && (
           <>
             <dt className="text-muted">On now</dt>
             <dd>{onNow(r.account, tiers)}</dd>
+          </>
+        )}
+        {lost.length > 0 && (
+          <>
+            <dt className="text-muted">Leaves out</dt>
+            <dd>
+              {listWords(lost.map(kindNoun))[0].toUpperCase() + listWords(lost.map(kindNoun)).slice(1)}, which the account has now
+            </dd>
           </>
         )}
         <dt className="text-muted">Kinds of event</dt>
@@ -219,7 +257,7 @@ function Request({ r, tiers }: { r: Row; tiers: Tier[] }) {
           )}
           {r.teacher_rate && (
             <p className="mt-1">
-              Before you give the teacher rate, check that it&apos;s a classroom teacher&apos;s own account for their own classes or conferences. Then
+              Before you give the teacher rate, check that it&apos;s a classroom teacher&apos;s own account for their own classes. Then
               set the account&apos;s rate to &ldquo;Teacher rate.&rdquo;
             </p>
           )}

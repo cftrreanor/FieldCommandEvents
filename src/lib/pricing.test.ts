@@ -6,6 +6,10 @@ import {
   cardContents,
   checkPricingRequest,
   cheapestChoices,
+  costSummary,
+  orWords,
+  passLine,
+  passTeamLine,
   kindLabel,
   kindWords,
   packageFeatures,
@@ -216,6 +220,10 @@ test("checkPricingRequest checks every answer at once", () => {
   ok.append("eventTypes", "volunteer");
   ok.append("eventTypes", "rodeo");
   ok.set("plan", "pass_school_visit");
+  ok.append("also", "pass_fair");
+  ok.append("also", "pass_fair");
+  ok.append("also", "pass_school_visit");
+  ok.append("also", "DROP TABLE");
   ok.set("payByInvoice", "1");
   ok.set("organizationId", "not-a-uuid");
   const r2 = checkPricingRequest(ok);
@@ -225,9 +233,29 @@ test("checkPricingRequest checks every answer at once", () => {
     organization: "Westfield Middle School PTO",
     eventTypes: ["volunteer", "school_visit"],
     plan: "pass_school_visit",
+    also: ["pass_fair"],
     teacherRate: false,
     payByInvoice: true,
     message: "",
     organizationId: null,
   });
+});
+
+test("passTeamLine says what a pass doesn't change, from the package data", () => {
+  assert.equal(passTeamLine(free, page.packages), "Your team stays at 2: you and one helper. Volunteer Leads need Volunteer Command or above.");
+  assert.equal(passTeamLine(volunteer, page.packages), "Your team stays at 5 people.");
+  assert.equal(passTeamLine(event, page.packages), null, "nothing to say: any size, with Volunteer Leads");
+  assert.equal(passTeamLine({ max_team: null, event_staff: false }, page.packages), "Volunteer Leads need Volunteer Command or above.");
+  const cheapLeads = pkg({ code: "leads", name: "Leads Only", event_staff: true, price_year_cents: 3000 });
+  assert.equal(passTeamLine(free, [cheapLeads, schedule]), "Your team stays at 2: you and one helper. Volunteer Leads need Leads Only.", "no \"or above\" when a dearer package lacks them");
+});
+
+test("the website's cost line and pass lines come from the page's data", () => {
+  assert.equal(costSummary(page), "Free for volunteer sign-ups and meetings, one at a time, packages from $60 a year, and one-event passes from $50");
+  assert.equal(costSummary({ packages: [], passes: [], free: [free] }), null);
+  assert.equal(passLine(page, "band_contest"), "Running one band contest a year? A band contest pass is $150 for one band contest.");
+  assert.equal(passLine(page, "volunteer"), null, "Free already includes volunteers, so its pass is never shown");
+  assert.equal(passLine(page, "conference"), null, "no pass for that kind");
+  assert.equal(orWords(["school fairs", "visitor check-in"]), "school fairs or visitor check-in");
+  assert.equal(orWords(["a", "b", "c"]), "a, b, or c");
 });

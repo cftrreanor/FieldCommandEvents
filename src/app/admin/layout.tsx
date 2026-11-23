@@ -1,3 +1,5 @@
+import { requestWord } from "@/lib/pilot";
+import { pilotOver } from "@/lib/site-pricing";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SignOutButton } from "@/components/sign-out-button";
@@ -86,7 +88,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
             <input
               name="q"
               type="search"
-              placeholder="Search accounts, people, pilot requests…"
+              placeholder={`Search accounts, people, ${requestWord(pilotOver()).toLowerCase()}s…`}
               aria-label="Search the admin"
               className="h-8 w-full max-w-md rounded-sm border border-border bg-background px-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/25"
             />

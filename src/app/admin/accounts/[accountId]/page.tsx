@@ -1,3 +1,5 @@
+import { PILOT_END, requestWord } from "@/lib/pilot";
+import { pilotOver } from "@/lib/site-pricing";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ADMIN_LOG_COLUMNS, DEFAULT_PILOT_END, describeAdminLog, freeStatus, isFreePlan, PLANS, planLabel, requirePlatformAdmin, type AdminLogRow } from "@/lib/admin";
@@ -118,7 +120,7 @@ export default async function AccountPage({ params }: PageProps<"/admin/accounts
     ...requests.map((r) => ({
       at: r.created_at,
       kind: "pipeline" as const,
-      title: `Pilot request from ${r.name}`,
+      title: `${requestWord(r.created_at.slice(0, 10) > PILOT_END)} from ${r.name}`,
       detail: `Stage: ${stageLabel(r.status)}`,
       href: `/admin/pipeline/${r.id}`,
     })),
@@ -302,7 +304,7 @@ export default async function AccountPage({ params }: PageProps<"/admin/accounts
                     ] as [string, string][])
                   : []),
                 ["Time zone", account.default_timezone.replace("America/", "").replaceAll("_", " ")],
-                ["Pilot request", requests[0] ? <RecordLink href={`/admin/pipeline/${requests[0].id}`}>{stageLabel(requests[0].status)}</RecordLink> : "—"],
+                [requestWord(pilotOver()), requests[0] ? <RecordLink href={`/admin/pipeline/${requests[0].id}`}>{stageLabel(requests[0].status)}</RecordLink> : "—"],
               ]}
             />
             <details className="mt-3 border-t border-border pt-3">

@@ -9,7 +9,8 @@ import { SignOutButton } from "@/components/sign-out-button";
 import { SubmitButton } from "@/components/submit-button";
 import { Field, Input, Select, Textarea } from "@/components/ui";
 import { fieldErrorState, type ActionState } from "@/lib/action-state";
-import { checkPricingRequest, WEBSITE_KINDS } from "@/lib/pricing";
+import { listWords } from "@/lib/plan";
+import { checkPricingRequest, kindNoun, sortKinds, WEBSITE_KINDS } from "@/lib/pricing";
 import { BTN_OUTLINE, CHECK, CheckIcon, ChevronIcon, LINK, TEACHER_WHO } from "../parts";
 import { KindChoice } from "../pricing-client";
 
@@ -22,6 +23,10 @@ export type PlanChoice = {
   group: "Packages" | "Passes";
   /** "$48 a year" for packages with a teacher rate. */
   teacher: string | null;
+  /** "$240 a year", "$50"; null when a package has no price ("ask us"). */
+  price: string | null;
+  /** The kinds it includes (a pass: its one kind). */
+  eventTypes: string[];
 };
 
 export type Identity = {
@@ -29,6 +34,8 @@ export type Identity = {
   email: string;
   organization: string | null;
   organizationId: string | null;
+  /** The account's package now (an Account Host's): what a choice would leave out, and whether it's a teacher's own. */
+  current: { name: string; eventTypes: string[]; teacher: boolean } | null;
 };
 
 function validate(data: FormData) {
@@ -38,10 +45,26 @@ function validate(data: FormData) {
 
 const lowerFirst = (s: string) => (s ? s[0].toLowerCase() + s.slice(1) : s);
 
-/** The page's heading follows the choice (UX F5): "Get a band contest pass", "Ask about Event Command". */
-function heading(chosen: PlanChoice | null, start: boolean) {
+/**
+ * The page's heading follows the choice (UX F5): "Get a band contest pass", "Ask about Event Command", and with more
+ * passes, "Get these passes" or "Ask about Volunteer Command and a pass".
+ */
+function heading(chosen: PlanChoice | null, start: boolean, more: number) {
   if (!chosen) return start ? "Get started: ask about a package" : "Ask about a package";
-  return chosen.group === "Passes" ? `Get a ${lowerFirst(chosen.name)}` : `Ask about ${chosen.name}`;
+  if (chosen.group === "Passes") return more ? "Get these passes" : `Get a ${lowerFirst(chosen.name)}`;
+  return `Ask about ${chosen.name}${more === 0 ? "" : more === 1 ? " and a pass" : " and passes"}`;
+}
+
+/**
+ * "You're asking about: a school fair or fundraiser pass ($100) and a band contest pass ($150), for one event each":
+ * everything in a request with more than one pass, said in one fixed line (consultant r2 F5).
+ */
+function askingWords(items: PlanChoice[]) {
+  const allPasses = items.every((c) => c.group === "Passes");
+  const words = items.map((c) =>
+    c.group === "Passes" ? `a ${lowerFirst(c.name)} (${c.price}${allPasses ? "" : " for one event"})` : `${c.name} (${c.price ?? "ask us for a price"})`,
+  );
+  return `${listWords(words)}${allPasses ? (items.length > 1 ? ", for one event each" : ", for one event") : ""}`;
 }
 
 export function RequestForm({
@@ -51,7 +74,7 @@ export function RequestForm({
   kinds,
   identity,
   start = false,
-  message = "",
+  also: initialAlso = [],
   back,
 }: {
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
@@ -62,8 +85,8 @@ export function RequestForm({
   identity: Identity | null;
   /** From the header's "Get started". */
   start?: boolean;
-  /** To start the message box with (more passes in the same choice). */
-  message?: string;
+  /** More passes in the same request (a cheaper option's second pass), sent with it. */
+  also?: string[];
   /** "Back to packages", with the picks kept. */
   back: string;
 }) {
@@ -85,6 +108,10 @@ export function RequestForm({
   const touched = useRef<HTMLInputElement>(null);
   const form = useRef<HTMLDivElement>(null);
   const chosen = choices.find((c) => c.code === plan) ?? null;
+  // More passes ride along with a first choice only, never the one already chosen.
+  const also = chosen
+    ? initialAlso.map((c) => choices.find((x) => x.code === c)).filter((c): c is PlanChoice => c !== undefined && c.code !== chosen.code)
+    : [];
   // A real tap, click or key press in the form (scripts filling it in don't make one).
   const markTouched = (e: SyntheticEvent) => {
     if (e.nativeEvent.isTrusted && touched.current) touched.current.value = "1";
@@ -93,7 +120,7 @@ export function RequestForm({
   if (sent) return <Sent {...sent} signedIn={Boolean(identity)} back={back} />;
   return (
     <>
-      <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">{heading(chosen, start)}</h1>
+      <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">{heading(chosen, start, also.length)}</h1>
       <p className="mt-2 max-w-2xl leading-7 text-muted">
         You can&apos;t pay online yet. Tell us about your events, and a real person will reply within a day to set it up with you. Nothing is charged until you agree.
       </p>
@@ -106,7 +133,7 @@ export function RequestForm({
           const data = new FormData(form.current?.closest("form") ?? undefined);
           setSent({
             email: String(data.get("email") ?? ""),
-            plan: chosen?.name ?? "",
+            plan: chosen ? (also.length ? listWords([chosen, ...also].map((c) => (c.group === "Passes" ? `a ${lowerFirst(c.name)}` : c.name))) : chosen.name) : "",
             group: String(data.get("organization") ?? ""),
             note: note.current,
           });
@@ -124,7 +151,10 @@ export function RequestForm({
               <input type="text" name="website" tabIndex={-1} autoComplete="off" />
             </label>
           </div>
-          <Fields choices={choices} plan={plan} onPlan={setPlan} chosen={chosen} kinds={kinds} identity={identity} message={message} />
+          {also.map((c) => (
+            <input key={c.code} type="hidden" name="also" value={c.code} />
+          ))}
+          <Fields choices={choices} plan={plan} onPlan={setPlan} chosen={chosen} also={also} kinds={kinds} identity={identity} />
           <div className="sm:col-span-2">
             <BotCheck />
             <SubmitButton pendingText="Sending…">Send request</SubmitButton>
@@ -140,17 +170,17 @@ function Fields({
   plan,
   onPlan,
   chosen,
+  also,
   kinds,
   identity,
-  message,
 }: {
   choices: PlanChoice[];
   plan: string;
   onPlan: (p: string) => void;
   chosen: PlanChoice | null;
+  also: PlanChoice[];
   kinds: string[];
   identity: Identity | null;
-  message: string;
 }) {
   const errors = useFieldErrors();
   const problem = (name: string) => ({
@@ -158,6 +188,11 @@ function Fields({
     errorId: `ask-${name}-error`,
   });
   const describe = (name: string) => (errors[name] ? { "aria-invalid": true, "aria-describedby": `ask-${name}-error` } : {});
+  // What the account has now that the package chosen leaves out, said before sending (UX r2 2).
+  const current = identity?.current ?? null;
+  const lost = chosen?.group === "Packages" && current ? sortKinds(current.eventTypes.filter((t) => !chosen.eventTypes.includes(t))) : [];
+  // The teacher rate is for a teacher's own account: on a group's account, it's a separate account (UX r2 2).
+  const groupAccount = Boolean(identity?.organization) && !current?.teacher;
   const groups = (["Packages", "Passes"] as const).map((g) => ({ g, list: choices.filter((c) => c.group === g) })).filter((x) => x.list.length);
 
   return (
@@ -212,6 +247,18 @@ function Fields({
           ))}
         </Select>
       </Field>
+      {chosen && also.length > 0 && (
+        <p className="-mt-2 leading-7 sm:col-span-2">
+          <span className="font-semibold">You&apos;re asking about: </span>
+          {askingWords([chosen, ...also])}.
+        </p>
+      )}
+      {lost.length > 0 && chosen && current && (
+        <p className="rounded-md border border-warning/40 bg-warning-soft px-4 py-3 leading-7 sm:col-span-2">
+          {chosen.name} doesn&apos;t include {listWords(lost.map(kindNoun))}, which {current.name} has now. Published events stay live, but you
+          couldn&apos;t publish new ones of {lost.length === 1 ? "that kind" : "those kinds"}.
+        </p>
+      )}
 
       <fieldset className="sm:col-span-2">
         <legend className="text-sm font-semibold">What do you run?</legend>
@@ -227,7 +274,12 @@ function Fields({
       </fieldset>
 
       <div className="space-y-2 sm:col-span-2">
-        {chosen?.teacher && (
+        {chosen?.teacher && groupAccount && (
+          <p className="rounded-md border border-border bg-surface p-3 text-sm leading-6">
+            The teacher rate, {chosen.teacher}, is for a separate account in your own name. Ask us in the note.
+          </p>
+        )}
+        {chosen?.teacher && !groupAccount && (
           <CheckBox
             name="teacherRate"
             title="I'm a classroom teacher"
@@ -242,8 +294,7 @@ function Fields({
               </details>
             }
           >
-            The teacher rate, {chosen.teacher}, is for an account in your own name for your own classes or conferences
-            {identity?.organization ? `, not ${identity.organization}` : ""}. A real person checks it.
+            The teacher rate, {chosen.teacher}, is for an account in your own name for your own classes. A real person checks it.
           </CheckBox>
         )}
         <CheckBox name="payByInvoice" title="We'll pay by invoice or purchase order">
@@ -252,7 +303,7 @@ function Fields({
       </div>
 
       <Field label="Anything else? (optional)" className="sm:col-span-2" {...problem("message")}>
-        <Textarea name="message" rows={4} maxLength={2000} defaultValue={message} {...describe("message")} />
+        <Textarea name="message" rows={4} maxLength={2000} {...describe("message")} />
       </Field>
     </>
   );
@@ -292,7 +343,7 @@ function Sent({ email, plan, group, note, signedIn, back }: { email: string; pla
           {group ? ` for ${group}` : ""}.
         </span>
       </p>
-      <p>Nothing is charged until you choose a package. We&apos;ll answer your questions and set it up with you.</p>
+      <p>Nothing is charged until you agree. We&apos;ll answer your questions and set it up with you.</p>
       {!signedIn && (
         <p>
           While you wait, see what each kind of event looks like.{" "}

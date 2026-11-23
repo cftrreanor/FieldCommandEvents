@@ -36,7 +36,7 @@ export const yearly = (cents: number) => `${dollars(cents)} a year`;
 
 /** Who gets the teacher rate: the FAQ, and the request form's "Who qualifies" (shown in place there). */
 export const TEACHER_WHO =
-  "Classroom teachers using an account in their own name for their own classes or conferences. School, PTO, booster, and club accounts use the regular price.";
+  "Classroom teachers using an account in their own name for their own classes. School, PTO, booster, and club accounts use the regular price. Teachers who only run their own parent-teacher conferences can use Free Teacher at no cost.";
 
 /**
  * The request form, with the package or pass and the kinds picked carried over. `also`: more passes in the same

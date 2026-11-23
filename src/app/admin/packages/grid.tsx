@@ -478,25 +478,30 @@ export function PackagesGrid({
         <ul className="divide-y divide-border">
           {orderedPasses.map((p) => {
             const name = passLabel(p.event_types[0] ?? "");
-            // Shown on the website, but never on the page: Free already includes its kind (UX F2, UI 1).
-            const freeHasIt = p.show_on_website && !onPage.has(p.code) && !!freePkg?.event_types.includes(p.event_types[0] ?? "");
+            // Never on the page, whatever its switch: Free already includes its kind, so no one could use it. Its switch
+            // gives way to "Not used on the page" (UX F2, UI 1, UX r2 6).
+            const freeHasIt = !onPage.has(p.code) && !!freePkg?.event_types.includes(p.event_types[0] ?? "");
             return (
               <li key={p.code} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 text-sm">
                 <span className="min-w-0 flex-1 basis-48">
                   <span className="block font-semibold">{name}</span>
                   {freeHasIt && (
                     <span className="block text-xs text-muted">
-                      Not on the page: {freePkg?.name ?? "Free"} already includes {kindLabel(p.event_types[0] ?? "").toLowerCase()}
+                      {freePkg?.name ?? "Free"} already includes {kindLabel(p.event_types[0] ?? "").toLowerCase()}
                     </span>
                   )}
                 </span>
                 <span className="flex items-center gap-3">
-                  <Switch
-                    on={!!p.show_on_website}
-                    label={`Show the ${name.toLowerCase()} on the website`}
-                    busy={busy === p.code}
-                    onChange={() => togglePass(p)}
-                  />
+                  {freeHasIt ? (
+                    <span className="text-sm text-muted">Not used on the page</span>
+                  ) : (
+                    <Switch
+                      on={!!p.show_on_website}
+                      label={`Show the ${name.toLowerCase()} on the website`}
+                      busy={busy === p.code}
+                      onChange={() => togglePass(p)}
+                    />
+                  )}
                   {cell(
                     money(p.price_cents),
                     priceClass(p.price_cents),

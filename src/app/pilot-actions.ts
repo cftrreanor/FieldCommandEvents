@@ -7,7 +7,8 @@ import { getOrigin } from "@/lib/data";
 import { notifyAdmins } from "@/lib/admin-alerts";
 import { recordSiteMetric } from "@/lib/site-metrics-server";
 import { emailLayout } from "@/lib/email";
-import { checkPilotRequest, pilotEventTypeLabels } from "@/lib/pilot";
+import { checkPilotRequest, pilotEventTypeLabels, requestWord } from "@/lib/pilot";
+import { pilotOver } from "@/lib/site-pricing";
 import { isSchemaError } from "@/lib/schema-check";
 import { createAdminClient } from "@/lib/supabase/server";
 
@@ -65,13 +66,16 @@ export async function requestPilot(_prev: ActionState, formData: FormData): Prom
     { title: "Event types", detail: pilotEventTypeLabels(eventTypes).join(", ") },
     ...(d.notes ? [{ title: "Hardest part today", detail: d.notes }] : []),
   ];
+  // After the pilot, the same form is "Get started" (owner decision, follow-up check 2).
+  const after = pilotOver();
+  const subject = `${requestWord(after)}: ${d.organization}`;
   const { html, text } = emailLayout({
-    heading: `Pilot request: ${d.organization}`,
-    paragraphs: [`${d.name} asked to join the pilot. Reply to this email to reach them.`],
+    heading: subject,
+    paragraphs: [`${d.name} ${after ? "asked to get started" : "asked to join the pilot"}. Reply to this email to reach them.`],
     rows,
-    button: { label: "Open the pilot pipeline", url: `${origin}/admin/pipeline` },
+    button: { label: after ? "Open the pipeline" : "Open the pilot pipeline", url: `${origin}/admin/pipeline` },
   });
-  await notifyAdmins({ subject: `Pilot request: ${d.organization}`, html, text, replyTo: d.email });
+  await notifyAdmins({ subject, html, text, replyTo: d.email });
   await recordSiteMetric("pilot_sent", String(formData.get("page") ?? ""), String(formData.get("source") ?? ""));
 
   // The form shows its own "Request sent" panel, so no toast message here.
