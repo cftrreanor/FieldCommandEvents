@@ -29,3 +29,13 @@ Review: docs/design-reviews/2026-11-22-pricing-built.md (light check: UX, UI, Co
 | 1 | The cheapest-option line under the chooser (severity 3) | Owner: **honest wording** | Every pass option says "for one event"; yearly and one-time prices stay apart ("$60 a year, plus $150 for one contest"); "one at a time" where that's all a package covers; the badge reads "Lowest price for one of each" when passes are used, and "Lowest price that includes what you picked" only for a package that covers everything; options that cost more without adding a pick are dropped; up to three options; the line gets its own button |
 | 2 | Pilot wording after January 1 (severity 3) | Owner: **switch on January 1** | Home and conferences pages change after the pilot ends, whether or not the pricing page is on ("Get started", "Start free", no "pilot" in titles); links to the packages page appear only when it's live; the go-live dialog promises only what really changes |
 | 3 | Every other finding | Owner: **all as recommended** | Including: hidden prices readable by admins only; limits on "Ask your Account Host" and request emails; requests from someone who isn't the Account Host are marked; the account's current package on each request |
+
+## Follow-up light check after fixes (2026-11-23)
+
+Screenshots: docs/design-reviews/2026-11-22-pricing-built-2/ (UX Designer, UX Content Manager, consultant). Owner decisions:
+
+| # | Question | Decision | Notes |
+|---|---|---|---|
+| 1 | A pass doesn't add team spots (severity 3 once confirmed: an event on a pass keeps the package's team limit) | Owner: **passes add team spots** | A pass will also lift the team limit for that one event: its own later project (how teams work). Until it ships, the page says it plainly under pass options and in the passes section, from the package data ("Your team stays at 2: you and one helper. Volunteer Leads need Volunteer Command or above."), and that line changes when the project ships |
+| 2 | "Get started" opens two forms after January 1 | Owner: **one form once live** | When the pricing page is on, every "Get started" opens the pricing request form. While it's hidden, the page's own form stays, and after the pilot the owner's emails and list call it a "Get started request", not "Pilot request" |
+| 3 | Every other finding | Owner: **all as recommended** | |
