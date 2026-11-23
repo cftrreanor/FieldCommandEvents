@@ -113,3 +113,12 @@ last card can't be retired off a live page; the page switch clears its cache tag
 
 This is an AI review, not testing with real people. Before January, have two or three real organizers (a PTO
 president, a band director, a front office) use the chooser and read the cheapest-option line.
+
+## Follow-up light check after fixes (2026-11-23)
+
+UX Designer, UX Content Manager, and the consultant on `docs/design-reviews/2026-11-22-pricing-built-2/` (changed
+screens plus the home, conferences, and band contests pages after the pilot). Both severity-3 findings above were
+fixed. New: a pass keeps the package's team limit, which the cheaper options didn't say (severity 3 once confirmed in
+the database), and "Get started" opened two different forms after January 1 (severity 2). The owner decided both
+(see the decisions log); about 20 smaller wording and flow fixes were taken as recommended. Consultant's verdict: build
+after fixes.
