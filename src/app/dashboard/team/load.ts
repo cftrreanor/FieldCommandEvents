@@ -1,5 +1,5 @@
 import "server-only";
-import { loadTiers } from "@/lib/package-names";
+import { isOfferedPackage, loadTiers } from "@/lib/package-names";
 import { isSchemaError, missing } from "@/lib/schema-check";
 import { createClient } from "@/lib/supabase/server";
 import { REMOVED_RECENTLY_DAYS } from "@/lib/team-words";
@@ -421,8 +421,8 @@ async function loadHostView(org: { id: string; name: string; timezone: string },
   const upcoming = [...events.values()].filter((e) => !e.ended);
   const jobs = await loadJobs(upcoming.map((e) => e.id));
   const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  // Upgrade hints name only packages that can still be given (not retired).
-  const packages = (await loadTiers()).filter((t) => t.kind === "package" && !t.retired_at);
+  // Upgrade hints name only packages still offered (on the website, not retired), as the database's do.
+  const packages = (await loadTiers()).filter(isOfferedPackage);
   type OfferRow = {
     to_user: string;
     offered_by: string | null;

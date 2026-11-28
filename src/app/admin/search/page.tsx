@@ -1,3 +1,5 @@
+import { requestWord } from "@/lib/pilot";
+import { pilotOver } from "@/lib/site-pricing";
 import type { Metadata } from "next";
 import { requirePlatformAdmin } from "@/lib/admin";
 import { ago, stageLabel, stamp } from "@/lib/admin-crm";
@@ -62,7 +64,7 @@ export default async function SearchPage({ searchParams }: PageProps<"/admin/sea
           {people.length === 0 && <li className="px-3 py-3 text-sm text-muted">No one with an account</li>}
         </ul>
       </Panel>
-      <Panel title={`Pilot requests (${requests.length})`} flush>
+      <Panel title={`${requestWord(pilotOver())}s (${requests.length})`} flush>
         <ul className="divide-y divide-border">
           {requests.map((r) => (
             <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
@@ -76,7 +78,7 @@ export default async function SearchPage({ searchParams }: PageProps<"/admin/sea
               <Tag>{stageLabel(r.status)}</Tag>
             </li>
           ))}
-          {requests.length === 0 && <li className="px-3 py-3 text-sm text-muted">No pilot requests</li>}
+          {requests.length === 0 && <li className="px-3 py-3 text-sm text-muted">No {requestWord(pilotOver()).toLowerCase()}s</li>}
         </ul>
       </Panel>
       {q.includes("@") && (

@@ -22,8 +22,11 @@ export function PilotForm({
   defaultEventTypes = [],
   defaultEmail = "",
   defaultName = "",
+  submitLabel = "Join the pilot",
 }: {
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
+  /** The button's words: "Join the pilot", or after the pilot ends, the page's own ("Get started", "Start free"). */
+  submitLabel?: string;
   /** Event types ticked to start with (an event type's own page ticks its type). */
   defaultEventTypes?: readonly string[];
   /** Filled in for someone already signed in (their sign-in email and name). */
@@ -69,7 +72,7 @@ export function PilotForm({
         <Fields onEmail={setEmail} defaultEventTypes={defaultEventTypes} defaultEmail={defaultEmail} defaultName={defaultName} />
         <BotCheck />
         <SubmitButton pendingText="Sending…" className="w-full rounded-full! bg-violet! px-6 text-header! hover:brightness-90 sm:w-auto">
-          Join the pilot
+          {submitLabel}
         </SubmitButton>
       </div>
     </ActionForm>

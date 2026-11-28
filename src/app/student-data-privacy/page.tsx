@@ -6,6 +6,9 @@ import { STUDENT_PRIVACY_PAGE } from "@/lib/audiences";
 import { brand } from "@/lib/brand";
 import { SPONSOR_PROMISE } from "@/lib/sponsors";
 
+// The header, menu, and footer link to Prices once the owner switches that page on (src/lib/site-pricing.ts).
+export const revalidate = 60;
+
 // The public answer to "how do you handle student data?", for district
 // technology and legal teams. Keep it in step with docs/DATA-PRIVACY.md; every
 // statement must match what the database actually does.
@@ -100,7 +103,7 @@ export default function StudentDataPrivacyPage() {
     <div className="flex flex-1 flex-col">
       <HeaderBar maxWidth="max-w-4xl">
         <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
-          All event types
+          All kinds of events
         </Link>
         <Link href="/login" className={headerLinkClass}>
           Sign in

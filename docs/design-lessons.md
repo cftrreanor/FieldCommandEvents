@@ -327,6 +327,23 @@ selected, counted under the page where that box lives.
   a map's name counted under Details, a long Location never shown (four rounds, Software Engineer and Product Owner).
 - **Check:** for every blocker, follow its link at phone and desktop; the box is on screen, editable, and named the same.
 
+## L31. Words tied to a date switch on that date, on every page
+Any promise with an end date ("free through …", "Join the pilot") switches on that date everywhere it appears: every
+public page, the header, FAQs and their search data, in-app lines, and admin labels. A switch the owner flips never
+claims to change words that change on their own.
+- **Why:** a page that goes live after the date otherwise opens by promising something that has ended.
+- **Seen in:** Pricing page mock-ups 2026-11-22 (7 of 8), built check (home and conferences pages), and the follow-up
+  (two "Get started" forms, the date said three ways).
+- **Check:** move the date back locally and read every public page, both with the switch on and off; grep for the date.
+
+## L32. A cheaper option says what it covers
+A suggested cheaper choice says what it covers and what it doesn't: "for one event", "one at a time", the team that
+comes with it. Yearly and one-time prices are never added into one "a year" total.
+- **Why:** a busy organizer reads the price and the badge, not the math, and finds the gap on event week.
+- **Seen in:** Pricing page mock-ups 2026-11-22 (cheaper combinations hidden), built check (3 of 5, severity 3), and
+  the follow-up (a pass keeps the package's team limit, severity 3).
+- **Check:** for each suggested option, read it as someone who runs that kind of event every month; is anything missing?
+
 ## Self-check before a review
 
 Go through every screen, in light **and dark**, at phone **and** desktop. Fix anything that fails
@@ -342,6 +359,8 @@ before the panel sees it.
 - [ ] **L8** Every promise is true in the code
 - [ ] **L9** Amber only for what's due or blocking
 - [ ] **L10** No link to an empty page; every blocker names its fix
+- [ ] **L31** Every dated promise switches on its date on every page
+- [ ] **L32** Every cheaper option says what it covers and keeps yearly and one-time apart
 - [ ] **L11** Recipients visible before sending; re-sends keep old links working
 - [ ] **L12** 44 px targets, status in words on phones, no sideways scroll
 - [ ] **L13** One filled button; destructive actions apart and confirmed

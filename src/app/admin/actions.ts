@@ -7,6 +7,7 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/time";
 import { isPickablePackage, tierNames } from "@/lib/package-names";
 import { dollars, isFreePackage, isRate, packageLabel, passFor, rateLabel } from "@/lib/plan";
+import { passWords } from "@/lib/pricing";
 
 /** Change an organization's plan. The database checks it's an admin and logs it. */
 export async function setPlan(orgId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -104,7 +105,7 @@ export async function addPass(orgId: string, _prev: ActionState, formData: FormD
   if (error) return { error: friendlyDbError(error) };
   revalidatePath("/admin", "layout");
   revalidatePath("/dashboard", "layout");
-  return { ok: true, message: `Added a ${pass.label.toLowerCase()} pass (${dollars(Number(price) * 100)}). It's good for 12 months.` };
+  return { ok: true, message: `Added a ${passWords(pass.type)} (${dollars(Number(price) * 100)}). It's good for 12 months.` };
 }
 
 /** Suspend an account: its published events go offline and it can't publish until unsuspended. */

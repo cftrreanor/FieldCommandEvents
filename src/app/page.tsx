@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { infoBox } from "@/components/audience-page";
-import { FaqList } from "@/components/faq-list";
+import { FaqList, type Faq } from "@/components/faq-list";
 import { JumpLink } from "@/components/jump-link";
 import { PhoneFrame } from "@/components/phone-frame";
 import { HeaderBar, headerLinkClass } from "@/components/logo";
@@ -14,9 +14,14 @@ import { ADMINISTRATORS_PAGE, audiences, CONFERENCES_PAGE, MEETINGS_PAGE, STUDEN
 import { SiteFooter } from "@/components/site-footer";
 import { requestPilot } from "./pilot-actions";
 import { PilotForm } from "./pilot-form";
-import { PILOT_END_LABEL, PILOT_NOTE } from "@/lib/pilot";
+import { AFTER_PILOT_CLOSING, AFTER_PILOT_NOTE, PILOT_CLOSING, PILOT_END_LABEL, PILOT_NOTE, pilotCta } from "@/lib/pilot";
 import { IconTile } from "@/components/line-icon";
 import { PublicMenu } from "@/components/public-menu";
+import { CtaLink, HeaderCta, PRICES, PricesHeaderLink, pricesLinks, startHref, startsOnPricingForm } from "@/components/site-prices";
+import { livePricingPage, sitePricing } from "@/lib/site-pricing";
+import { loadTiers } from "@/lib/package-names";
+import { costSummary, freeKindsWords, type PricingPage } from "@/lib/pricing";
+import type { ReactNode } from "react";
 import { SPONSOR_PROMISE } from "@/lib/sponsors";
 
 // Copy follows docs/brand-voice.md. Each event card links to its own page,
@@ -109,9 +114,51 @@ const privacy = [
   },
 ];
 
+const SPONSOR_PILOT_ANSWER = `Yes, on band contests, festivals, and school fairs. Ask us about it when you join the pilot. ${SPONSOR_PROMISE}`;
+
+/**
+ * The FAQ. After the pilot ends (whether or not the pricing page is on) its pricing lines lose the pilot; the link to
+ * the packages page shows only while that page is live, with the starting price from it (owner decision 2 of the
+ * built check; Content F1, F9).
+ */
+function faqsFor(live: boolean, afterPilot: boolean, page: PricingPage | null): Faq[] {
+  if (!live && !afterPilot) return baseFaqs;
+  // From the live page's data: "Free for volunteer sign-ups and meetings, one at a time, packages from $60 a year, and
+  // one-event passes from $50" (consultant r2 F12).
+  const summary = page ? costSummary(page) : null;
+  const cost: Faq = live
+    ? {
+        q: "How much does it cost?",
+        a: `${summary ? `${summary[0].toUpperCase()}${summary.slice(1)}, per account. Our packages and prices page lists each one.` : "Prices are per account, and our packages and prices page lists each package."} Volunteers, families, and visiting directors never pay. Nothing renews or charges on its own.`,
+        link: { href: PRICES.href, label: "See packages and prices" },
+      }
+    : {
+        q: "How much does it cost?",
+        a: "Prices are per account, and a person on our team sends them for the events you run. Volunteers, families, and visiting directors never pay. Nothing renews or charges on its own.",
+      };
+  return [
+    ...baseFaqs.map((f) =>
+      f.a === SPONSOR_PILOT_ANSWER ? { ...f, a: `Yes, on band contests, festivals, and school fairs, as an add-on. Ask us for a price. ${SPONSOR_PROMISE}` } : f,
+    ),
+    cost,
+  ];
+}
+
+/** What Free publishes, from the package data (read with the server key, so it works while the pricing page is hidden). */
+async function freeWords(page: PricingPage | null): Promise<string | null> {
+  const fromPage = page?.free.find((f) => f.code === "free");
+  if (fromPage) return freeKindsWords(fromPage);
+  try {
+    const free = (await loadTiers()).find((t) => t.code === "free");
+    return free ? freeKindsWords(free) : null;
+  } catch {
+    return null;
+  }
+}
+
 // Plain answers to what organizers ask (and search for); also given to search
 // engines and AI assistants as an FAQ (see jsonLd below).
-const faqs = [
+const baseFaqs = [
   {
     q: "Who is it for?",
     a: "Anyone running an event with sign-ups, registration, or check-in: PTO and PTA leaders, booster clubs, band and choir directors, teachers and school offices, churches and other congregations, clubs, nonprofits, and community groups.",
@@ -138,7 +185,7 @@ const faqs = [
   },
   {
     q: "Can we thank our sponsors?",
-    a: `Yes, on band contests, festivals, and school fairs. Ask us about it when you join the pilot. ${SPONSOR_PROMISE}`,
+    a: SPONSOR_PILOT_ANSWER,
   },
   {
     q: "Do volunteers, parents, or visiting directors have to pay or download an app?",
@@ -150,11 +197,90 @@ const faqs = [
   },
 ];
 
+const pricesLink = (
+  <Link href={PRICES.href} className="font-medium text-brand underline dark:text-foreground">
+    See packages and prices
+  </Link>
+);
+
+type Column = { title: string; items: { key: string; body: ReactNode }[] };
+
+/** The pilot's three columns; once the pricing page is live, its pricing line points to it. */
+const pilotColumns = (live: boolean): Column[] =>
+  pilot.map((col) => ({
+    title: col.title,
+    items: col.items.map((item) =>
+      live && item === TALK_PRICING
+        ? {
+            key: item,
+            body: (
+              <>
+                Organizers choose the package that fits the events they run. {pricesLink}
+              </>
+            ),
+          }
+        : { key: item, body: item },
+    ),
+  }));
+
+/**
+ * After the pilot: getting started, how paying works, and what pilot organizers keep (no pilot promises left).
+ * `freeWords`: what Free publishes, from the package data ("volunteer sign-ups and meetings, one at a time"; UX r2 5).
+ */
+const afterPilotColumns = (live: boolean, freeWords: string | null): Column[] => [
+  {
+    title: "What you get",
+    items: [
+      { key: "setup", body: "Help setting up your first event" },
+      { key: "support", body: "Direct support from the people building it" },
+      { key: "answers", body: "A real person answers within a day" },
+    ],
+  },
+  {
+    title: "How paying works",
+    items: [
+      {
+        key: "package",
+        body: live ? (
+          <>
+            Organizers choose the package that fits the events they run. {pricesLink}
+          </>
+        ) : (
+          "Organizers choose the package that fits the events they run, and we send prices for yours"
+        ),
+      },
+      { key: "renew", body: "Nothing renews or charges on its own" },
+      { key: "fee", body: "No platform fee for anyone you invite: volunteers, families, and visiting directors use it free" },
+    ],
+  },
+  {
+    title: "Were you in the pilot?",
+    items: [
+      { key: "live", body: "Events published during the pilot stay live" },
+      { key: "team", body: "Your team stays as it is" },
+      {
+        key: "free",
+        body: freeWords ? (
+          <>
+            New events publish under Free: {freeWords}. For other kinds, choose a package or get a pass
+            {live && <>. {pricesLink}</>}
+          </>
+        ) : (
+          "New events publish under the Free package until you choose a package"
+        ),
+      },
+    ],
+  },
+];
+
+const EVERY_FEATURE = `Every feature, free through ${PILOT_END_LABEL}, when the pilot ends`;
+const TALK_PRICING = "Organizers pay to use it after the pilot, and we'll talk with you about pricing before anything changes";
+
 const pilot = [
   {
     title: "What you get",
     items: [
-      `Every feature, free through ${PILOT_END_LABEL}, when the pilot ends`,
+      EVERY_FEATURE,
       "Unlimited events, volunteers, and registrations",
       "Help setting up your first event",
       "Direct support from the people building it",
@@ -172,20 +298,18 @@ const pilot = [
     title: "After the pilot",
     items: [
       "Nothing renews or charges automatically",
-      "Organizers pay to use it after the pilot, and we'll talk with you about pricing before anything changes",
-      "No platform fee for anyone you invite: volunteers, families, and visiting groups use it free",
+      TALK_PRICING,
+      "No platform fee for anyone you invite: volunteers, families, and visiting directors use it free",
     ],
   },
 ];
 
 const JOIN = "#join" as const;
-// Every button to the form says the same thing.
-const CTA = "Join the pilot";
 
 export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 // What search engines and AI assistants read about the product.
-const jsonLd = {
+const jsonLdFor = (live: boolean, afterPilot: boolean, faqs: Faq[]) => ({
   "@context": "https://schema.org",
   "@graph": [
     {
@@ -210,18 +334,28 @@ const jsonLd = {
         audienceType:
           "PTO and PTA leaders, booster clubs, band and choir directors, teachers, school offices, administrators, congregations, clubs, nonprofits, and community groups",
       },
-      offers: {
-        "@type": "Offer",
-        description:
-          `Free for organizers during the pilot, which ends ${PILOT_END_LABEL}. After the pilot, organizers pay to use ${brand.name}. No fee for volunteers, families, or visiting groups.`,
-      },
+      offers: live
+        ? {
+            "@type": "Offer",
+            url: `${SITE_URL}/pricing`,
+            description: `Packages for organizers, priced per account. No fee for volunteers, families, or visiting directors. Nothing renews or charges on its own.`,
+          }
+        : afterPilot
+          ? {
+              "@type": "Offer",
+              description: `Packages for organizers, priced per account. No fee for volunteers, families, or visiting directors. Nothing renews or charges on its own.`,
+            }
+          : {
+              "@type": "Offer",
+              description: `Free for organizers during the pilot, which ends ${PILOT_END_LABEL}. After the pilot, organizers pay to use ${brand.name}. No fee for volunteers, families, or visiting directors.`,
+            },
     },
     {
       "@type": "FAQPage",
       mainEntity: faqs.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })),
     },
   ],
-};
+});
 
 // Company banners for visitors (admin → Banners) refresh at least once a minute.
 export const revalidate = 60;
@@ -238,7 +372,16 @@ async function homeBanners() {
 const sectionTitle = "text-3xl font-normal leading-[1.02] tracking-tight sm:text-5xl";
 
 export default async function Home() {
-  const banners = await homeBanners();
+  const [banners, site] = await Promise.all([homeBanners(), sitePricing()]);
+  const priced = await livePricingPage(site.live);
+  const faqs = faqsFor(site.live, site.afterPilot, priced);
+  const jsonLd = jsonLdFor(site.live, site.afterPilot, faqs);
+  const after = site.afterPilot;
+  const CTA = pilotCta(after);
+  // Every "Get started" opens the pricing request form once it's live after the pilot (owner decision, follow-up 2).
+  const START = startHref(site, JOIN);
+  const oneForm = startsOnPricingForm(site);
+  const free = after ? await freeWords(priced) : null;
   return (
     <div className="flex flex-1 flex-col">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
@@ -249,25 +392,24 @@ export default async function Home() {
         <JumpLink href="#faq" className={`hidden md:block ${headerLinkClass}`}>
           FAQ
         </JumpLink>
-        <JumpLink href="#pilot" className={`hidden sm:block ${headerLinkClass}`}>
-          Pilot details
-        </JumpLink>
+        {!after && (
+          <JumpLink href="#pilot" className={`hidden sm:block ${headerLinkClass}`}>
+            Pilot details
+          </JumpLink>
+        )}
+        <PricesHeaderLink live={site.live} />
         <PublicMenu
           links={[
             { href: "#organizing", label: "Kinds of events" },
             { href: "#faq", label: "Questions" },
-            { href: "#pilot", label: "Pilot details" },
+            ...(after ? [] : [{ href: "#pilot", label: "Pilot details" }]),
+            ...pricesLinks(site.live),
           ]}
         />
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>
-        <JumpLink
-          href={JOIN}
-          className="inline-flex min-h-11 items-center whitespace-nowrap rounded-full bg-violet px-3 text-[13px] font-semibold sm:px-5 sm:text-sm text-header transition hover:brightness-90"
-        >
-          {CTA}
-        </JumpLink>
+        <HeaderCta afterPilot={site.afterPilot} live={site.live} joinHref={JOIN} label={CTA} />
       </HeaderBar>
 
       <main className="flex-1">
@@ -282,11 +424,11 @@ export default async function Home() {
                 Volunteer and meeting <span className="whitespace-nowrap">sign-ups</span>, contest registration, and community events, on public links, with no account needed <span className="whitespace-nowrap">to sign up</span>
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
-                <JumpLink href={JOIN} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
+                <CtaLink href={START} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
                   {CTA}
-                </JumpLink>
+                </CtaLink>
               </div>
-              <p className="mt-4 text-sm text-on-dark-mute">{PILOT_NOTE}</p>
+              <p className="mt-4 text-sm text-on-dark-mute">{after ? AFTER_PILOT_NOTE : PILOT_NOTE}</p>
             </div>
             {/* The product, on the phones people use it on: spectators, volunteers, and the front door. */}
             <div className="flex items-start justify-center">
@@ -411,26 +553,37 @@ export default async function Home() {
           </div>
         </section>
 
-        {/* The pilot, and the form every "Join the pilot" button leads to */}
+        {/* The pilot (then getting started, once it ends), and the form every main button leads to */}
         <section id="pilot" tabIndex={-1} className="scroll-mt-20 border-t border-border bg-surface outline-none">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-            <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
-            <h2 className={`mt-4 ${sectionTitle}`}>Join the pilot</h2>
-            <p className="mt-3 max-w-2xl leading-7 text-muted">
-              We&apos;re working closely with a small group of organizers, from schools and booster clubs to community groups. It&apos;s free through {PILOT_END_LABEL},
-              when the pilot ends. We keep the group small so we can support every organizer.
-            </p>
+            {after ? (
+              <>
+                <h2 className={sectionTitle}>Get started</h2>
+                <p className="mt-3 max-w-2xl leading-7 text-muted">
+                  Tell us what you run, and a person on our team replies within a day to help you get set up. Volunteers, families, and visiting directors never pay.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
+                <h2 className={`mt-4 ${sectionTitle}`}>Join the pilot</h2>
+                <p className="mt-3 max-w-2xl leading-7 text-muted">
+                  We&apos;re working closely with a small group of organizers, from schools and booster clubs to community groups. It&apos;s free through{" "}
+                  {PILOT_END_LABEL}, when the pilot ends. We keep the group small so we can support every organizer.
+                </p>
+              </>
+            )}
             <div className="mt-10 grid gap-6 md:grid-cols-3">
-              {pilot.map((col) => (
+              {(after ? afterPilotColumns(site.live, free) : pilotColumns(site.live)).map((col) => (
                 <div key={col.title} className="rounded-lg border border-border bg-background p-6">
                   <h3 className="font-semibold">{col.title}</h3>
                   <ul className="mt-3 space-y-2 leading-7 text-muted">
                     {col.items.map((item) => (
-                      <li key={item} className="flex gap-2">
+                      <li key={item.key} className="flex gap-2">
                         <span aria-hidden className="text-success">
                           ✓
                         </span>
-                        <span>{item}</span>
+                        <span>{item.body}</span>
                       </li>
                     ))}
                   </ul>
@@ -440,9 +593,18 @@ export default async function Home() {
 
             <div id="join" tabIndex={-1} className="mt-12 max-w-3xl scroll-mt-20 outline-none">
               <h3 className="text-xl font-semibold">Tell us about your events</h3>
-              <p className="mt-1 text-muted">It takes a minute, and a person on our team will reply by email.</p>
+              <p className="mt-1 text-muted">
+                {oneForm ? "It takes a minute on our request form" : "It takes a minute"}, and a person on our team will reply by email.
+              </p>
               <div className="mt-6">
-                <PilotForm action={requestPilot} />
+                {oneForm ? (
+                  // One form for everyone once the pricing page is live (owner decision, follow-up check 2).
+                  <CtaLink href={START} className="inline-flex min-h-11 items-center rounded-full bg-violet px-6 font-semibold text-header hover:brightness-90">
+                    {CTA}
+                  </CtaLink>
+                ) : (
+                  <PilotForm action={requestPilot} submitLabel={CTA} />
+                )}
               </div>
             </div>
           </div>
@@ -452,11 +614,13 @@ export default async function Home() {
         <section className="bg-teal-deep text-white">
           <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-24">
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">{TAGLINE}</h2>
-            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free for organizers through {PILOT_END_LABEL}. Spots are limited.</p>
+            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">
+              {after ? AFTER_PILOT_CLOSING : PILOT_CLOSING}
+            </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <JumpLink href={JOIN} className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
+              <CtaLink href={START} className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
                 {CTA}
-              </JumpLink>
+              </CtaLink>
               <a
                 href={CONTACT}
                 className="inline-flex rounded-full px-6 py-3 font-semibold text-white ring-1 ring-white/60 hover:bg-white/10"

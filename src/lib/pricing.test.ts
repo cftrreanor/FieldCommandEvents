@@ -1,0 +1,261 @@
+// Run with: npm test (node's built-in test runner; Node strips the types).
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+  bestFor,
+  cardContents,
+  checkPricingRequest,
+  cheapestChoices,
+  costSummary,
+  orWords,
+  passLine,
+  passTeamLine,
+  kindLabel,
+  kindWords,
+  packageFeatures,
+  packagesThatFit,
+  passLabel,
+  passWords,
+  plusIsEmpty,
+  plusLines,
+  stacksOn,
+  type PricingFree,
+  type PricingPackage,
+  type PricingPass,
+} from "./pricing.ts";
+
+// Packages shaped like the owner's admin (2026-11-22), with made-up prices where it helps.
+const pkg = (p: Partial<PricingPackage> & { code: string }): PricingPackage => ({
+  name: p.code,
+  kind: "package",
+  event_types: [],
+  one_at_a_time: [],
+  weekly_hours: false,
+  max_team: 2,
+  event_staff: false,
+  volunteer_history: false,
+  price_year_cents: null,
+  teacher_rate: false,
+  teacher_year_cents: null,
+  best_for: null,
+  recommended: false,
+  sort: 0,
+  ...p,
+});
+const schedule = pkg({ code: "schedule", name: "Schedule Command", event_types: ["volunteer", "meeting"], one_at_a_time: ["volunteer"], weekly_hours: true, price_year_cents: 6000, sort: 20 });
+const volunteer = pkg({ code: "volunteer", name: "Volunteer Command", event_types: ["volunteer", "fair", "meeting"], weekly_hours: true, max_team: 5, event_staff: true, volunteer_history: true, price_year_cents: 24000, sort: 30 });
+const event = pkg({ code: "event", name: "Event Command", event_types: ["band_contest", "group_event", "volunteer", "school_visit", "fair", "conference", "meeting"], weekly_hours: true, max_team: null, event_staff: true, volunteer_history: true, price_year_cents: 100000, sort: 40 });
+const competition = pkg({ code: "district", name: "Competition Command", event_types: ["band_contest", "group_event", "volunteer", "meeting"], weekly_hours: true, max_team: null, event_staff: true, volunteer_history: true, price_year_cents: 250000, sort: 50 });
+const free: PricingFree = { code: "free", name: "Free", kind: "package", event_types: ["volunteer", "meeting"], one_at_a_time: ["volunteer", "meeting"], weekly_hours: false, max_team: 2, event_staff: false, volunteer_history: false, sort: 10 };
+const pass = (type: string, cents: number): PricingPass => ({ code: `pass_${type}`, name: type, kind: "pass", event_type: type, price_cents: cents, sort: 100 });
+const passes = [pass("school_visit", 5000), pass("volunteer", 7500), pass("fair", 10000), pass("group_event", 12500), pass("band_contest", 15000)];
+const page = { packages: [schedule, volunteer, event, competition], passes, free: [free] };
+
+test("kinds use the website's names: labels, words in a sentence, and pass names", () => {
+  assert.equal(kindLabel("school_visit"), "Visitor registration and check-in");
+  assert.equal(kindWords("group_event"), "choir, orchestra, and group festivals");
+  assert.equal(kindWords("conference"), "parent-teacher conferences");
+  assert.equal(passWords("band_contest"), "band contest pass");
+  assert.equal(passLabel("school_visit"), "Visitor registration and check-in pass");
+  assert.equal(kindWords("rodeo"), "rodeo", "an unknown kind stays as it is");
+});
+
+test("packageFeatures names each part, from the fields, in the website's order", () => {
+  const f = packageFeatures(volunteer);
+  assert.deepEqual(f.kinds.map((k) => k.value), ["volunteer", "fair", "meeting"]);
+  assert.equal(f.team, "A team of up to 5 people");
+  assert.equal(f.staff, "Volunteer Leads and Coordinators");
+  assert.equal(f.tracking, "Volunteer tracking");
+  assert.equal(f.weeklyHours, "Weekly hours for meetings", "weekly hours name only the kinds the package has");
+  assert.equal(f.allKinds, false);
+
+  const s = packageFeatures(schedule);
+  assert.equal(s.team, "A team of 2: you and one helper");
+  assert.equal(s.staff, null);
+  assert.equal(s.tracking, null);
+  assert.deepEqual(s.oneAtATime, ["volunteer"]);
+  assert.deepEqual(s.kinds.find((k) => k.value === "volunteer"), { value: "volunteer", label: "Volunteers and sign-ups", one: true });
+
+  const e = packageFeatures(event);
+  assert.equal(e.allKinds, true);
+  assert.equal(e.team, "A team of any size");
+  assert.equal(e.weeklyHours, "Weekly hours for parent-teacher conferences and meetings");
+
+  const noStaff = packageFeatures({ ...event, event_staff: false });
+  assert.equal(noStaff.team, "A team of any size");
+  assert.equal(noStaff.staff, null, "an unlimited team never claims Volunteer Leads and Coordinators without them");
+  assert.equal(packageFeatures({ ...schedule, weekly_hours: true, event_types: ["volunteer"] }).weeklyHours, null, "no weekly hours without a kind booked by the hour");
+});
+
+test("bestFor: as written in admin, else from the kinds", () => {
+  assert.deepEqual(bestFor({ ...schedule, best_for: "  Teachers who run sign-ups " }), { text: "Teachers who run sign-ups", from: "admin" });
+  assert.deepEqual(bestFor(volunteer), { text: "Groups that run volunteer sign-ups, school fairs, and meetings", from: "generated" });
+  assert.deepEqual(bestFor(event), { text: "Groups that run every kind of event", from: "generated" });
+});
+
+test("stacksOn: only when the package includes everything the one before does", () => {
+  assert.equal(stacksOn(volunteer, schedule), true, "Volunteer Command frees volunteer events and adds more");
+  assert.equal(stacksOn(event, volunteer), true);
+  assert.equal(stacksOn(competition, event), false, "Competition Command leaves out kinds Event Command has");
+  assert.equal(stacksOn(schedule, volunteer), false);
+  assert.equal(stacksOn({ ...volunteer, one_at_a_time: ["volunteer"] }, { ...volunteer }), false, "turning a kind one at a time doesn't stack");
+  assert.equal(stacksOn({ ...volunteer, max_team: 3 }, volunteer), false, "a smaller team doesn't stack");
+  assert.equal(stacksOn({ ...event, max_team: 50 }, event), false, "a limit doesn't stack on unlimited");
+});
+
+test("plusLines: only what's added, and 'plus' only when there's something to list", () => {
+  const p = plusLines(volunteer, schedule);
+  assert.deepEqual(p.kinds.map((k) => [k.value, k.note ?? ""]), [["fair", ""], ["volunteer", "As many at a time as you like"]], "added kinds, then freed ones");
+  assert.equal(p.team, "A team of up to 5 people");
+  assert.equal(p.staff, "Volunteer Leads and Coordinators");
+  assert.equal(p.tracking, "Volunteer tracking");
+  assert.equal(p.weeklyHours, null, "both have weekly hours for meetings");
+
+  const copy = { ...volunteer, code: "copy", name: "Booster Command" };
+  assert.equal(plusIsEmpty(plusLines(copy, volunteer)), true);
+  assert.deepEqual(cardContents(copy, volunteer).plusOf, null, "a copied package lists everything, never an empty 'plus'");
+  assert.equal(cardContents(volunteer, schedule).plusOf, "Schedule Command");
+  assert.equal(cardContents(competition, event).plusOf, null);
+  assert.equal(cardContents(schedule).plusOf, null, "the first card lists everything");
+  const ev = plusLines(event, volunteer);
+  assert.equal(ev.weeklyHours, "Weekly hours for parent-teacher conferences and meetings", "weekly hours for more kinds is an addition");
+  assert.equal(ev.team, "A team of any size");
+});
+
+test("cheapestChoices: a package plus passes only for the picked kinds it doesn't include", () => {
+  const c = cheapestChoices(["volunteer", "school_visit"], page);
+  assert.deepEqual(c[0], {
+    package: { code: "free", name: "Free", price_year_cents: 0 },
+    passes: [{ code: "pass_school_visit", event_type: "school_visit", price_cents: 5000 }],
+    covers: [{ event_type: "volunteer", one: true }],
+    total_cents: 5000,
+  });
+  const vc = c.find((x) => x.package.code === "volunteer")!;
+  assert.deepEqual(vc.passes.map((p) => p.event_type), ["school_visit"], "no pass for volunteer events, which the package includes");
+  assert.equal(vc.total_cents, 29000);
+  assert.ok(c.every((x, i) => i === 0 || c[i - 1].total_cents <= x.total_cents), "cheapest first");
+
+  const band = cheapestChoices(["band_contest", "conference"], page);
+  assert.equal(band[0].package.code, "event", "no conference pass, so only Event Command covers conferences");
+  assert.equal(band.length, 1);
+
+  const noYearly = cheapestChoices(["conference"], { ...page, packages: [{ ...event, price_year_cents: null }] });
+  assert.deepEqual(noYearly, [], "a package without a yearly price isn't a priced choice");
+  assert.deepEqual(cheapestChoices([], page), []);
+  assert.deepEqual(packagesThatFit(["fair", "meeting"], page.packages).map((p) => p.code), ["volunteer", "event"]);
+});
+
+test("cheapestChoices: Free plus passes, one pass for each picked kind Free leaves out", () => {
+  const c = cheapestChoices(["fair", "school_visit"], page);
+  assert.deepEqual(c[0], {
+    package: { code: "free", name: "Free", price_year_cents: 0 },
+    passes: [
+      { code: "pass_fair", event_type: "fair", price_cents: 10000 },
+      { code: "pass_school_visit", event_type: "school_visit", price_cents: 5000 },
+    ],
+    covers: [],
+    total_cents: 15000,
+  });
+  // Schedule Command ($60) plus both passes adds nothing anyone picked over Free plus the same passes.
+  assert.ok(!c.some((x) => x.package.code === "schedule"), "Schedule Command plus the same passes is dropped");
+});
+
+test("cheapestChoices: a package plus a pass, when the package runs a pick better than Free does", () => {
+  const c = cheapestChoices(["volunteer", "band_contest"], page);
+  assert.deepEqual(
+    c.map((x) => [x.package.code, x.passes.map((p) => p.event_type), x.total_cents]),
+    [
+      ["free", ["band_contest"], 15000],
+      ["volunteer", ["band_contest"], 39000],
+      ["event", [], 100000],
+    ],
+  );
+  assert.deepEqual(c[0].covers, [{ event_type: "volunteer", one: true }], "Free runs volunteer sign-ups one at a time");
+  assert.deepEqual(c[1].covers, [{ event_type: "volunteer", one: false }], "Volunteer Command runs as many as you like");
+  assert.ok(!c.some((x) => x.package.code === "schedule"), "Schedule Command (one at a time, like Free) costs more for nothing more");
+  assert.ok(!c.some((x) => x.package.code === "district"), "Competition Command costs more than Event Command and runs nothing better");
+});
+
+test("cheapestChoices: a package that covers everything picked needs no pass, and passes that cost more are dropped", () => {
+  const c = cheapestChoices(["fair", "meeting", "volunteer"], page);
+  assert.deepEqual(c.map((x) => x.package.code), ["free", "schedule", "volunteer"], "Event Command adds nothing over Volunteer Command for these");
+  assert.deepEqual(c[2], {
+    package: { code: "volunteer", name: "Volunteer Command", price_year_cents: 24000 },
+    passes: [],
+    covers: [
+      { event_type: "volunteer", one: false },
+      { event_type: "fair", one: false },
+      { event_type: "meeting", one: false },
+    ],
+    total_cents: 24000,
+  });
+  // Free plus a fair pass ($100) is cheaper: it stays, since it's the lowest price for one of each.
+  const withFree = cheapestChoices(["fair", "meeting"], page);
+  assert.deepEqual(
+    withFree.map((x) => x.package.code),
+    ["free", "schedule", "volunteer"],
+    "Schedule Command runs meetings as many at a time; Event Command adds nothing over Volunteer Command for these",
+  );
+  assert.equal(withFree[0].total_cents, 10000);
+  // Covered by Free alone: nothing else is needed unless it runs them better.
+  const meetings = cheapestChoices(["meeting"], page);
+  assert.deepEqual(meetings.map((x) => [x.package.code, x.passes.length]), [["free", 0], ["schedule", 0]], "Schedule Command runs meetings as many at a time");
+});
+
+test("checkPricingRequest checks every answer at once", () => {
+  const bad = new FormData();
+  bad.set("name", "B");
+  bad.set("email", "nope");
+  bad.set("organization", "");
+  bad.set("plan", "DROP TABLE");
+  const r1 = checkPricingRequest(bad);
+  assert.equal(r1.request, undefined);
+  assert.deepEqual(Object.keys(r1.fieldErrors).sort(), ["email", "name", "organization", "plan"]);
+
+  const ok = new FormData();
+  ok.set("name", " Jordan Reyes ");
+  ok.set("email", "Jordan.Reyes@Example.org");
+  ok.set("organization", "Westfield Middle School PTO");
+  ok.append("eventTypes", "school_visit");
+  ok.append("eventTypes", "volunteer");
+  ok.append("eventTypes", "rodeo");
+  ok.set("plan", "pass_school_visit");
+  ok.append("also", "pass_fair");
+  ok.append("also", "pass_fair");
+  ok.append("also", "pass_school_visit");
+  ok.append("also", "DROP TABLE");
+  ok.set("payByInvoice", "1");
+  ok.set("organizationId", "not-a-uuid");
+  const r2 = checkPricingRequest(ok);
+  assert.deepEqual(r2.request, {
+    name: "Jordan Reyes",
+    email: "jordan.reyes@example.org",
+    organization: "Westfield Middle School PTO",
+    eventTypes: ["volunteer", "school_visit"],
+    plan: "pass_school_visit",
+    also: ["pass_fair"],
+    teacherRate: false,
+    payByInvoice: true,
+    message: "",
+    organizationId: null,
+  });
+});
+
+test("passTeamLine says what a pass doesn't change, from the package data", () => {
+  assert.equal(passTeamLine(free, page.packages), "Your team stays at 2: you and one helper. Volunteer Leads need Volunteer Command or above.");
+  assert.equal(passTeamLine(volunteer, page.packages), "Your team stays at 5 people.");
+  assert.equal(passTeamLine(event, page.packages), null, "nothing to say: any size, with Volunteer Leads");
+  assert.equal(passTeamLine({ max_team: null, event_staff: false }, page.packages), "Volunteer Leads need Volunteer Command or above.");
+  const cheapLeads = pkg({ code: "leads", name: "Leads Only", event_staff: true, price_year_cents: 3000 });
+  assert.equal(passTeamLine(free, [cheapLeads, schedule]), "Your team stays at 2: you and one helper. Volunteer Leads need Leads Only.", "no \"or above\" when a dearer package lacks them");
+});
+
+test("the website's cost line and pass lines come from the page's data", () => {
+  assert.equal(costSummary(page), "Free for volunteer sign-ups and meetings, one at a time, packages from $60 a year, and one-event passes from $50");
+  assert.equal(costSummary({ packages: [], passes: [], free: [free] }), null);
+  assert.equal(passLine(page, "band_contest"), "Running one band contest a year? A band contest pass is $150 for one band contest.");
+  assert.equal(passLine(page, "volunteer"), null, "Free already includes volunteers, so its pass is never shown");
+  assert.equal(passLine(page, "conference"), null, "no pass for that kind");
+  assert.equal(orWords(["school fairs", "visitor check-in"]), "school fairs or visitor check-in");
+  assert.equal(orWords(["a", "b", "c"]), "a, b, or c");
+});

@@ -8,15 +8,16 @@ import { JumpLink } from "@/components/jump-link";
 import { PhoneFrame } from "@/components/phone-frame";
 import { HeaderBar, headerLinkClass } from "@/components/logo";
 import { SiteFooter } from "@/components/site-footer";
-import { AUDIENCES, CONFERENCES_PAGE, MEETINGS_PAGE, STUDENT_PRIVACY_PAGE, type Audience } from "@/lib/audiences";
+import { AUDIENCES, audienceFaqs, CONFERENCES_PAGE, MEETINGS_PAGE, STUDENT_PRIVACY_PAGE, type Audience } from "@/lib/audiences";
 import { brand } from "@/lib/brand";
 import { SITE_URL } from "@/lib/site-url";
-import { PILOT_END_LABEL, PILOT_NOTE } from "@/lib/pilot";
+import { AFTER_PILOT_CLOSING, AFTER_PILOT_NOTE, PILOT_CLOSING, PILOT_END_LABEL, PILOT_NOTE, pilotCta } from "@/lib/pilot";
 import { SUPPORT_POINTS } from "@/lib/support";
 import { LineIcon } from "@/components/line-icon";
 import { PublicMenu } from "@/components/public-menu";
-
-const CTA = "Join the pilot";
+import { CtaLink, HeaderCta, PRICES_LINK, PricesHeaderLink, pricesLinks, startHref, startsOnPricingForm } from "@/components/site-prices";
+import { passLine } from "@/lib/pricing";
+import { livePricingPage, sitePricing } from "@/lib/site-pricing";
 
 /** The deep-blue "Who sees what" and privacy box. In dark mode it stays navy with white text, like the rest of the page. */
 export const infoBox = "bg-brand text-brand-foreground dark:bg-brand-soft dark:text-white";
@@ -39,8 +40,22 @@ export function audienceMetadata(a: Audience): Metadata {
   };
 }
 
-/** One kind of event, for the people who run it, with its own FAQ and the pilot form. */
-export function AudiencePage({ audience: a }: { audience: Audience }) {
+/**
+ * One kind of event, for the people who run it, with its own FAQ and the request form. Once the pilot ends (whether
+ * or not the pricing page is on) its pilot words switch, and the packages page is linked only while it's live
+ * (docs/design-decisions/2026-11-22-pricing-page.md, built check, decision 2).
+ */
+export async function AudiencePage({ audience: a }: { audience: Audience }) {
+  const site = await sitePricing();
+  const after = site.afterPilot;
+  const CTA = pilotCta(after);
+  // Every "Get started" opens the pricing request form once it's live after the pilot, with this kind filled in.
+  const START = startHref(site, "#join", [a.eventType]);
+  const oneForm = startsOnPricingForm(site);
+  // What one event of this kind costs on a pass, only while the pricing page is live (consultant r2 F13).
+  const priced = await livePricingPage(site.live);
+  const pass = priced ? passLine(priced, a.eventType) : null;
+  const faqs = audienceFaqs(a, after, site.live).map((f) => ({ q: f.q, a: f.a, ...(f.pricing ? { link: PRICES_LINK } : {}) }));
   const url = `${SITE_URL}${a.path}`;
   const jsonLd = {
     "@context": "https://schema.org",
@@ -61,7 +76,7 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
       },
       {
         "@type": "FAQPage",
-        mainEntity: a.faqs.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })),
+        mainEntity: faqs.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })),
       },
     ],
   };
@@ -72,25 +87,22 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <HeaderBar maxWidth="max-w-6xl">
         <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
-          All event types
+          All kinds of events
         </Link>
+        <PricesHeaderLink live={site.live} />
         <PublicMenu
           links={[
             { href: "/#organizing", label: "All kinds of events" },
             { href: "#how", label: "How it works" },
             { href: "#faq", label: "Questions" },
-            { href: "/#pilot", label: "Pilot details" },
+            ...(after ? [] : [{ href: "/#pilot", label: "Pilot details" }]),
+            ...pricesLinks(site.live),
           ]}
         />
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>
-        <JumpLink
-          href="#join"
-          className="inline-flex min-h-11 items-center whitespace-nowrap rounded-full bg-violet px-3 text-[13px] font-semibold text-header transition hover:brightness-90 sm:px-5 sm:text-sm"
-        >
-          {CTA}
-        </JumpLink>
+        <HeaderCta afterPilot={after} live={site.live} joinHref="#join" kinds={[a.eventType]} />
       </HeaderBar>
 
       <main className="flex-1">
@@ -103,14 +115,22 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
             <h1 className="mt-6 max-w-3xl text-4xl font-medium leading-[0.96] text-balance sm:text-6xl">{a.headline}</h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-on-dark-mute">{a.intro}</p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <JumpLink href="#join" className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
+              <CtaLink href={START} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
                 {CTA}
-              </JumpLink>
+              </CtaLink>
               <JumpLink href="#how" className="rounded-full px-5 py-3 font-medium text-white ring-1 ring-white/50 hover:bg-white/10">
                 See how it works
               </JumpLink>
             </div>
-            <p className="mt-4 text-sm text-on-dark-mute">{PILOT_NOTE}</p>
+            <p className="mt-4 text-sm text-on-dark-mute">{after ? AFTER_PILOT_NOTE : PILOT_NOTE}</p>
+            {pass && (
+              <p className="mt-2 text-sm text-on-dark-mute">
+                {pass}{" "}
+                <Link href={PRICES_LINK.href} className="font-semibold text-white underline underline-offset-4">
+                  {PRICES_LINK.label}
+                </Link>
+              </p>
+            )}
           </div>
         </section>
 
@@ -151,7 +171,7 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
         <section id="faq" tabIndex={-1} className="scroll-mt-20 border-t border-border outline-none">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
             <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">Common questions</h2>
-            <FaqList faqs={a.faqs} />
+            <FaqList faqs={faqs} />
           </div>
         </section>
 
@@ -184,18 +204,45 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
           {/* On the page's left edge like every other section; only the text and form stay narrow. */}
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
             <div className="max-w-3xl">
-              <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
-              <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{CTA}</h2>
-              <p className="mt-3 leading-7 text-muted">
-                It&apos;s free for organizers through {PILOT_END_LABEL}, when the pilot ends, and we&apos;ll talk with you before
-                anything changes. Volunteers, families, and visiting groups never pay.{" "}
-                <Link href="/#pilot" className="text-brand underline">
-                  See the pilot details
-                </Link>
-                .
-              </p>
+              {after ? (
+                <>
+                  <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{CTA}</h2>
+                  <p className="mt-3 leading-7 text-muted">
+                    Tell us what you run, and a person on our team replies within a day to help you get set up. Volunteers,
+                    families, and visiting directors never pay.
+                    {site.live && (
+                      <>
+                        {" "}
+                        <Link href={PRICES_LINK.href} className="text-brand underline dark:text-foreground">
+                          {PRICES_LINK.label}
+                        </Link>
+                      </>
+                    )}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Limited spots</p>
+                  <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{CTA}</h2>
+                  <p className="mt-3 leading-7 text-muted">
+                    It&apos;s free for organizers through {PILOT_END_LABEL}, when the pilot ends, and we&apos;ll talk with you before
+                    anything changes. Volunteers, families, and visiting directors never pay.{" "}
+                    <Link href="/#pilot" className="text-brand underline">
+                      See the pilot details
+                    </Link>
+                    .
+                  </p>
+                </>
+              )}
               <div className="mt-8">
-                <PilotForm action={requestPilot} defaultEventTypes={[a.eventType]} />
+                {oneForm ? (
+                  // One form for everyone once the pricing page is live (owner decision, follow-up check 2).
+                  <CtaLink href={START} className="inline-flex min-h-11 items-center rounded-full bg-violet px-6 font-semibold text-header hover:brightness-90">
+                    {CTA}
+                  </CtaLink>
+                ) : (
+                  <PilotForm action={requestPilot} defaultEventTypes={[a.eventType]} submitLabel={CTA} />
+                )}
               </div>
             </div>
           </div>
@@ -204,11 +251,11 @@ export function AudiencePage({ audience: a }: { audience: Audience }) {
         <section className="bg-teal-deep text-white">
           <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-20">
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">Every detail organized. Every organizer supported.</h2>
-            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">Free for organizers through {PILOT_END_LABEL}. Spots are limited.</p>
+            <p className="mx-auto mt-4 max-w-xl text-on-dark-mute">{after ? AFTER_PILOT_CLOSING : PILOT_CLOSING}</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <JumpLink href="#join" className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
+              <CtaLink href={START} className="inline-flex rounded-full bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
                 {CTA}
-              </JumpLink>
+              </CtaLink>
               <a
                 href={`mailto:${brand.supportEmail}`}
                 className="inline-flex rounded-full px-6 py-3 font-semibold text-white ring-1 ring-white/60 hover:bg-white/10"

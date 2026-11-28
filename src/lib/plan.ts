@@ -3,7 +3,9 @@
 // summary (account_plan) and says it in plain words.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { formatDate, utcToZonedDate } from "@/lib/time";
+// pricing.ts imports this file too; passWords is only called inside functions, so the cycle is safe.
+import { passWords } from "./pricing.ts";
+import { formatDate, utcToZonedDate } from "./time.ts";
 
 export const PACKAGES = [
   { value: "free_teacher", label: "Free Teacher" },
@@ -28,14 +30,12 @@ export const RATES = [
 export const isRate = (v: unknown): v is "standard" | "teacher" => RATES.some((r) => r.value === v);
 export const rateLabel = (code: string) => RATES.find((r) => r.value === code)?.label ?? code;
 
-/** One-time passes: one published event of a type the package doesn't include. List prices match plan_tiers. */
-export const PASSES = [
-  { type: "school_visit", label: "School visitor day", cents: 5000 },
-  { type: "volunteer", label: "Volunteers and sign-ups", cents: 7500 },
-  { type: "fair", label: "School fair", cents: 10000 },
-  { type: "group_event", label: "Group event", cents: 12500 },
-  { type: "band_contest", label: "Band contest", cents: 15000 },
-] as const;
+/**
+ * One-time passes: one published event of a type the package doesn't include. Prices aren't kept here: they're
+ * in plan_tiers (the admin Packages page sets them), read with loadTiers() or pricing_page(). Names come from
+ * passLabel() in pricing.ts, as on the pricing page.
+ */
+export const PASSES = [{ type: "school_visit" }, { type: "volunteer" }, { type: "fair" }, { type: "group_event" }, { type: "band_contest" }] as const;
 export const passFor = (type: string) => PASSES.find((p) => p.type === type);
 
 /** Each kind of event, in the words used in plan messages (event_type_words in the database). */
@@ -186,9 +186,8 @@ export function includedLines(plan: AccountPlan): string[] {
     all ? "Every kind of event" : capitalize(listWords(sortTypes(plan.own_event_types).map(typeWords))),
     ...sortTypes(plan.one_at_a_time).map((t) => `One published ${typeWords(t).replace(/s$/, "")} at a time, with as many drafts as you like`),
     plan.weekly_hours ? "Weekly hours for conferences and meetings" : "Conferences and meetings on set days (weekly hours aren't included)",
-    plan.max_team === null
-      ? "A team of any size, including Volunteer Leads and Coordinators"
-      : `A team of up to ${plan.max_team} people${plan.max_team === 2 ? " (a host and a co-host)" : ""}${plan.event_staff ? ", including Volunteer Leads and Coordinators" : ""}`,
+    // Volunteer Leads and Coordinators only when the package includes them, whatever the team size.
+    `${plan.max_team === null ? "A team of any size" : `A team of up to ${plan.max_team} people${plan.max_team === 2 ? " (a host and a co-host)" : ""}`}${plan.event_staff ? ", including Volunteer Leads and Coordinators" : ""}`,
     plan.volunteer_history ? "Volunteer tracking across your events" : "Volunteer tracking isn't included",
   ];
   return lines;
@@ -200,7 +199,7 @@ export function usageLines(plan: AccountPlan): string[] {
   lines.push(plan.max_team === null ? `Team: ${plan.team}` : `Team: ${plan.team} of ${plan.max_team}`);
   for (const t of sortTypes(Object.keys(plan.passes_unused))) {
     const n = plan.passes_unused[t];
-    if (n > 0) lines.push(`Unused ${passFor(t)?.label.toLowerCase() ?? typeWords(t)} pass${n === 1 ? "" : "es"}: ${n}`);
+    if (n > 0) lines.push(`Unused ${passWords(t)}${n === 1 ? "" : "es"}: ${n}`);
   }
   return lines;
 }

@@ -1,3 +1,5 @@
+import { PILOT_END, requestWord } from "@/lib/pilot";
+import { pilotOver } from "@/lib/site-pricing";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ADMIN_LOG_COLUMNS, DEFAULT_PILOT_END, describeAdminLog, freeStatus, isFreePlan, PLANS, planLabel, requirePlatformAdmin, type AdminLogRow } from "@/lib/admin";
@@ -18,7 +20,8 @@ import { ClosureForm, NoteActionForm } from "../closure-form";
 import { PlanForm } from "../plan-form";
 import { PackageForm, PassForm, TeacherUpgradeForm } from "../package-form";
 import { loadTiers, packageChoices } from "@/lib/package-names";
-import { dollars, loadAccountPlan, packageLabel, passFor, rateLabel, usageLines } from "@/lib/plan";
+import { dollars, loadAccountPlan, packageLabel, rateLabel, usageLines } from "@/lib/plan";
+import { passLabel } from "@/lib/pricing";
 import { loadSponsorAdminSummary } from "@/lib/sponsors-data";
 
 export const metadata: Metadata = { title: "Account" };
@@ -117,7 +120,7 @@ export default async function AccountPage({ params }: PageProps<"/admin/accounts
     ...requests.map((r) => ({
       at: r.created_at,
       kind: "pipeline" as const,
-      title: `Pilot request from ${r.name}`,
+      title: `${requestWord(r.created_at.slice(0, 10) > PILOT_END)} from ${r.name}`,
       detail: `Stage: ${stageLabel(r.status)}`,
       href: `/admin/pipeline/${r.id}`,
     })),
@@ -301,7 +304,7 @@ export default async function AccountPage({ params }: PageProps<"/admin/accounts
                     ] as [string, string][])
                   : []),
                 ["Time zone", account.default_timezone.replace("America/", "").replaceAll("_", " ")],
-                ["Pilot request", requests[0] ? <RecordLink href={`/admin/pipeline/${requests[0].id}`}>{stageLabel(requests[0].status)}</RecordLink> : "—"],
+                [requestWord(pilotOver()), requests[0] ? <RecordLink href={`/admin/pipeline/${requests[0].id}`}>{stageLabel(requests[0].status)}</RecordLink> : "—"],
               ]}
             />
             <details className="mt-3 border-t border-border pt-3">
@@ -359,7 +362,7 @@ export default async function AccountPage({ params }: PageProps<"/admin/accounts
                     return (
                       <li key={p.id} className="py-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium">{passFor(p.event_type)?.label ?? p.event_type}</span>
+                          <span className="font-medium">{passLabel(p.event_type)}</span>
                           <Tag tone={p.used_at ? "neutral" : expired ? "warning" : "success"}>{p.used_at ? "Used" : expired ? "Expired" : "Unused"}</Tag>
                           <span className="text-muted">{dollars(p.price_cents)}</span>
                         </div>

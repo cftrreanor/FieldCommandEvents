@@ -96,6 +96,39 @@ public event and organization page has one footer line: the product name and tag
   Free Teacher, Volunteer Command, Event Command, Schedule Command, and District Command, plus one-time event
   passes. Each package says which kinds of event it includes, team spots, and whether Volunteer tracking is in it.
   During the pilot every account gets Schedule Command.
+- **Pricing page, admin side** (admin Packages page): a site-level "Pricing page: Hidden / Live" switch with
+  "Preview the page" (going live confirms and lists what changes across the site; it can't go live with no package
+  card); per package "Show on website", "Best for" (blank means the page writes one), and one "Recommended"; "Show
+  on website" per pass (a pass Free already includes shows "Not used on the page" instead); an editable "Weekly
+  hours" row. Website switches save at once with Undo. Passes are named by
+  kind of event ("Band contest pass") everywhere in admin. Requests from the page's buttons are listed at
+  /admin/pricing-requests (count in the admin menu) to mark handled, each showing everything asked about (a request
+  can hold two passes, or a package and a pass), the account's current package, what the package asked about
+  leaves out, and "Not the Account Host" when someone else on the team sent it; the owner applies the package from the
+  account's page and sends the invoice by hand (net 30, starts when sent). Decisions:
+  `docs/design-decisions/2026-11-22-pricing-page.md`
+- **Pricing page, public side** (/pricing, only once switched on; admins preview it at /pricing/preview, in the
+  words for after the pilot unless they ask for today's): "Packages and prices" with "What are you running?" (tick
+  the kinds you run; the packages that include them are marked and named, with cheaper package-and-pass choices and
+  "Lowest price that includes what you picked" for a package, or "Lowest price for one of each" ("for one band
+  contest" when one kind is picked) when passes are used, with "for one event" on every pass, yearly and one-time
+  prices kept apart, a reason line and "Ask about [package] and a pass" on a dearer option, and under pass options
+  what a pass doesn't change, from the package data ("Your team stays at 2: you and one helper. Volunteer Leads need
+  Volunteer Command or above."); picks stay in the address;
+  "Running just one event? Passes start at …" under the choice; on phones the matching cards move to the top), a card per package
+  (yearly price, the classroom teacher rate with "Who qualifies", Best for, which kinds it covers, Includes,
+  Recommended with a reason, and "Ask about [package]"), Every package includes, Free options, passes ("Get a
+  [kind] pass", works with Free), a compare table (two packages side by side on phones), Sponsors, and questions.
+  The buttons lead to a short request form (/pricing/ask; signed-in people aren't asked their name, email, or group
+  again; "You're asking about: …" names every pass in a two-pass request; an Account Host is warned when a package
+  leaves out kinds they have now, and on a group's account the teacher rate is a separate account) or, for someone on a team who isn't the Account Host, "Ask your Account Host", which emails them (an
+  optional note, once a day per package). Only admins can read package prices before they're shown. While the
+  page is live, "Prices" shows in the marketing pages' header, menu, footer, and sitemap, the home page's pilot
+  pricing lines and cost answer point to it (from the page's data), and a kind's page with a shown pass says what
+  it costs. After January 1, 2027 the pilot words on the website ("Join the pilot", "free through January 1,
+  2027") switch to "Get started" wording, whether or not the page is live; once it's also live, every "Get
+  started" (and "Start free" on conferences) opens the pricing request form, and while it's hidden the page's own
+  form stays, called a "Get started request" in the owner's email and admin lists
 - **Sponsors add-on** (an admin switches it on per account): band contests, festivals, and fairs thank their own
   sponsors on the main public event page only (a "Presented by" line, a thank-you section by level, and one line on
   the day). Never on sign-up, registration, or director pages, or in emails. Decisions:
@@ -148,6 +181,11 @@ Sample people are never emailed, and "Back to me" or "Remove demo people" takes 
 
 Keep the last ten or so; older ones are in git history and `docs/design-decisions/`.
 
+- 2026-11-23 (PR pending): Pricing page, follow-up check fixes: a pass's team line from the package data, one request form for every "Get started" once the page is live after the pilot ("Get started request" in admin), two-pass requests stored and listed, "visitor check-in" and "visiting directors" wording, "Were you in the pilot?" from Free's data, a pass line on event pages, "Not used on the page" for a pass Free includes, and "Paid package" in place of "Premium" on weekly hours
+
+- 2026-11-22 (PR pending): Pricing page, final check fixes: honest cheapest-option lines ("for one event", "Lowest price for one of each"), website pilot words switch after January 1, 2027, package prices readable by admins only, limits on request and Account Host emails, and the account's current package and "Not the Account Host" on each request
+- 2026-11-22 (PR pending): Pricing page, public side: /pricing (hidden until switched on), the request form, Ask your Account Host, "Prices" links while it's live, after-pilot words that follow January 1, 2027, and "weekly hours" in place of "premium" on the conferences page
+- 2026-11-22 (PR pending): Pricing page, admin side: the Pricing page Hidden / Live switch with a confirm that lists what changes, Show on website, Best for, and Recommended for packages, Show on website for passes, an editable Weekly hours row, Undo on each website switch, passes named by kind of event, "One at a time" no longer amber, and a Pricing requests list to mark handled
 - 2026-11-21 (PR pending): Organization page, public side: the page at /o/[address], "More ways to help" on volunteer sign-up pages (below the form, at the top when full or closed, "More from [Org]" after signing up), and a confirm step that carries remembered details over; "Sign up for more" is now "Add another shift here"
 - 2026-11-21 (PR pending): Organization page, fixes from the built-page check: the confirm step asks "I'm 18 or older"; the group's color reaches 4.5:1 in dark mode on every event page; the turn-on preview is the real page; search engines are asked not to list the page or sign-up pages showing "More ways to help"; details carry over only within one group; started shifts are left out; "Take off the page now" with Undo; one card per account; clearer wording throughout
 - 2026-11-21 (PR pending): Organization page, organizer screens: a new Organization page (from Account and My events) to turn the page on with a group name, contact email, and the events to show (with a preview), then manage each event's "Show on organization page" switch, new events to review, Help anytime, and turning it off; the same switch in Event settings and on the Publish step, where "When you publish" now says people find the event from your organization page when it's shown

@@ -1,18 +1,22 @@
 import type { Metadata } from "next";
 import { PublicMenu } from "@/components/public-menu";
+import { CtaLink, HeaderCta, PRICES_LINK, PricesHeaderLink, pricesLinks, startHref, startsOnPricingForm } from "@/components/site-prices";
+import { sitePricing } from "@/lib/site-pricing";
 import Link from "next/link";
 import { HeaderBar, headerLinkClass } from "@/components/logo";
 import { FeatureSections, infoBox, SupportSection } from "@/components/audience-page";
 import { FaqList } from "@/components/faq-list";
 import { HowItWorks, type HowStep } from "@/components/how-it-works";
-import { JumpLink } from "@/components/jump-link";
 import { SiteFooter } from "@/components/site-footer";
 import { PilotForm } from "@/app/pilot-form";
 import { requestPilot } from "@/app/pilot-actions";
 import { MEETINGS_PAGE, type Audience } from "@/lib/audiences";
 import { brand } from "@/lib/brand";
-import { PILOT_NOTE } from "@/lib/pilot";
+import { AFTER_PILOT_NOTE, PILOT_NOTE, pilotCta } from "@/lib/pilot";
 import { LineIcon } from "@/components/line-icon";
+
+// The header, menu, and footer link to Prices once the owner switches that page on (src/lib/site-pricing.ts).
+export const revalidate = 60;
 
 // Copy follows docs/brand-voice.md.
 
@@ -23,8 +27,6 @@ export const metadata: Metadata = {
   alternates: { canonical: MEETINGS_PAGE.path },
 };
 
-/** The pilot form at the bottom of this page. */
-const START = "#join" as const;
 
 const steps: HowStep[] = [
   {
@@ -123,31 +125,39 @@ const faqs = [
   },
 ];
 
-/** Meetings: anyone books time with an organizer, like office hours or advising. */
-export default function MeetingsPage() {
+/**
+ * Meetings: anyone books time with an organizer, like office hours or advising. Once the pilot ends (whether or not
+ * the pricing page is on) its pilot words switch, and the packages page is linked only while it's live
+ * (docs/design-decisions/2026-11-22-pricing-page.md, built check, decision 2).
+ */
+export default async function MeetingsPage() {
+  const site = await sitePricing();
+  const after = site.afterPilot;
+  const CTA = pilotCta(after);
+  // The request form at the bottom of this page, or once the pricing page is live after the pilot, the pricing request
+  // form with meetings filled in (owner decision, follow-up check 2).
+  const START = startHref(site, "#join", ["meeting"]);
+  const oneForm = startsOnPricingForm(site);
   return (
     <div className="flex flex-1 flex-col">
       <HeaderBar maxWidth="max-w-6xl">
         <Link href="/" className={`hidden sm:block ${headerLinkClass}`}>
-          All event types
+          All kinds of events
         </Link>
+        <PricesHeaderLink live={site.live} />
         <PublicMenu
           links={[
             { href: "/#organizing", label: "All kinds of events" },
             { href: "#how", label: "How it works" },
             { href: "#faq", label: "Questions" },
-            { href: "/#pilot", label: "Pilot details" },
+            ...(after ? [] : [{ href: "/#pilot", label: "Pilot details" }]),
+            ...pricesLinks(site.live),
           ]}
         />
         <Link href="/login" className={headerLinkClass}>
           Sign in
         </Link>
-        <JumpLink
-          href={START}
-          className="inline-flex min-h-11 items-center whitespace-nowrap rounded-full bg-violet px-3 text-[13px] font-semibold text-header transition hover:brightness-90 sm:px-5 sm:text-sm"
-        >
-          Join the pilot
-        </JumpLink>
+        <HeaderCta afterPilot={after} live={site.live} joinHref="#join" kinds={["meeting"]} />
       </HeaderBar>
 
       <main className="flex-1">
@@ -163,11 +173,11 @@ export default function MeetingsPage() {
               back-and-forth emails, and no double bookings.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <JumpLink href={START} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
-                Join the pilot
-              </JumpLink>
+              <CtaLink href={START} className="rounded-full bg-violet px-6 py-3 font-semibold text-header hover:brightness-90">
+                {CTA}
+              </CtaLink>
             </div>
-            <p className="mt-4 text-sm text-on-dark-mute">{PILOT_NOTE} No credit card.</p>
+            <p className="mt-4 text-sm text-on-dark-mute">{after ? AFTER_PILOT_NOTE : `${PILOT_NOTE} No credit card.`}</p>
           </div>
         </section>
 
@@ -199,14 +209,28 @@ export default function MeetingsPage() {
 
         <section id="join" tabIndex={-1} className="scroll-mt-20 border-t border-border bg-surface outline-none">
           <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
-            <p className="inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Free during the pilot</p>
-            <h2 className="mt-4 text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">Join the pilot</h2>
+            {!after && <p className="mb-4 inline-flex rounded-full bg-accent-soft px-3 py-1 text-sm font-medium">Free during the pilot</p>}
+            <h2 className="text-3xl font-normal leading-[1.02] tracking-tight sm:text-4xl">{CTA}</h2>
             <p className="mt-3 leading-7 text-muted">
               Tell us about your school or group, and we&apos;ll set up your account and email you when it&apos;s ready. Planning other
               events too? Pick them on the form, and they&apos;re part of the same account with {brand.name}.
+              {after && site.live && (
+                <>
+                  {" "}
+                  <Link href={PRICES_LINK.href} className="text-brand underline dark:text-foreground">
+                    {PRICES_LINK.label}
+                  </Link>
+                </>
+              )}
             </p>
             <div className="mt-8">
-              <PilotForm action={requestPilot} defaultEventTypes={["meeting"]} />
+              {oneForm ? (
+                <CtaLink href={START} className="inline-flex min-h-11 items-center rounded-full bg-violet px-6 font-semibold text-header hover:brightness-90">
+                  {CTA}
+                </CtaLink>
+              ) : (
+                <PilotForm action={requestPilot} defaultEventTypes={["meeting"]} submitLabel={CTA} />
+              )}
             </div>
           </div>
         </section>
@@ -214,9 +238,9 @@ export default function MeetingsPage() {
         <section className="bg-teal-deep text-white">
           <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-20">
             <h2 className="mx-auto max-w-2xl text-3xl font-medium leading-tight sm:text-4xl">Every detail organized. Every organizer supported.</h2>
-            <JumpLink href={START} className="mt-8 inline-flex rounded-md bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
-              Join the pilot
-            </JumpLink>
+            <CtaLink href={START} className="mt-8 inline-flex rounded-md bg-white px-6 py-3 font-semibold text-teal-deep hover:brightness-90">
+              {CTA}
+            </CtaLink>
           </div>
         </section>
       </main>

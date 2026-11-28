@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { ADMINISTRATORS_PAGE, AUDIENCES, CONFERENCES_PAGE, MEETINGS_PAGE, STUDENT_PRIVACY_PAGE } from "@/lib/audiences";
 import { brand } from "@/lib/brand";
+import { PRICES } from "@/components/site-prices";
+import { pricingPageLive } from "@/lib/site-pricing";
 
-/** The marketing pages' footer: a link to each kind of event, plus contact. */
-export function SiteFooter() {
+/** The marketing pages' footer: a link to each kind of event, plus Prices (while that page is live) and contact. */
+export async function SiteFooter() {
+  const live = await pricingPageLive();
   return (
     <footer className="border-t border-border">
       <div className="mx-auto max-w-6xl px-4 py-10 text-sm text-muted sm:px-6">
@@ -23,6 +26,11 @@ export function SiteFooter() {
             © {new Date().getFullYear()} {brand.name} · {brand.city}, {brand.region}
           </span>
           <span className="flex flex-wrap gap-x-6 gap-y-2">
+            {live && (
+              <Link href={PRICES.href} className="hover:text-foreground">
+                {PRICES.label}
+              </Link>
+            )}
             <Link href={STUDENT_PRIVACY_PAGE.path} className="hover:text-foreground">
               {STUDENT_PRIVACY_PAGE.name}
             </Link>

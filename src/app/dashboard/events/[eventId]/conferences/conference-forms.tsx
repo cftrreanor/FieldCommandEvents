@@ -373,7 +373,7 @@ function TimesForm({
                   {locked && <LineIcon name="lock" inline />}
                   {o.label}
                   {/* Meetings always need a plan, so weekly hours aren't an extra for them. */}
-                  {o.value === "weekly" && !forMeetings && <span className="rounded-full bg-brand px-2 py-0.5 text-xs font-semibold text-brand-foreground">Premium</span>}
+                  {o.value === "weekly" && !forMeetings && <span className="rounded-full bg-brand px-2 py-0.5 text-xs font-semibold text-brand-foreground">Paid package</span>}
                 </span>
                 <span className={`block text-sm ${locked ? "text-foreground" : "text-muted"}`}>
                   {locked ? (
